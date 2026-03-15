@@ -18,5 +18,15 @@
     "modification": "Diagnosis: When the market price is near 50% and there's no momentum, the agent defaults to exactly 50% instead of deferring to the market price. In several worst cases, the market price was 0.495 or 0.505, but the agent rounded to 0.5, ignoring the small signal embedded in the market price itself.\nOld text: - If no momentum or news, default to the current market price as your baseline estimate with low confidence\nNew text: - If no momentum or news, output the current market price exactly as your estimate (do not round to 0.5) with low confidence\nExpected effect: The agent will preserve the market's own probability signal rather than discarding small deviations from 50%, reducing unnecessary error when the market has already priced in a slight directional lean.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 15,
+    "timestamp": "2026-03-15T22:34:39.099805+00:00",
+    "agent": "base_rate",
+    "brier_before": 0.25,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent is ignoring the market price as a signal, defaulting to 50% even when the market is pricing meaningfully away from 50% (e.g., 61.5%). The market price itself contains aggregated information the agent should incorporate rather than override with a flat base rate.\nOld text: - Never deviate more than 10pp from 50% on statistical patterns alone \u2014 edge is thin at this timescale\nNew text: - Never deviate more than 10pp from 50% on statistical patterns alone \u2014 edge is thin at this timescale\n- Treat the market price as an informative prior: if market price deviates more than 5pp from 50%, incorporate it by weighting your estimate 40% own analysis and 60% market price, then report the blended result\nExpected effect: By partially deferring to the market price when it diverges significantly from 50%, the agent will avoid large negative edges like the -0.115 case and produce estimates closer to the true probability.",
+    "applied": true,
+    "kept": null
   }
 ]
