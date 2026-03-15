@@ -1,0 +1,12 @@
+[
+  {
+    "cycle": 6,
+    "timestamp": "2026-03-15T18:49:38.079441+00:00",
+    "agent": "news_momentum",
+    "brier_before": 0.25125625,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent is defaulting to exactly 50% in ranging/neutral conditions and ignoring the empirical base rate that BTC 5-min candles close UP slightly more than 50% of the time (the market price itself often reflects this at ~50.5%). By anchoring to 50% instead of the market price as the baseline, the agent adds no value and achieves poor Brier scores when the outcome is YES.\nOld text: - If no momentum or news, default to 50% with low confidence\nNew text: - If no momentum or news, default to the current market price as your baseline estimate with low confidence\nExpected effect: By using the market price as the neutral baseline instead of a hard 50%, the agent will better capture any small structural bias already priced in, reducing Brier score in no-edge scenarios.",
+    "applied": true,
+    "kept": null
+  }
+]
