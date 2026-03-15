@@ -1,0 +1,84 @@
+name: Evolve Agent
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force evolution even if threshold not met'
+        type: boolean
+        default: false
+
+concurrency:
+  group: predict-and-score
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  evolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check if evolution is needed
+        id: check
+        working-directory: src
+        run: |
+          python3 -c "
+          import sqlite3, json, os
+          from pathlib import Path
+          db_path = Path('../data/predictions.db')
+          if not db_path.exists():
+              print('No database yet')
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write('needed=false\n')
+                  f.write('cycle=1\n')
+              exit()
+          db = sqlite3.connect(db_path)
+          total_resolved = db.execute('SELECT COUNT(*) FROM markets WHERE resolved = 1').fetchone()[0]
+          cycle = db.execute('SELECT COALESCE(MAX(cycle), 0) FROM predictions').fetchone()[0]
+          log_path = Path('../data/evolution_log.json')
+          num_evolutions = 0
+          if log_path.exists():
+              try:
+                  num_evolutions = len(json.loads(log_path.read_text()))
+              except: pass
+          resolved_since = total_resolved - (num_evolutions * 10)
+          need = resolved_since >= 10
+          print(f'Resolved: {total_resolved}, Evolutions: {num_evolutions}, Since last: {resolved_since}, Need: {need}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'needed={str(need).lower()}\n')
+              f.write(f'cycle={cycle}\n')
+          db.close()
+          "
+
+      - name: Run evolution
+        if: steps.check.outputs.needed == 'true' || inputs.force == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        working-directory: src
+        run: python evolve.py --cycle ${{ steps.check.outputs.cycle }}
+
+      - name: Commit evolved prompts
+        if: steps.check.outputs.needed == 'true' || inputs.force == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add prompts/ data/evolution_log.json
+          git diff --cached --quiet || git commit -m "Evolve: modified worst agent prompt"
+          git pull --rebase
+          git push
