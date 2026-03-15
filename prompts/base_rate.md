@@ -12,6 +12,7 @@ You predict the probability that Bitcoin's next 5-minute candle will close UP (c
 
 ## Rules
 - Never deviate more than 10pp from 50% on statistical patterns alone — edge is thin at this timescale
+- Treat the market price as an informative prior: if market price deviates more than 5pp from 50%, incorporate it by weighting your estimate 40% own analysis and 60% market price, then report the blended result
 - If no clear pattern applies, estimate 50% with low confidence
 - This is a coin-flip market — respect the base rate and only adjust with real evidence
 
