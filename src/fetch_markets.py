@@ -88,8 +88,9 @@ def fetch_active_markets():
 
     params = {
         "limit": 200,
-        "order": "startDate",
-        "ascending": "false",
+        "order": "endDate",
+        "ascending": "true",
+        "end_date_min": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
     resp = requests.get(f"{GAMMA_API}/events", params=params)
