@@ -312,33 +312,56 @@ tr:hover {
 /* Pipeline Health Banner */
 .pipeline-banner {
     background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 12px 20px;
-    margin-bottom: 12px;
+    border: 2px solid #21262d;
+    border-radius: 10px;
+    padding: 16px 24px;
+    margin-bottom: 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 12px;
 }
-.pipeline-health {
+.pipeline-main {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-weight: 700;
-    font-size: 1.1rem;
+    gap: 16px;
 }
-.pipeline-icon {
+.pipeline-fraction {
+    font-weight: 800;
+}
+.pipeline-big {
+    font-size: 2.2rem;
+    line-height: 1;
+}
+.pipeline-slash {
     font-size: 1.2rem;
+    opacity: 0.6;
 }
-.pipeline-pct {
-    font-size: 0.9rem;
-    opacity: 0.8;
+.pipeline-labels {
+    display: flex;
+    flex-direction: column;
+}
+.pipeline-status {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+.pipeline-desc {
+    color: #8b949e;
+    font-size: 0.8rem;
+}
+.pipeline-meta {
+    text-align: right;
 }
 .pipeline-detail {
     color: #8b949e;
     font-size: 0.8rem;
+}
+.pipeline-ago {
+    color: #8b949e;
+    font-size: 0.75rem;
+    margin-top: 2px;
 }
 
 /* Live Context Banner */
@@ -376,6 +399,34 @@ tr:hover {
     color: #484f58;
     margin-top: 4px;
     word-break: break-all;
+}
+.live-result {
+    border-width: 2px;
+}
+.live-verdict {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 4px;
+}
+.live-outcome {
+    font-size: 0.85rem;
+    color: #8b949e;
+    margin-bottom: 4px;
+}
+.result-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+.result-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 14px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
 /* Status Bar */
@@ -446,24 +497,28 @@ tr:hover {
         </div>
     </div>
 
-    <div class="pipeline-banner">
-        <div class="pipeline-health">
-            <span class="pipeline-icon" style="color:#f44336">&#9679;</span>
-            <span class="pipeline-rate" style="color:#f44336">1/22 cycles on time</span>
-            <span class="pipeline-pct" style="color:#f44336">(5%)</span>
+    <div class="pipeline-banner" style="background:rgba(244,67,54,0.08);border-color:#da3633">
+        <div class="pipeline-main">
+            <div class="pipeline-fraction" style="color:#f44336">
+                <span class="pipeline-big">1</span><span class="pipeline-slash">/22</span>
+            </div>
+            <div class="pipeline-labels">
+                <span class="pipeline-status" style="color:#f44336">DOWN</span>
+                <span class="pipeline-desc">cycles on time (5%)</span>
+            </div>
         </div>
-        <div class="pipeline-detail">Avg gap: 60min &middot; 23 total cycles &middot; 21 missed</div>
+        <div class="pipeline-meta">
+            <div class="pipeline-detail">Avg gap: 60min &middot; 23 total &middot; 21 missed</div>
+            <div class='pipeline-ago'>Last cycle: 4m ago</div>
+        </div>
     </div>
 
-    <div class="live-banner"><div class="live-card">
-            <div class="live-label">BTC Price</div>
-            <div class="live-value">$74,019</div>
-            <div class="live-detail" style="color:#3fb950">+0.474% &middot; NEUTRAL</div>
-        </div><div class="live-card">
+    <div class="live-banner"><div class="live-card live-result" style="background:rgba(63,185,80,0.10);border-color:#238636">
             <div class="live-label">Last Result</div>
-            <div class="live-value"><span style="color:#3fb950">UP &#9650;</span> <span style="color:#ffc107;font-size:0.9rem;font-weight:700">2/3 HIT</span></div>
-            <div class="live-detail">Bitcoin Up or Down - March 16, 8:55AM-9:00AM ...</div>
-            <div class="live-sub"><span style="color:#3fb950">&#10003; base_rate:50%</span> &nbsp; <span style="color:#3fb950">&#10003; contrarian:50%</span> &nbsp; <span style="color:#f44336">&#10007; news_momentum:48%</span></div>
+            <div class="live-verdict" style="color:#3fb950">&#10003; 2/3 HIT</div>
+            <div class="live-outcome">Resolved <span style="color:#3fb950;font-weight:700">UP &#9650;</span></div>
+            <div class="live-detail">Bitcoin Up or Down - March 16, 8:55AM-9:...</div>
+            <div class="result-chips"><span class="result-chip" style="background:rgba(63,185,80,0.15);border:1px solid #238636;color:#238636">&#10003; base_rate 50%</span> <span class="result-chip" style="background:rgba(63,185,80,0.15);border:1px solid #238636;color:#238636">&#10003; contrarian 50%</span> <span class="result-chip" style="background:rgba(244,67,54,0.15);border:1px solid #da3633;color:#da3633">&#10007; news_momentum 48%</span> </div>
         </div><div class="live-card">
             <div class="live-label">Current Prediction</div>
             <div class="live-value" style="color:#58a6ff">Mkt 50%</div>

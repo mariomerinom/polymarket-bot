@@ -722,23 +722,52 @@ def build_html():
 
     # -- Pipeline Health Banner --
     health_pct = pipeline["health_pct"]
+    on_time = pipeline["on_time"]
+    total_gaps = pipeline["on_time"] + pipeline["gaps"]
     if health_pct >= 80:
         health_color = "#3fb950"
-        health_icon = "&#9679;"  # green dot
+        health_bg = "rgba(63,185,80,0.08)"
+        health_border = "#238636"
+        health_status = "HEALTHY"
     elif health_pct >= 50:
         health_color = "#ffc107"
-        health_icon = "&#9679;"
+        health_bg = "rgba(255,193,7,0.08)"
+        health_border = "#9e6a03"
+        health_status = "DEGRADED"
     else:
         health_color = "#f44336"
-        health_icon = "&#9679;"
+        health_bg = "rgba(244,67,54,0.08)"
+        health_border = "#da3633"
+        health_status = "DOWN"
 
-    pipeline_html = f"""<div class="pipeline-banner">
-        <div class="pipeline-health">
-            <span class="pipeline-icon" style="color:{health_color}">{health_icon}</span>
-            <span class="pipeline-rate" style="color:{health_color}">{pipeline["on_time"]}/{pipeline["on_time"] + pipeline["gaps"]} cycles on time</span>
-            <span class="pipeline-pct" style="color:{health_color}">({health_pct:.0f}%)</span>
+    # Time since last cycle
+    last_cycle_ago = ""
+    if status["last_prediction"] and status["last_prediction"] != "Never":
+        try:
+            lp = status["last_prediction"].replace(" ", "T") + ":00+00:00"
+            lp_dt = datetime.fromisoformat(lp)
+            ago_min = (datetime.now(timezone.utc) - lp_dt).total_seconds() / 60
+            if ago_min < 60:
+                last_cycle_ago = f"{ago_min:.0f}m ago"
+            else:
+                last_cycle_ago = f"{ago_min/60:.1f}h ago"
+        except (ValueError, TypeError):
+            last_cycle_ago = ""
+
+    pipeline_html = f"""<div class="pipeline-banner" style="background:{health_bg};border-color:{health_border}">
+        <div class="pipeline-main">
+            <div class="pipeline-fraction" style="color:{health_color}">
+                <span class="pipeline-big">{on_time}</span><span class="pipeline-slash">/{total_gaps}</span>
+            </div>
+            <div class="pipeline-labels">
+                <span class="pipeline-status" style="color:{health_color}">{health_status}</span>
+                <span class="pipeline-desc">cycles on time ({health_pct:.0f}%)</span>
+            </div>
         </div>
-        <div class="pipeline-detail">Avg gap: {pipeline["avg_gap_min"]:.0f}min &middot; {pipeline["total_cycles"]} total cycles &middot; {pipeline["gaps"]} missed</div>
+        <div class="pipeline-meta">
+            <div class="pipeline-detail">Avg gap: {pipeline["avg_gap_min"]:.0f}min &middot; {pipeline["total_cycles"]} total &middot; {pipeline["gaps"]} missed</div>
+            {"<div class='pipeline-ago'>Last cycle: " + last_cycle_ago + "</div>" if last_cycle_ago else ""}
+        </div>
     </div>"""
 
     # -- Live Context Banner --
@@ -764,28 +793,44 @@ def build_html():
         hits = lr["hits"]
         total_a = lr["total_agents"]
         if hits == total_a:
-            verdict = "ALL HIT"
+            verdict = "&#10003; ALL HIT"
             verdict_color = "#3fb950"
+            verdict_bg = "rgba(63,185,80,0.15)"
+            verdict_border = "#238636"
         elif hits == 0:
-            verdict = "ALL MISS"
+            verdict = "&#10007; ALL MISS"
             verdict_color = "#f44336"
+            verdict_bg = "rgba(244,67,54,0.15)"
+            verdict_border = "#da3633"
+        elif hits >= total_a / 2:
+            verdict = f"&#10003; {hits}/{total_a} HIT"
+            verdict_color = "#3fb950"
+            verdict_bg = "rgba(63,185,80,0.10)"
+            verdict_border = "#238636"
         else:
-            verdict = f"{hits}/{total_a} HIT"
+            verdict = f"&#10007; {hits}/{total_a} HIT"
             verdict_color = "#ffc107"
+            verdict_bg = "rgba(255,193,7,0.10)"
+            verdict_border = "#9e6a03"
 
         # Per-agent breakdown with check/cross
-        agent_line = " &nbsp; ".join(
-            f'<span style="color:{"#3fb950" if a["correct"] else "#f44336"}">'
-            f'{"&#10003;" if a["correct"] else "&#10007;"} {a["agent"]}:{a["estimate"]*100:.0f}%</span>'
-            for a in lr["agent_results"]
-        )
+        agent_chips = ""
+        for a in lr["agent_results"]:
+            chip_color = "#238636" if a["correct"] else "#da3633"
+            chip_bg = "rgba(63,185,80,0.15)" if a["correct"] else "rgba(244,67,54,0.15)"
+            chip_icon = "&#10003;" if a["correct"] else "&#10007;"
+            agent_chips += (
+                f'<span class="result-chip" style="background:{chip_bg};border:1px solid {chip_color};color:{chip_color}">'
+                f'{chip_icon} {a["agent"]} {a["estimate"]*100:.0f}%</span> '
+            )
 
-        q_short = lr["question"][:45] + "..." if len(lr["question"]) > 45 else lr["question"]
-        live_parts.append(f"""<div class="live-card">
+        q_short = lr["question"][:40] + "..." if len(lr["question"]) > 40 else lr["question"]
+        live_parts.append(f"""<div class="live-card live-result" style="background:{verdict_bg};border-color:{verdict_border}">
             <div class="live-label">Last Result</div>
-            <div class="live-value"><span style="color:{outcome_color}">{outcome_str}</span> <span style="color:{verdict_color};font-size:0.9rem;font-weight:700">{verdict}</span></div>
+            <div class="live-verdict" style="color:{verdict_color}">{verdict}</div>
+            <div class="live-outcome">Resolved <span style="color:{outcome_color};font-weight:700">{outcome_str}</span></div>
             <div class="live-detail">{q_short}</div>
-            <div class="live-sub">{agent_line}</div>
+            <div class="result-chips">{agent_chips}</div>
         </div>""")
 
     # Current Prediction
@@ -1431,33 +1476,56 @@ tr:hover {{
 /* Pipeline Health Banner */
 .pipeline-banner {{
     background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 12px 20px;
-    margin-bottom: 12px;
+    border: 2px solid #21262d;
+    border-radius: 10px;
+    padding: 16px 24px;
+    margin-bottom: 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 12px;
 }}
-.pipeline-health {{
+.pipeline-main {{
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-weight: 700;
-    font-size: 1.1rem;
+    gap: 16px;
 }}
-.pipeline-icon {{
+.pipeline-fraction {{
+    font-weight: 800;
+}}
+.pipeline-big {{
+    font-size: 2.2rem;
+    line-height: 1;
+}}
+.pipeline-slash {{
     font-size: 1.2rem;
+    opacity: 0.6;
 }}
-.pipeline-pct {{
-    font-size: 0.9rem;
-    opacity: 0.8;
+.pipeline-labels {{
+    display: flex;
+    flex-direction: column;
+}}
+.pipeline-status {{
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}}
+.pipeline-desc {{
+    color: #8b949e;
+    font-size: 0.8rem;
+}}
+.pipeline-meta {{
+    text-align: right;
 }}
 .pipeline-detail {{
     color: #8b949e;
     font-size: 0.8rem;
+}}
+.pipeline-ago {{
+    color: #8b949e;
+    font-size: 0.75rem;
+    margin-top: 2px;
 }}
 
 /* Live Context Banner */
@@ -1495,6 +1563,34 @@ tr:hover {{
     color: #484f58;
     margin-top: 4px;
     word-break: break-all;
+}}
+.live-result {{
+    border-width: 2px;
+}}
+.live-verdict {{
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 4px;
+}}
+.live-outcome {{
+    font-size: 0.85rem;
+    color: #8b949e;
+    margin-bottom: 4px;
+}}
+.result-chips {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}}
+.result-chip {{
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 14px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
 }}
 
 /* Status Bar */
