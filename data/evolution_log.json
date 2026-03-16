@@ -108,5 +108,15 @@
     "modification": "Diagnosis: The agent fails to sufficiently adjust toward the market price when there's a large divergence - in the 8:55AM case, the market was at 79% but the agent only moved from 48% to 48% (no adjustment at all), suggesting the '50% of the way' rule is either being ignored or the threshold logic is unclear. The agent treats high market prices as outliers rather than informed signals.\nOld text: Exception: if the market price is more than 20pp away from your estimate (e.g., market is 75%+ or 25%-), treat this as a strong signal that informed participants see something you don't - adjust your estimate 50% of the way toward the market price.\nNew text: Exception: if the market price is more than 20pp away from your estimate (e.g., market is 75%+ or 25%-), treat this as a strong signal that informed participants see something you don't - adjust your estimate 75% of the way toward the market price. This adjustment is mandatory and must be reflected in your final estimate.\nExpected effect: By increasing the adjustment to 75% and making it explicitly mandatory, the agent will more strongly incorporate market prices when they diverge significantly, reducing large Brier score penalties in cases where the market correctly anticipates moves the agent's price-action analysis misses.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 29,
+    "timestamp": "2026-03-16T20:46:03.429567+00:00",
+    "agent": "news_momentum",
+    "brier_before": 0.2520466666666667,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent is failing to follow its own mandatory rule about adjusting toward the market price when the gap exceeds 20pp. In the March 16 8:55AM case, the market was at 79% and the agent estimated 48% (a 31pp gap), yet the agent stayed at 48% instead of adjusting 75% of the way toward 79% (which would have been ~71%). The rule exists but the agent is not applying it correctly.\nOld text: Exception: if the market price is more than 20pp away from your estimate (e.g., market is 75%+ or 25%-), treat this as a strong signal that informed participants see something you don't - adjust your estimate 75% of the way toward the market price. This adjustment is mandatory and must be reflected in your final estimate.\nNew text: Exception: if the market price is more than 20pp away from your estimate (e.g., market is 75%+ or 25%-), treat this as a strong signal that informed participants see something you don't - adjust your estimate 75% of the way toward the market price. This adjustment is mandatory and must be reflected in your final estimate. Example: if your price-action estimate is 48% but market is 79%, the gap is 31pp > 20pp, so you MUST adjust: 48% + 0.75*(79%-48%) = 48% + 23% = 71%. Your final estimate must be 71%, not 48%.\nExpected effect: Adding a concrete worked example will prevent the agent from ignoring the mandatory market-price adjustment rule when the gap exceeds 20pp, directly fixing the worst prediction error.",
+    "applied": true,
+    "kept": null
   }
 ]
