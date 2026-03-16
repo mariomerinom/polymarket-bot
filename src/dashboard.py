@@ -1333,15 +1333,20 @@ tr:hover {{
     var el = document.getElementById('countdown');
     if (!el) return;
     var endStr = el.getAttribute('data-next-market');
-    if (!endStr) {{ el.textContent = 'None'; return; }}
+    if (!endStr) {{ el.textContent = 'No upcoming market'; return; }}
     var end = new Date(endStr.replace('Z','+00:00'));
     function update() {{
         var now = new Date();
         var diff = Math.floor((end - now) / 1000);
         if (diff <= 0) {{ el.textContent = 'Resolving...'; return; }}
-        var m = Math.floor(diff / 60);
+        var h = Math.floor(diff / 3600);
+        var m = Math.floor((diff % 3600) / 60);
         var s = diff % 60;
-        el.textContent = m + 'm ' + (s < 10 ? '0' : '') + s + 's';
+        if (h > 0) {{
+            el.textContent = h + 'h ' + m + 'm';
+        }} else {{
+            el.textContent = m + 'm ' + (s < 10 ? '0' : '') + s + 's';
+        }}
     }}
     update();
     setInterval(update, 1000);

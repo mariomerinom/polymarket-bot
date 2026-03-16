@@ -93,12 +93,14 @@ def run_predictions(cycle=1, market_limit=5):
     client = anthropic.Anthropic()  # Uses ANTHROPIC_API_KEY env var
     agents = load_agent_prompts()
 
-    # Get markets to predict
+    # Get markets to predict (only future markets we haven't predicted on)
+    now_iso = datetime.now(timezone.utc).isoformat()
     cursor = db.execute("""
         SELECT id, question, category, end_date, volume, price_yes
-        FROM markets WHERE resolved = 0
+        FROM markets WHERE resolved = 0 AND end_date > ?
+        AND id NOT IN (SELECT DISTINCT market_id FROM predictions)
         ORDER BY end_date ASC LIMIT ?
-    """, (market_limit,))
+    """, (now_iso, market_limit))
     markets = [dict(zip(["id", "question", "category", "end_date", "volume", "price_yes"], row))
                for row in cursor.fetchall()]
 
