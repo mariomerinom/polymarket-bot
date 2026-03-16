@@ -68,5 +68,15 @@
     "modification": "Diagnosis: When the market price deviates more than 5pp from 50%, the agent blends its estimate at 30% own / 70% market, but its own analysis is anchored too close to 50% (capped at \u00b110pp), causing the blend to systematically under-weight the market signal and produce estimates that are too far from the market price. The worst predictions (32% vs 26% market, 62% vs 78% market) show the agent fighting the market when it should defer more strongly.\nOld text: - Treat the market price as an informative prior: if market price deviates more than 5pp from 50%, incorporate it by weighting your estimate 30% own analysis and 70% market price, then report the blended result. If market price deviates more than 20pp from 50%, weight your estimate 10% own analysis and 90% market price, as the market is likely incorporating real information you cannot see. Deviations smaller than 5pp from 50% should be treated as noise and ignored.\nNew text: - Treat the market price as an informative prior: if market price deviates more than 5pp from 50%, incorporate it by weighting your estimate 20% own analysis and 80% market price, then report the blended result. If market price deviates more than 20pp from 50%, weight your estimate 5% own analysis and 95% market price, as the market is likely incorporating real information you cannot see. Deviations smaller than 5pp from 50% should be treated as noise and ignored.\nExpected effect: By deferring more strongly to the market price when it diverges from 50%, the agent's blended estimate will stay closer to the market signal, reducing large directional errors when the market has priced in information the agent cannot observe.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 22,
+    "timestamp": "2026-03-16T13:27:03.420743+00:00",
+    "agent": "news_momentum",
+    "brier_before": 0.25098947368421054,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent is not accounting for the base rate asymmetry in BTC 5-min candles - when the market price already reflects a probability (e.g., 38% or 48%), the agent is anchoring too heavily to that market price rather than forming an independent estimate. The worst predictions show the agent either exactly matching the market price (adding no value) or making small adjustments that still result in poor Brier scores when wrong.\nOld text: - Momentum edge on 5-min candles is small: max 8pp adjustment from 50% for price action alone\nNew text: - Momentum edge on 5-min candles is small: max 8pp adjustment from 50% for price action alone. Form your estimate independently from price action FIRST, then note the market price - do not anchor your estimate to the market price.\nExpected effect: By forming an independent estimate before considering the market price, the agent will produce more genuinely informative predictions rather than anchoring to and echoing the market price, which adds no predictive value.",
+    "applied": true,
+    "kept": null
   }
 ]
