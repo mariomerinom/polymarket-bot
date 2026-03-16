@@ -7,6 +7,7 @@ Serves on http://localhost:5050
 
 import sqlite3
 import json
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,6 +19,14 @@ except ImportError:
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 EVOLUTION_LOG = Path(__file__).parent.parent / "data" / "evolution_log.json"
+
+AGENT_COLORS = {
+    "base_rate": "#d2a8ff",
+    "news_momentum": "#58a6ff",
+    "contrarian": "#f0883e",
+}
+AGENT_COLOR_LIST = ["#d2a8ff", "#58a6ff", "#f0883e", "#3fb950", "#f778ba"]
+
 
 def get_db():
     db = sqlite3.connect(DB_PATH)
@@ -32,6 +41,193 @@ def load_evolution_log():
         except (json.JSONDecodeError, OSError):
             return []
     return []
+
+
+# ---------------------------------------------------------------------------
+# Queries
+# ---------------------------------------------------------------------------
+
+def get_status(db):
+    """Get bot status info for the header."""
+    now = datetime.now(timezone.utc)
+    row = db.execute("SELECT MAX(predicted_at) FROM predictions").fetchone()
+    last_prediction = row[0] if row and row[0] else None
+
+    total = db.execute("SELECT COUNT(*) FROM markets").fetchone()[0]
+    resolved = db.execute("SELECT COUNT(*) FROM markets WHERE resolved = 1").fetchone()[0]
+
+    now_iso = now.isoformat()
+    row = db.execute(
+        "SELECT end_date FROM markets WHERE resolved = 0 AND end_date > ? ORDER BY end_date ASC LIMIT 1",
+        (now_iso,)
+    ).fetchone()
+    next_market_end = row[0] if row else None
+
+    status = "Idle"
+    if last_prediction:
+        try:
+            last_dt = datetime.fromisoformat(last_prediction.replace("Z", "+00:00"))
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            diff_min = (now - last_dt).total_seconds() / 60
+            status = "Active" if diff_min <= 10 else "Stale"
+        except ValueError:
+            status = "Unknown"
+
+    evolutions = len(load_evolution_log())
+    return {
+        "last_prediction": last_prediction[:16].replace("T", " ") if last_prediction else "Never",
+        "total_markets": total,
+        "resolved_markets": resolved,
+        "next_market_end": next_market_end,
+        "status": status,
+        "evolutions": evolutions,
+    }
+
+
+def get_resolved_predictions(db):
+    """Get all resolved predictions ordered chronologically. Used by multiple sections."""
+    rows = db.execute("""
+        SELECT p.agent, p.estimate, p.confidence, p.predicted_at, p.market_id,
+               m.outcome, m.price_yes
+        FROM predictions p
+        JOIN markets m ON p.market_id = m.id
+        WHERE m.resolved = 1
+        ORDER BY p.predicted_at ASC
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+
+def is_correct(estimate, outcome):
+    """Did the agent call the direction right?"""
+    return (estimate >= 0.5 and outcome == 1) or (estimate < 0.5 and outcome == 0)
+
+
+def compute_agent_stats(resolved):
+    """Compute per-agent stats: W/L, accuracy, streaks, rolling, market comparison."""
+    agents = defaultdict(lambda: {
+        "wins": 0, "losses": 0, "total": 0,
+        "current_streak_type": None, "current_streak": 0,
+        "best_w_streak": 0, "worst_l_streak": 0,
+        "results": [],  # list of bools (correct or not), chronological
+        "market_correct": 0,
+    })
+
+    for row in resolved:
+        agent = row["agent"]
+        a = agents[agent]
+        correct = is_correct(row["estimate"], row["outcome"])
+        market_right = is_correct(row["price_yes"], row["outcome"])
+
+        a["total"] += 1
+        a["results"].append(correct)
+        if correct:
+            a["wins"] += 1
+        else:
+            a["losses"] += 1
+        if market_right:
+            a["market_correct"] += 1
+
+        # Streak tracking
+        if a["current_streak_type"] is None:
+            a["current_streak_type"] = "W" if correct else "L"
+            a["current_streak"] = 1
+        elif (correct and a["current_streak_type"] == "W") or (not correct and a["current_streak_type"] == "L"):
+            a["current_streak"] += 1
+        else:
+            a["current_streak_type"] = "W" if correct else "L"
+            a["current_streak"] = 1
+
+        if a["current_streak_type"] == "W":
+            a["best_w_streak"] = max(a["best_w_streak"], a["current_streak"])
+        else:
+            a["worst_l_streak"] = max(a["worst_l_streak"], a["current_streak"])
+
+    # Compute rolling last-10
+    for a in agents.values():
+        last10 = a["results"][-10:]
+        a["last10_acc"] = sum(last10) / len(last10) * 100 if last10 else 0
+        a["accuracy"] = a["wins"] / a["total"] * 100 if a["total"] > 0 else 0
+        a["market_accuracy"] = a["market_correct"] / a["total"] * 100 if a["total"] > 0 else 0
+
+    return dict(agents)
+
+
+def compute_ensemble(resolved):
+    """Majority vote ensemble across agents per market."""
+    # Group predictions by market
+    market_preds = defaultdict(list)
+    market_outcomes = {}
+    for row in resolved:
+        market_preds[row["market_id"]].append(row["estimate"])
+        market_outcomes[row["market_id"]] = row["outcome"]
+
+    wins = 0
+    total = 0
+    results = []
+    for mid, estimates in market_preds.items():
+        outcome = market_outcomes[mid]
+        # Majority vote: average the estimates
+        avg = sum(estimates) / len(estimates)
+        correct = is_correct(avg, outcome)
+        results.append(correct)
+        total += 1
+        if correct:
+            wins += 1
+
+    accuracy = wins / total * 100 if total > 0 else 0
+
+    # Streak
+    streak_type = None
+    streak = 0
+    for c in results:
+        if streak_type is None:
+            streak_type = "W" if c else "L"
+            streak = 1
+        elif (c and streak_type == "W") or (not c and streak_type == "L"):
+            streak += 1
+        else:
+            streak_type = "W" if c else "L"
+            streak = 1
+
+    return {
+        "wins": wins, "losses": total - wins, "total": total,
+        "accuracy": accuracy,
+        "current_streak_type": streak_type or "W",
+        "current_streak": streak,
+    }
+
+
+def compute_confidence_calibration(resolved):
+    """Accuracy broken down by confidence level per agent."""
+    cal = defaultdict(lambda: defaultdict(lambda: {"correct": 0, "total": 0}))
+    for row in resolved:
+        conf = (row["confidence"] or "unknown").lower()
+        correct = is_correct(row["estimate"], row["outcome"])
+        cal[row["agent"]][conf]["total"] += 1
+        if correct:
+            cal[row["agent"]][conf]["correct"] += 1
+    return dict(cal)
+
+
+def compute_rolling_accuracy(resolved, window=10):
+    """Compute rolling accuracy time series per agent."""
+    agent_results = defaultdict(list)
+    for row in resolved:
+        correct = is_correct(row["estimate"], row["outcome"])
+        agent_results[row["agent"]].append(correct)
+
+    series = {}
+    for agent, results in agent_results.items():
+        if len(results) < window:
+            continue
+        points = []
+        for i in range(window - 1, len(results)):
+            chunk = results[i - window + 1:i + 1]
+            acc = sum(chunk) / len(chunk) * 100
+            points.append(acc)
+        series[agent] = points
+    return series
 
 
 def get_agent_scorecard(db):
@@ -72,56 +268,89 @@ def get_markets(db):
     return rows
 
 
-def get_status(db):
-    """Get bot status info for the header."""
-    now = datetime.now(timezone.utc)
+# ---------------------------------------------------------------------------
+# SVG Chart Builder
+# ---------------------------------------------------------------------------
 
-    # Last prediction time
-    row = db.execute("SELECT MAX(predicted_at) FROM predictions").fetchone()
-    last_prediction = row[0] if row and row[0] else None
+def build_time_series_svg(rolling_series):
+    """Build an SVG line chart of rolling accuracy per agent."""
+    if not rolling_series:
+        return '<p class="empty">Not enough data for time series (need 10+ resolved predictions per agent).</p>'
 
-    # Total markets / resolved
-    total = db.execute("SELECT COUNT(*) FROM markets").fetchone()[0]
-    resolved = db.execute("SELECT COUNT(*) FROM markets WHERE resolved = 1").fetchone()[0]
+    W, H = 800, 300
+    ml, mr, mt, mb = 50, 20, 20, 40  # margins
+    cw = W - ml - mr
+    ch = H - mt - mb
 
-    # Next unresolved market
-    now_iso = now.isoformat()
-    row = db.execute(
-        "SELECT end_date FROM markets WHERE resolved = 0 AND end_date > ? ORDER BY end_date ASC LIMIT 1",
-        (now_iso,)
-    ).fetchone()
-    next_market_end = row[0] if row else None
+    max_len = max(len(pts) for pts in rolling_series.values())
+    if max_len < 2:
+        return '<p class="empty">Not enough data for time series.</p>'
 
-    # Bot status
-    status = "Idle"
-    if last_prediction:
-        try:
-            last_dt = datetime.fromisoformat(last_prediction.replace("Z", "+00:00"))
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
-            diff_min = (now - last_dt).total_seconds() / 60
-            if diff_min <= 10:
-                status = "Active"
-            else:
-                status = "Stale"
-        except ValueError:
-            status = "Unknown"
+    svg = f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:{W}px;height:auto;background:#161b22;border-radius:8px;">'
 
-    # Total evolutions
-    evolutions = len(load_evolution_log())
+    # Grid lines and Y labels
+    for pct in [0, 25, 50, 75, 100]:
+        y = mt + ch - (pct / 100 * ch)
+        color = "#484f58"
+        dash = ""
+        if pct == 50:
+            color = "#da3633"
+            dash = 'stroke-dasharray="6,4"'
+        svg += f'<line x1="{ml}" y1="{y}" x2="{W-mr}" y2="{y}" stroke="{color}" stroke-width="1" {dash} />'
+        svg += f'<text x="{ml-8}" y="{y+4}" fill="#8b949e" font-size="11" text-anchor="end">{pct}%</text>'
 
-    return {
-        "last_prediction": last_prediction[:16].replace("T", " ") if last_prediction else "Never",
-        "total_markets": total,
-        "resolved_markets": resolved,
-        "next_market_end": next_market_end,
-        "status": status,
-        "evolutions": evolutions,
-    }
+    # X axis labels
+    for i in range(0, max_len, max(1, max_len // 6)):
+        x = ml + (i / (max_len - 1)) * cw if max_len > 1 else ml
+        svg += f'<text x="{x}" y="{H-8}" fill="#8b949e" font-size="10" text-anchor="middle">#{i+1}</text>'
+
+    # Agent lines
+    agents_sorted = sorted(rolling_series.keys())
+    for idx, agent in enumerate(agents_sorted):
+        pts = rolling_series[agent]
+        color = AGENT_COLORS.get(agent, AGENT_COLOR_LIST[idx % len(AGENT_COLOR_LIST)])
+        points = []
+        for i, acc in enumerate(pts):
+            x = ml + (i / (max_len - 1)) * cw if max_len > 1 else ml
+            y = mt + ch - (acc / 100 * ch)
+            points.append(f"{x:.1f},{y:.1f}")
+        svg += f'<polyline points="{" ".join(points)}" fill="none" stroke="{color}" stroke-width="2" />'
+
+    svg += '</svg>'
+
+    # Legend
+    legend = '<div class="chart-legend">'
+    for idx, agent in enumerate(agents_sorted):
+        color = AGENT_COLORS.get(agent, AGENT_COLOR_LIST[idx % len(AGENT_COLOR_LIST)])
+        legend += f'<span class="legend-item"><span class="legend-dot" style="background:{color}"></span>{agent}</span>'
+    legend += '<span class="legend-item"><span class="legend-line" style="border-color:#da3633"></span>50% (coin flip)</span>'
+    legend += '</div>'
+
+    return svg + legend
+
+
+# ---------------------------------------------------------------------------
+# HTML Builder
+# ---------------------------------------------------------------------------
+
+def accuracy_color(pct):
+    if pct > 55:
+        return "#3fb950"
+    if pct > 52:
+        return "#4caf50"
+    if pct >= 48:
+        return "#ffc107"
+    return "#f44336"
+
+
+def streak_badge(stype, count):
+    if stype == "W":
+        return f'<span class="streak streak-w">W{count}</span>'
+    else:
+        return f'<span class="streak streak-l">L{count}</span>'
 
 
 def brier_color(score):
-    """Return CSS color based on Brier score quality."""
     if score is None:
         return "#888"
     if score < 0.1:
@@ -145,12 +374,19 @@ def build_html():
     db = get_db()
     try:
         status = get_status(db)
+        resolved = get_resolved_predictions(db)
+        agent_stats = compute_agent_stats(resolved)
+        ensemble = compute_ensemble(resolved)
+        calibration = compute_confidence_calibration(resolved)
+        rolling = compute_rolling_accuracy(resolved)
         scorecard = get_agent_scorecard(db)
         predictions = get_recent_predictions(db)
         markets = get_markets(db)
         evolution = load_evolution_log()
     finally:
         db.close()
+
+    has_data = len(resolved) > 0
 
     # -- Status Header --
     status_color = {
@@ -184,7 +420,163 @@ def build_html():
         </div>
     </div>"""
 
-    # -- Agent Scorecard --
+    # -- Aggregate Performance Banner --
+    if has_data:
+        perf_cards = ""
+        # Agent cards
+        for agent in sorted(agent_stats.keys()):
+            a = agent_stats[agent]
+            acc = a["accuracy"]
+            ac = accuracy_color(acc)
+            vs_flip = acc - 50
+            vs_sign = "+" if vs_flip >= 0 else ""
+            vs_color = "#3fb950" if vs_flip > 0 else ("#ffc107" if vs_flip == 0 else "#f44336")
+            color = AGENT_COLORS.get(agent, "#c9d1d9")
+            perf_cards += f"""<div class="perf-card">
+                <div class="perf-agent" style="color:{color}">{agent}</div>
+                <div class="perf-record">{a["wins"]}W - {a["losses"]}L</div>
+                <div class="perf-accuracy" style="color:{ac}">{acc:.1f}%</div>
+                <div class="perf-vs" style="color:{vs_color}">{vs_sign}{vs_flip:.1f}pp vs coin flip</div>
+                <div class="perf-streak">{streak_badge(a["current_streak_type"], a["current_streak"])}</div>
+            </div>"""
+
+        # Ensemble card
+        e_acc = ensemble["accuracy"]
+        e_ac = accuracy_color(e_acc)
+        e_vs = e_acc - 50
+        e_sign = "+" if e_vs >= 0 else ""
+        e_vs_color = "#3fb950" if e_vs > 0 else ("#ffc107" if e_vs == 0 else "#f44336")
+        perf_cards += f"""<div class="perf-card perf-ensemble">
+            <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
+            <div class="perf-record">{ensemble["wins"]}W - {ensemble["losses"]}L</div>
+            <div class="perf-accuracy" style="color:{e_ac}">{e_acc:.1f}%</div>
+            <div class="perf-vs" style="color:{e_vs_color}">{e_sign}{e_vs:.1f}pp vs coin flip</div>
+            <div class="perf-streak">{streak_badge(ensemble["current_streak_type"], ensemble["current_streak"])}</div>
+        </div>"""
+
+        performance_html = f"""<h2>Performance</h2>
+        <div class="perf-grid">{perf_cards}</div>"""
+    else:
+        performance_html = """<h2>Performance</h2>
+        <p class="empty">No resolved markets yet. Waiting for first results...</p>"""
+
+    # -- Time Series Chart --
+    chart_html = f"""<h2>Rolling Accuracy (last 10 predictions)</h2>
+    <div class="chart-container">{build_time_series_svg(rolling)}</div>"""
+
+    # -- Hit Rate Table --
+    if has_data:
+        hitrate_rows = ""
+        for agent in sorted(agent_stats.keys()):
+            a = agent_stats[agent]
+            color = AGENT_COLORS.get(agent, "#c9d1d9")
+            last10_color = accuracy_color(a["last10_acc"])
+            hitrate_rows += f"""<tr>
+                <td class="agent-name" style="color:{color}">{agent}</td>
+                <td>{a["wins"]}-{a["losses"]}</td>
+                <td style="color:{accuracy_color(a["accuracy"])}">{a["accuracy"]:.1f}%</td>
+                <td style="color:{last10_color}">{a["last10_acc"]:.1f}%</td>
+                <td>{streak_badge(a["current_streak_type"], a["current_streak"])}</td>
+                <td>{streak_badge("W", a["best_w_streak"])}</td>
+                <td>{streak_badge("L", a["worst_l_streak"])}</td>
+            </tr>"""
+        hitrate_html = f"""<h2>Win/Loss &amp; Hit Rate</h2>
+        <div class="table-wrap"><table>
+            <thead><tr>
+                <th>Agent</th><th>Record</th><th>Accuracy</th><th>Last 10</th>
+                <th>Streak</th><th>Best W</th><th>Worst L</th>
+            </tr></thead>
+            <tbody>{hitrate_rows}</tbody>
+        </table></div>"""
+    else:
+        hitrate_html = ""
+
+    # -- Agent vs Coin Flip Comparison (CSS bar chart) --
+    if has_data:
+        bars_html = ""
+        for agent in sorted(agent_stats.keys()):
+            a = agent_stats[agent]
+            color = AGENT_COLORS.get(agent, "#c9d1d9")
+            agent_acc = a["accuracy"]
+            market_acc = a["market_accuracy"]
+            agent_bar_color = "#3fb950" if agent_acc > market_acc else "#f44336"
+            bars_html += f"""<div class="bar-group">
+                <div class="bar-label" style="color:{color}">{agent}</div>
+                <div class="bar-row">
+                    <span class="bar-tag">Agent</span>
+                    <div class="bar-track"><div class="bar-fill" style="width:{agent_acc}%;background:{agent_bar_color}">{agent_acc:.1f}%</div></div>
+                </div>
+                <div class="bar-row">
+                    <span class="bar-tag">Market</span>
+                    <div class="bar-track"><div class="bar-fill" style="width:{market_acc}%;background:#58a6ff">{market_acc:.1f}%</div></div>
+                </div>
+                <div class="bar-row">
+                    <span class="bar-tag">Coin Flip</span>
+                    <div class="bar-track"><div class="bar-fill" style="width:50%;background:#484f58">50.0%</div></div>
+                </div>
+            </div>"""
+        comparison_html = f"""<h2>Agent vs Market vs Coin Flip</h2>
+        <div class="bar-chart">{bars_html}</div>"""
+    else:
+        comparison_html = ""
+
+    # -- Confidence Calibration --
+    if has_data and calibration:
+        conf_levels = ["low", "medium", "high"]
+        cal_rows = ""
+        for agent in sorted(calibration.keys()):
+            color = AGENT_COLORS.get(agent, "#c9d1d9")
+            cal_rows += f'<tr><td class="agent-name" style="color:{color}">{agent}</td>'
+            agent_cal = calibration[agent]
+            for level in conf_levels:
+                data = agent_cal.get(level, {"correct": 0, "total": 0})
+                if data["total"] > 0:
+                    acc = data["correct"] / data["total"] * 100
+                    cell_color = accuracy_color(acc)
+                    cal_rows += f'<td style="color:{cell_color}">{acc:.0f}% <span style="color:#484f58">({data["total"]})</span></td>'
+                else:
+                    cal_rows += '<td style="color:#484f58">-- (0)</td>'
+            cal_rows += "</tr>"
+
+        calibration_html = f"""<h2>Confidence Calibration</h2>
+        <p class="section-desc">When an agent says "high confidence", are they right more often?</p>
+        <div class="table-wrap"><table>
+            <thead><tr>
+                <th>Agent</th><th>Low</th><th>Medium</th><th>High</th>
+            </tr></thead>
+            <tbody>{cal_rows}</tbody>
+        </table></div>"""
+    else:
+        calibration_html = ""
+
+    # -- Recent Predictions --
+    prediction_rows = ""
+    if predictions:
+        for row in predictions:
+            if row["resolved"]:
+                correct = is_correct(row["estimate"], row["outcome"])
+                outcome_str = '<span class="badge badge-yes">UP</span>' if row["outcome"] == 1 else '<span class="badge badge-no">DOWN</span>'
+                result_icon = '<span style="color:#3fb950">&#10003;</span>' if correct else '<span style="color:#f44336">&#10007;</span>'
+                outcome_str = f"{result_icon} {outcome_str}"
+            else:
+                outcome_str = '<span class="badge badge-pending">Pending</span>'
+            question = row["question"]
+            if len(question) > 80:
+                question = question[:77] + "..."
+            prediction_rows += f"""<tr>
+                <td class="agent-name">{row["agent"]}</td>
+                <td title="{row["question"]}">{question}</td>
+                <td>{row["estimate"]:.1%}</td>
+                <td>{row["price_yes"]:.1%}</td>
+                <td>{row["edge"]:+.1%}</td>
+                <td>{row["confidence"]}</td>
+                <td>{outcome_str}</td>
+                <td>C{row["cycle"]}</td>
+            </tr>"""
+    else:
+        prediction_rows = '<tr><td colspan="8" class="empty">No predictions yet.</td></tr>'
+
+    # -- Technical Metrics (Brier) --
     scorecard_rows = ""
     if scorecard:
         for row in scorecard:
@@ -204,39 +596,14 @@ def build_html():
     else:
         scorecard_rows = '<tr><td colspan="4" class="empty">No resolved markets yet.</td></tr>'
 
-    # -- Recent Predictions --
-    prediction_rows = ""
-    if predictions:
-        for row in predictions:
-            outcome_str = ""
-            if row["resolved"]:
-                outcome_str = '<span class="badge badge-yes">UP</span>' if row["outcome"] == 1 else '<span class="badge badge-no">DOWN</span>'
-            else:
-                outcome_str = '<span class="badge badge-pending">Pending</span>'
-            question = row["question"]
-            if len(question) > 80:
-                question = question[:77] + "..."
-            prediction_rows += f"""<tr>
-                <td class="agent-name">{row["agent"]}</td>
-                <td title="{row["question"]}">{question}</td>
-                <td>{row["estimate"]:.1%}</td>
-                <td>{row["price_yes"]:.1%}</td>
-                <td>{row["edge"]:+.1%}</td>
-                <td>{row["confidence"]}</td>
-                <td>{outcome_str}</td>
-                <td>C{row["cycle"]}</td>
-            </tr>"""
-    else:
-        prediction_rows = '<tr><td colspan="8" class="empty">No predictions yet.</td></tr>'
-
     # -- Markets --
     market_rows = ""
     if markets:
         for row in markets:
             if row["resolved"]:
-                status = '<span class="badge badge-yes">UP</span>' if row["outcome"] == 1 else '<span class="badge badge-no">DOWN</span>'
+                mstatus = '<span class="badge badge-yes">UP</span>' if row["outcome"] == 1 else '<span class="badge badge-no">DOWN</span>'
             else:
-                status = '<span class="badge badge-pending">Pending</span>'
+                mstatus = '<span class="badge badge-pending">Pending</span>'
             question = row["question"]
             if len(question) > 90:
                 question = question[:87] + "..."
@@ -248,7 +615,7 @@ def build_html():
                 <td>{row["price_yes"]:.1%}</td>
                 <td>{vol_str}</td>
                 <td>{row["end_date"][:10] if row["end_date"] else "N/A"}</td>
-                <td>{status}</td>
+                <td>{mstatus}</td>
             </tr>"""
     else:
         market_rows = '<tr><td colspan="6" class="empty">No markets tracked yet.</td></tr>'
@@ -338,6 +705,11 @@ h2 {{
     padding-bottom: 6px;
     border-bottom: 1px solid #21262d;
 }}
+.section-desc {{
+    color: #8b949e;
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+}}
 .container {{
     max-width: 1200px;
     margin: 0 auto;
@@ -398,6 +770,156 @@ tr:hover {{
     padding: 24px;
     font-style: italic;
 }}
+
+/* Performance Cards */
+.perf-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 8px;
+}}
+.perf-card {{
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+}}
+.perf-ensemble {{
+    border-color: #f0883e;
+    border-width: 2px;
+}}
+.perf-agent {{
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+}}
+.perf-record {{
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #c9d1d9;
+    margin-bottom: 4px;
+}}
+.perf-accuracy {{
+    font-size: 2rem;
+    font-weight: 800;
+    margin-bottom: 4px;
+}}
+.perf-vs {{
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+}}
+.perf-streak {{
+    margin-top: 4px;
+}}
+
+/* Streaks */
+.streak {{
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}}
+.streak-w {{
+    background: #238636;
+    color: #fff;
+}}
+.streak-l {{
+    background: #da3633;
+    color: #fff;
+}}
+
+/* Bar Chart */
+.bar-chart {{
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 20px;
+}}
+.bar-group {{
+    margin-bottom: 20px;
+}}
+.bar-group:last-child {{
+    margin-bottom: 0;
+}}
+.bar-label {{
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 6px;
+}}
+.bar-row {{
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+    gap: 8px;
+}}
+.bar-tag {{
+    width: 55px;
+    font-size: 0.75rem;
+    color: #8b949e;
+    text-align: right;
+    flex-shrink: 0;
+}}
+.bar-track {{
+    flex: 1;
+    height: 22px;
+    background: #0d1117;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+}}
+.bar-fill {{
+    height: 100%;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    min-width: 45px;
+    transition: width 0.3s ease;
+}}
+
+/* Chart */
+.chart-container {{
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 8px;
+}}
+.chart-legend {{
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding-top: 12px;
+}}
+.legend-item {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: #8b949e;
+}}
+.legend-dot {{
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}}
+.legend-line {{
+    width: 16px;
+    height: 0;
+    border-top: 2px dashed;
+    display: inline-block;
+}}
+
+/* Evolution */
 .evo-card {{
     background: #161b22;
     border: 1px solid #21262d;
@@ -430,6 +952,8 @@ tr:hover {{
     color: #8b949e;
     font-size: 0.85rem;
 }}
+
+/* Status Bar */
 .status-bar {{
     display: flex;
     gap: 24px;
@@ -463,6 +987,7 @@ tr:hover {{
     body {{ padding: 10px; }}
     h1 {{ font-size: 1.4rem; }}
     td, th {{ padding: 6px 8px; font-size: 0.82rem; }}
+    .perf-grid {{ grid-template-columns: repeat(2, 1fr); }}
     .evo-header {{ flex-direction: column; align-items: flex-start; gap: 4px; }}
     .evo-time {{ margin-left: 0; }}
 }}
@@ -475,18 +1000,15 @@ tr:hover {{
 
     {status_html}
 
-    <h2>Agent Scorecard</h2>
-    <div class="table-wrap">
-    <table>
-        <thead><tr>
-            <th>Agent</th>
-            <th>Avg Brier Score</th>
-            <th>Resolved Markets</th>
-            <th>vs Market</th>
-        </tr></thead>
-        <tbody>{scorecard_rows}</tbody>
-    </table>
-    </div>
+    {performance_html}
+
+    {chart_html}
+
+    {hitrate_html}
+
+    {comparison_html}
+
+    {calibration_html}
 
     <h2>Recent Predictions</h2>
     <div class="table-wrap">
@@ -505,13 +1027,26 @@ tr:hover {{
     </table>
     </div>
 
+    <h2>Technical Metrics (Brier Scores)</h2>
+    <div class="table-wrap">
+    <table>
+        <thead><tr>
+            <th>Agent</th>
+            <th>Avg Brier Score</th>
+            <th>Resolved Markets</th>
+            <th>vs Market</th>
+        </tr></thead>
+        <tbody>{scorecard_rows}</tbody>
+    </table>
+    </div>
+
     <h2>Markets</h2>
     <div class="table-wrap">
     <table>
         <thead><tr>
             <th>Question</th>
             <th>Category</th>
-            <th>Price (YES)</th>
+            <th>Price (UP)</th>
             <th>Volume</th>
             <th>End Date</th>
             <th>Status</th>
