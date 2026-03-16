@@ -30,7 +30,7 @@ def load_agent_prompts():
     return agents
 
 
-def build_market_context(market):
+def build_market_context(market, btc_context=""):
     """Format market data into context for the agent."""
     return f"""## Bitcoin 5-Minute Candle Prediction
 
@@ -39,15 +39,17 @@ def build_market_context(market):
 - **Resolution time:** {market['end_date']}
 - **Current time (UTC):** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}
 
+{btc_context}
+
 Will Bitcoin close UP (>= open) or DOWN (< open) for this 5-minute candle?
 
 Provide your analysis in the JSON format specified in your instructions.
 Return ONLY valid JSON, no other text."""
 
 
-def get_prediction(client, agent_name, agent_prompt, market):
+def get_prediction(client, agent_name, agent_prompt, market, btc_context=""):
     """Call Claude API with agent prompt + market context, return structured prediction."""
-    market_context = build_market_context(market)
+    market_context = build_market_context(market, btc_context)
 
     response = client.messages.create(
         model=MODEL,
@@ -87,11 +89,18 @@ def store_prediction(db, prediction, cycle):
     db.commit()
 
 
-def run_predictions(cycle=1, market_limit=5):
+def run_predictions(cycle=1, market_limit=5, btc_data=None):
     """Main loop: fetch unresolved markets, run all agents, store predictions."""
+    from btc_data import fetch_btc_candles, format_for_prompt
+
     db = sqlite3.connect(DB_PATH)
     client = anthropic.Anthropic()  # Uses ANTHROPIC_API_KEY env var
     agents = load_agent_prompts()
+
+    # Fetch BTC price data once for all predictions this cycle
+    if btc_data is None:
+        btc_data = fetch_btc_candles()
+    btc_context = format_for_prompt(btc_data)
 
     # Get markets to predict (only future markets we haven't predicted on)
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -109,6 +118,8 @@ def run_predictions(cycle=1, market_limit=5):
         return
 
     print(f"Running {len(agents)} agents against {len(markets)} markets (cycle {cycle})")
+    if btc_data:
+        print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}% | Trend: {btc_data['trend']}")
 
     for market in markets:
         print(f"\n  Market: {market['question'][:60]}...")
@@ -116,11 +127,12 @@ def run_predictions(cycle=1, market_limit=5):
 
         for agent_name, agent_prompt in agents.items():
             try:
-                prediction = get_prediction(client, agent_name, agent_prompt, market)
+                prediction = get_prediction(client, agent_name, agent_prompt, market, btc_context)
                 store_prediction(db, prediction, cycle)
                 est = prediction.get("estimate", "?")
                 edge = prediction.get("edge", "?")
-                print(f"    {agent_name:20s} → {est:.0%} (edge: {edge:+.0%})")
+                conf = prediction.get("confidence", "?")
+                print(f"    {agent_name:20s} → {est:.0%} (edge: {edge:+.0%}, {conf})")
             except Exception as e:
                 print(f"    {agent_name:20s} → ERROR: {e}")
 

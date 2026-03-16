@@ -17,6 +17,7 @@ from pathlib import Path
 from fetch_markets import init_db, fetch_active_markets, store_markets, DB_PATH
 from predict import run_predictions
 from score import auto_resolve, calculate_brier_scores, print_scorecard
+from btc_data import fetch_btc_candles
 
 
 def get_next_cycle(db):
@@ -64,13 +65,18 @@ def main():
         _generate_dashboard()
         return
 
-    # 3. Predict on next unpredicted market
+    # 3. Fetch BTC price data + Predict on next unpredicted market
     cycle = get_next_cycle(db)
     print(f"[3/5] Predictions (cycle {cycle})...")
+    btc_data = fetch_btc_candles()
+    if btc_data:
+        print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}% | Trend: {btc_data['trend']}")
+    else:
+        print("  Warning: BTC price data unavailable")
     if has_unpredicted_market(db):
         db.close()
         try:
-            run_predictions(cycle=cycle, market_limit=1)
+            run_predictions(cycle=cycle, market_limit=1, btc_data=btc_data)
         except Exception as e:
             print(f"  Prediction error: {e}")
         db = sqlite3.connect(DB_PATH)
