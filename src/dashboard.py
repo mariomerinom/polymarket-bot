@@ -136,17 +136,41 @@ def get_pipeline_health(db):
 
 def get_live_context(db):
     """Get last resolved market result, current open prediction, and BTC price."""
-    # Last resolved market with predictions
-    last_resolved = db.execute("""
+    # Last resolved market with per-agent predictions
+    last_resolved_rows = db.execute("""
         SELECT m.question, m.outcome, m.price_yes, m.end_date,
-               GROUP_CONCAT(p.agent || ':' || printf('%.0f', p.estimate * 100) || '%', ' | ') as predictions
+               p.agent, p.estimate
         FROM markets m
         JOIN predictions p ON p.market_id = m.id
         WHERE m.resolved = 1
-        GROUP BY m.id
-        ORDER BY m.end_date DESC
-        LIMIT 1
-    """).fetchone()
+        ORDER BY m.end_date DESC, p.agent ASC
+        LIMIT 10
+    """).fetchall()
+    last_resolved = None
+    if last_resolved_rows:
+        first = last_resolved_rows[0]
+        outcome = first["outcome"]
+        agent_results = []
+        for r in last_resolved_rows:
+            if r["question"] != first["question"]:
+                break
+            est = r["estimate"]
+            correct = (est >= 0.5 and outcome == 1) or (est < 0.5 and outcome == 0)
+            agent_results.append({
+                "agent": r["agent"],
+                "estimate": est,
+                "correct": correct,
+            })
+        hits = sum(1 for a in agent_results if a["correct"])
+        total_agents = len(agent_results)
+        last_resolved = {
+            "question": first["question"],
+            "outcome": outcome,
+            "price_yes": first["price_yes"],
+            "agent_results": agent_results,
+            "hits": hits,
+            "total_agents": total_agents,
+        }
 
     # Current open prediction (unresolved, most recent)
     current_pred = db.execute("""
@@ -737,12 +761,31 @@ def build_html():
     if lr:
         outcome_str = "UP &#9650;" if lr["outcome"] == 1 else "DOWN &#9660;"
         outcome_color = "#3fb950" if lr["outcome"] == 1 else "#f44336"
+        hits = lr["hits"]
+        total_a = lr["total_agents"]
+        if hits == total_a:
+            verdict = "ALL HIT"
+            verdict_color = "#3fb950"
+        elif hits == 0:
+            verdict = "ALL MISS"
+            verdict_color = "#f44336"
+        else:
+            verdict = f"{hits}/{total_a} HIT"
+            verdict_color = "#ffc107"
+
+        # Per-agent breakdown with check/cross
+        agent_line = " &nbsp; ".join(
+            f'<span style="color:{"#3fb950" if a["correct"] else "#f44336"}">'
+            f'{"&#10003;" if a["correct"] else "&#10007;"} {a["agent"]}:{a["estimate"]*100:.0f}%</span>'
+            for a in lr["agent_results"]
+        )
+
         q_short = lr["question"][:45] + "..." if len(lr["question"]) > 45 else lr["question"]
         live_parts.append(f"""<div class="live-card">
             <div class="live-label">Last Result</div>
-            <div class="live-value" style="color:{outcome_color}">{outcome_str}</div>
+            <div class="live-value"><span style="color:{outcome_color}">{outcome_str}</span> <span style="color:{verdict_color};font-size:0.9rem;font-weight:700">{verdict}</span></div>
             <div class="live-detail">{q_short}</div>
-            <div class="live-sub">{lr["predictions"]}</div>
+            <div class="live-sub">{agent_line}</div>
         </div>""")
 
     # Current Prediction
