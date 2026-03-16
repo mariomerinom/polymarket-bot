@@ -38,5 +38,15 @@
     "modification": "Diagnosis: The agent ignores the market price when it deviates less than 5pp from 50%, even when the market price contains meaningful signal (e.g., 0.615 is a strong directional signal that was completely disregarded). The 5pp threshold is too high, causing the agent to systematically discard actionable market information.\nOld text: - Treat the market price as an informative prior: if market price deviates more than 5pp from 50%, incorporate it by weighting your estimate 40% own analysis and 60% market price, then report the blended result\nNew text: - Treat the market price as an informative prior: if market price deviates more than 2pp from 50%, incorporate it by weighting your estimate 40% own analysis and 60% market price, then report the blended result\nExpected effect: By lowering the threshold from 5pp to 2pp, the agent will incorporate market pricing signal more often, reducing cases where a clearly directional market price (e.g., 0.615) is ignored in favor of a flat 50% estimate.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 23,
+    "timestamp": "2026-03-16T07:27:25.373292+00:00",
+    "agent": "base_rate",
+    "brier_before": 0.26123975,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent over-weights the market price signal when it deviates even slightly from 50%, blending 60% market price into its estimate even when the market price is only 2pp away from 50% (e.g., 0.495 or 0.505). This causes the agent to anchor too heavily on potentially noisy market prices rather than maintaining calibrated independence, and in the worst case (32% prediction, actual YES) the market price dragged the estimate far from the base rate without sufficient justification.\nOld text: - Treat the market price as an informative prior: if market price deviates more than 2pp from 50%, incorporate it by weighting your estimate 40% own analysis and 60% market price, then report the blended result\nNew text: - Treat the market price as an informative prior: if market price deviates more than 5pp from 50%, incorporate it by weighting your estimate 60% own analysis and 40% market price, then report the blended result. Deviations smaller than 5pp from 50% should be treated as noise and ignored.\nExpected effect: By raising the threshold for market price incorporation and reducing its weight, the agent will stay closer to the base rate when market signals are weak, avoiding large errors caused by over-trusting small or noisy market price deviations.",
+    "applied": true,
+    "kept": null
   }
 ]
