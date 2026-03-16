@@ -309,6 +309,75 @@ tr:hover {
     font-size: 0.85rem;
 }
 
+/* Pipeline Health Banner */
+.pipeline-banner {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 12px 20px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.pipeline-health {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+.pipeline-icon {
+    font-size: 1.2rem;
+}
+.pipeline-pct {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+.pipeline-detail {
+    color: #8b949e;
+    font-size: 0.8rem;
+}
+
+/* Live Context Banner */
+.live-banner {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+}
+.live-card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 14px 18px;
+}
+.live-label {
+    color: #484f58;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+}
+.live-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #c9d1d9;
+    margin-bottom: 2px;
+}
+.live-detail {
+    font-size: 0.8rem;
+    color: #8b949e;
+}
+.live-sub {
+    font-size: 0.72rem;
+    color: #484f58;
+    margin-top: 4px;
+    word-break: break-all;
+}
+
 /* Status Bar */
 .status-bar {
     display: flex;
@@ -369,13 +438,38 @@ tr:hover {
         </div>
         <div class="status-item">
             <span class="status-label">Next Market</span>
-            <span class="status-value" id="countdown" data-next-market="2026-03-16T12:40:00Z">--</span>
+            <span class="status-value" id="countdown" data-next-market="2026-03-16T12:45:00Z">--</span>
         </div>
         <div class="status-item">
             <span class="status-label">Evolutions</span>
             <span class="status-value">7</span>
         </div>
     </div>
+
+    <div class="pipeline-banner">
+        <div class="pipeline-health">
+            <span class="pipeline-icon" style="color:#f44336">&#9679;</span>
+            <span class="pipeline-rate" style="color:#f44336">1/20 cycles on time</span>
+            <span class="pipeline-pct" style="color:#f44336">(5%)</span>
+        </div>
+        <div class="pipeline-detail">Avg gap: 61min &middot; 21 total cycles &middot; 19 missed</div>
+    </div>
+
+    <div class="live-banner"><div class="live-card">
+            <div class="live-label">BTC Price</div>
+            <div class="live-value">$73,823</div>
+            <div class="live-detail" style="color:#3fb950">+0.307% &middot; UP</div>
+        </div><div class="live-card">
+            <div class="live-label">Last Result</div>
+            <div class="live-value" style="color:#3fb950">UP &#9650;</div>
+            <div class="live-detail">Bitcoin Up or Down - March 15, 7:55PM-8:00PM ...</div>
+            <div class="live-sub">contrarian:51% | base_rate:51% | news_momentum:50%</div>
+        </div><div class="live-card">
+            <div class="live-label">Current Prediction</div>
+            <div class="live-value" style="color:#58a6ff">Mkt 48%</div>
+            <div class="live-detail">Bitcoin Up or Down - March 16, 8:35AM-8:40AM ...</div>
+            <div class="live-sub">contrarian:43%(medium) | base_rate:44%(medium) | news_momentum:56%(medium)</div>
+        </div></div>
 
     <h2>Performance</h2>
         <div class="perf-grid"><div class="perf-card">

@@ -85,6 +85,104 @@ def get_status(db):
     }
 
 
+def get_pipeline_health(db):
+    """Compute pipeline health: how many of the last N cycles ran on time."""
+    now = datetime.now(timezone.utc)
+
+    # Get distinct cycle timestamps (one per cycle = one prediction batch)
+    rows = db.execute("""
+        SELECT cycle, MIN(predicted_at) as cycle_time
+        FROM predictions
+        GROUP BY cycle
+        ORDER BY cycle DESC
+        LIMIT 50
+    """).fetchall()
+
+    if len(rows) < 2:
+        return {"total_cycles": len(rows), "on_time": len(rows), "gaps": 0, "health_pct": 100, "avg_gap_min": 0}
+
+    # Compute gaps between consecutive cycles
+    timestamps = []
+    for r in rows:
+        ts_str = r[1]
+        try:
+            dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            timestamps.append(dt)
+        except (ValueError, TypeError):
+            continue
+
+    timestamps.sort()
+    gaps_min = []
+    for i in range(1, len(timestamps)):
+        gap = (timestamps[i] - timestamps[i - 1]).total_seconds() / 60
+        gaps_min.append(gap)
+
+    # "On time" = gap <= 15 min (generous for GitHub Actions cron)
+    on_time = sum(1 for g in gaps_min if g <= 15)
+    total = len(gaps_min)
+    health_pct = (on_time / total * 100) if total > 0 else 100
+    avg_gap = sum(gaps_min) / len(gaps_min) if gaps_min else 0
+
+    return {
+        "total_cycles": len(timestamps),
+        "on_time": on_time,
+        "gaps": total - on_time,
+        "health_pct": health_pct,
+        "avg_gap_min": avg_gap,
+    }
+
+
+def get_live_context(db):
+    """Get last resolved market result, current open prediction, and BTC price."""
+    # Last resolved market with predictions
+    last_resolved = db.execute("""
+        SELECT m.question, m.outcome, m.price_yes, m.end_date,
+               GROUP_CONCAT(p.agent || ':' || printf('%.0f', p.estimate * 100) || '%', ' | ') as predictions
+        FROM markets m
+        JOIN predictions p ON p.market_id = m.id
+        WHERE m.resolved = 1
+        GROUP BY m.id
+        ORDER BY m.end_date DESC
+        LIMIT 1
+    """).fetchone()
+
+    # Current open prediction (unresolved, most recent)
+    current_pred = db.execute("""
+        SELECT m.question, m.price_yes, m.end_date,
+               GROUP_CONCAT(p.agent || ':' || printf('%.0f', p.estimate * 100) || '%(' || COALESCE(p.confidence, 'low') || ')', ' | ') as predictions
+        FROM markets m
+        JOIN predictions p ON p.market_id = m.id
+        WHERE m.resolved = 0
+        GROUP BY m.id
+        ORDER BY m.end_date ASC
+        LIMIT 1
+    """).fetchone()
+
+    # BTC price from btc_data module (try import, gracefully fail)
+    btc_price = None
+    btc_change = None
+    btc_trend = None
+    try:
+        from btc_data import fetch_btc_candles
+        data = fetch_btc_candles(limit=6)
+        if data:
+            btc_price = data["current_price"]
+            btc_change = data["1h_change_pct"]
+            btc_trend = data["trend"]
+    except Exception:
+        pass
+
+    return {
+        "last_resolved": dict(last_resolved) if last_resolved else None,
+        "current_pred": dict(current_pred) if current_pred else None,
+        "btc_price": btc_price,
+        "btc_change": btc_change,
+        "btc_trend": btc_trend,
+    }
+
+
 def get_resolved_predictions(db):
     """Get all resolved predictions ordered chronologically. Used by multiple sections."""
     rows = db.execute("""
@@ -548,6 +646,8 @@ def build_html():
     db = get_db()
     try:
         status = get_status(db)
+        pipeline = get_pipeline_health(db)
+        live_ctx = get_live_context(db)
         resolved = get_resolved_predictions(db)
         agent_stats = compute_agent_stats(resolved)
         ensemble = compute_ensemble(resolved)
@@ -595,6 +695,70 @@ def build_html():
             <span class="status-value">{status["evolutions"]}</span>
         </div>
     </div>"""
+
+    # -- Pipeline Health Banner --
+    health_pct = pipeline["health_pct"]
+    if health_pct >= 80:
+        health_color = "#3fb950"
+        health_icon = "&#9679;"  # green dot
+    elif health_pct >= 50:
+        health_color = "#ffc107"
+        health_icon = "&#9679;"
+    else:
+        health_color = "#f44336"
+        health_icon = "&#9679;"
+
+    pipeline_html = f"""<div class="pipeline-banner">
+        <div class="pipeline-health">
+            <span class="pipeline-icon" style="color:{health_color}">{health_icon}</span>
+            <span class="pipeline-rate" style="color:{health_color}">{pipeline["on_time"]}/{pipeline["on_time"] + pipeline["gaps"]} cycles on time</span>
+            <span class="pipeline-pct" style="color:{health_color}">({health_pct:.0f}%)</span>
+        </div>
+        <div class="pipeline-detail">Avg gap: {pipeline["avg_gap_min"]:.0f}min &middot; {pipeline["total_cycles"]} total cycles &middot; {pipeline["gaps"]} missed</div>
+    </div>"""
+
+    # -- Live Context Banner --
+    live_parts = []
+
+    # BTC Price
+    if live_ctx["btc_price"]:
+        btc_chg = live_ctx["btc_change"] or 0
+        btc_color = "#3fb950" if btc_chg >= 0 else "#f44336"
+        btc_sign = "+" if btc_chg >= 0 else ""
+        btc_trend_label = (live_ctx["btc_trend"] or "").upper()
+        live_parts.append(f"""<div class="live-card">
+            <div class="live-label">BTC Price</div>
+            <div class="live-value">${live_ctx["btc_price"]:,.0f}</div>
+            <div class="live-detail" style="color:{btc_color}">{btc_sign}{btc_chg:.3f}% &middot; {btc_trend_label}</div>
+        </div>""")
+
+    # Last Resolved
+    lr = live_ctx.get("last_resolved")
+    if lr:
+        outcome_str = "UP &#9650;" if lr["outcome"] == 1 else "DOWN &#9660;"
+        outcome_color = "#3fb950" if lr["outcome"] == 1 else "#f44336"
+        q_short = lr["question"][:45] + "..." if len(lr["question"]) > 45 else lr["question"]
+        live_parts.append(f"""<div class="live-card">
+            <div class="live-label">Last Result</div>
+            <div class="live-value" style="color:{outcome_color}">{outcome_str}</div>
+            <div class="live-detail">{q_short}</div>
+            <div class="live-sub">{lr["predictions"]}</div>
+        </div>""")
+
+    # Current Prediction
+    cp = live_ctx.get("current_pred")
+    if cp:
+        q_short = cp["question"][:45] + "..." if len(cp["question"]) > 45 else cp["question"]
+        live_parts.append(f"""<div class="live-card">
+            <div class="live-label">Current Prediction</div>
+            <div class="live-value" style="color:#58a6ff">Mkt {cp["price_yes"]:.0%}</div>
+            <div class="live-detail">{q_short}</div>
+            <div class="live-sub">{cp["predictions"]}</div>
+        </div>""")
+
+    live_banner_html = ""
+    if live_parts:
+        live_banner_html = f"""<div class="live-banner">{"".join(live_parts)}</div>"""
 
     # -- Aggregate Performance Banner --
     if has_data:
@@ -1221,6 +1385,75 @@ tr:hover {{
     font-size: 0.85rem;
 }}
 
+/* Pipeline Health Banner */
+.pipeline-banner {{
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 12px 20px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}}
+.pipeline-health {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 1.1rem;
+}}
+.pipeline-icon {{
+    font-size: 1.2rem;
+}}
+.pipeline-pct {{
+    font-size: 0.9rem;
+    opacity: 0.8;
+}}
+.pipeline-detail {{
+    color: #8b949e;
+    font-size: 0.8rem;
+}}
+
+/* Live Context Banner */
+.live-banner {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+}}
+.live-card {{
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 14px 18px;
+}}
+.live-label {{
+    color: #484f58;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+}}
+.live-value {{
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #c9d1d9;
+    margin-bottom: 2px;
+}}
+.live-detail {{
+    font-size: 0.8rem;
+    color: #8b949e;
+}}
+.live-sub {{
+    font-size: 0.72rem;
+    color: #484f58;
+    margin-top: 4px;
+    word-break: break-all;
+}}
+
 /* Status Bar */
 .status-bar {{
     display: flex;
@@ -1267,6 +1500,10 @@ tr:hover {{
     <p class="subtitle">BTC 5-minute candle prediction &mdash; autoresearch loop</p>
 
     {status_html}
+
+    {pipeline_html}
+
+    {live_banner_html}
 
     {performance_html}
 
