@@ -51,6 +51,12 @@ def main():
         print(f"  Fetch error: {e}")
         markets = []
 
+    # 2. Auto-resolve closed markets (do this BEFORE predicting so we don't waste on stale markets)
+    print("[2/5] Auto-resolving...")
+    resolved = auto_resolve(db)
+    if resolved:
+        print(f"  Resolved {resolved} market(s)")
+
     if not markets and not has_unpredicted_market(db):
         print("No active markets. Exiting early.")
         # Still generate dashboard even with no new data
@@ -58,9 +64,9 @@ def main():
         _generate_dashboard()
         return
 
-    # 2. Predict on next unpredicted market
+    # 3. Predict on next unpredicted market
     cycle = get_next_cycle(db)
-    print(f"[2/5] Predictions (cycle {cycle})...")
+    print(f"[3/5] Predictions (cycle {cycle})...")
     if has_unpredicted_market(db):
         db.close()
         try:
@@ -70,12 +76,6 @@ def main():
         db = sqlite3.connect(DB_PATH)
     else:
         print("  No unpredicted markets")
-
-    # 3. Auto-resolve closed markets
-    print("[3/5] Auto-resolving...")
-    resolved = auto_resolve(db)
-    if resolved:
-        print(f"  Resolved {resolved} market(s)")
 
     # 4. Score
     print("[4/5] Scoring...")
