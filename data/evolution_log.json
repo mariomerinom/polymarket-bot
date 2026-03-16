@@ -48,5 +48,15 @@
     "modification": "Diagnosis: The agent over-weights the market price signal when it deviates even slightly from 50%, blending 60% market price into its estimate even when the market price is only 2pp away from 50% (e.g., 0.495 or 0.505). This causes the agent to anchor too heavily on potentially noisy market prices rather than maintaining calibrated independence, and in the worst case (32% prediction, actual YES) the market price dragged the estimate far from the base rate without sufficient justification.\nOld text: - Treat the market price as an informative prior: if market price deviates more than 2pp from 50%, incorporate it by weighting your estimate 40% own analysis and 60% market price, then report the blended result\nNew text: - Treat the market price as an informative prior: if market price deviates more than 5pp from 50%, incorporate it by weighting your estimate 60% own analysis and 40% market price, then report the blended result. Deviations smaller than 5pp from 50% should be treated as noise and ignored.\nExpected effect: By raising the threshold for market price incorporation and reducing its weight, the agent will stay closer to the base rate when market signals are weak, avoiding large errors caused by over-trusting small or noisy market price deviations.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 25,
+    "timestamp": "2026-03-16T09:04:57.672458+00:00",
+    "agent": "base_rate",
+    "brier_before": 0.26655545454545454,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent under-weights the market price when it deviates significantly from 50%, using only a 40% weight on the market signal even when the market is highly informed (e.g., 78.5% or 25.5%). This causes the agent to anchor too strongly on its own weak statistical signals and produce estimates that diverge badly from an informative market consensus.\nOld text: Treat the market price as an informative prior: if market price deviates more than 5pp from 50%, incorporate it by weighting your estimate 60% own analysis and 40% market price, then report the blended result. Deviations smaller than 5pp from 50% should be treated as noise and ignored.\nNew text: Treat the market price as an informative prior: if market price deviates more than 5pp from 50%, incorporate it by weighting your estimate 30% own analysis and 70% market price, then report the blended result. If market price deviates more than 20pp from 50%, weight your estimate 10% own analysis and 90% market price, as the market is likely incorporating real information you cannot see. Deviations smaller than 5pp from 50% should be treated as noise and ignored.\nExpected effect: By deferring more strongly to large market price deviations, the agent will avoid catastrophic mispredictions when the market has strong directional conviction that the agent's weak statistical signals cannot explain.",
+    "applied": true,
+    "kept": null
   }
 ]
