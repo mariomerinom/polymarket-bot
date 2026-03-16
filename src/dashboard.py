@@ -642,32 +642,36 @@ def build_html():
         for agent in sorted(agent_pnl.keys()):
             p = agent_pnl[agent]
             color = AGENT_COLORS.get(agent, "#c9d1d9")
+            total_return = p["total_wagered"] + p["total_pnl"]
             pnl_color = "#3fb950" if p["total_pnl"] >= 0 else "#f44336"
             roi_color = "#3fb950" if p["roi"] >= 0 else "#f44336"
             pnl_sign = "+" if p["total_pnl"] >= 0 else ""
             roi_sign = "+" if p["roi"] >= 0 else ""
             pnl_cards += f"""<div class="perf-card">
                 <div class="perf-agent" style="color:{color}">{agent}</div>
-                <div class="perf-accuracy" style="color:{pnl_color}">{pnl_sign}${p["total_pnl"]:,.0f}</div>
-                <div class="perf-vs" style="color:{roi_color}">{roi_sign}{p["roi"]:.1f}% ROI</div>
-                <div class="perf-record">{p["num_bets"]} bets &middot; ${p["total_wagered"]:,.0f} wagered</div>
+                <div class="perf-accuracy" style="color:{pnl_color}">${total_return:,.0f}</div>
+                <div class="perf-vs">from ${p["total_wagered"]:,.0f} wagered</div>
+                <div class="perf-record" style="color:{pnl_color};font-weight:700">{pnl_sign}${p["total_pnl"]:,.0f} profit ({roi_sign}{p["roi"]:.0f}% ROI)</div>
+                <div class="perf-vs" style="color:#8b949e">{p["num_bets"]} bets</div>
             </div>"""
 
         # Ensemble P&L card
         ep = ensemble_pnl
+        ep_return = ep["total_wagered"] + ep["total_pnl"]
         ep_color = "#3fb950" if ep["total_pnl"] >= 0 else "#f44336"
         ep_roi_color = "#3fb950" if ep["roi"] >= 0 else "#f44336"
         ep_sign = "+" if ep["total_pnl"] >= 0 else ""
         ep_roi_sign = "+" if ep["roi"] >= 0 else ""
         pnl_cards += f"""<div class="perf-card perf-ensemble">
             <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
-            <div class="perf-accuracy" style="color:{ep_color}">{ep_sign}${ep["total_pnl"]:,.0f}</div>
-            <div class="perf-vs" style="color:{ep_roi_color}">{ep_roi_sign}{ep["roi"]:.1f}% ROI</div>
-            <div class="perf-record">{ep["num_bets"]} bets &middot; ${ep["total_wagered"]:,.0f} wagered</div>
+            <div class="perf-accuracy" style="color:{ep_color}">${ep_return:,.0f}</div>
+            <div class="perf-vs">from ${ep["total_wagered"]:,.0f} wagered</div>
+            <div class="perf-record" style="color:{ep_color};font-weight:700">{ep_sign}${ep["total_pnl"]:,.0f} profit ({ep_roi_sign}{ep["roi"]:.0f}% ROI)</div>
+            <div class="perf-vs" style="color:#8b949e">{ep["num_bets"]} bets</div>
         </div>"""
 
         pnl_html = f"""<h2>Simulated P&amp;L ($100/bet, confidence-sized)</h2>
-        <p class="section-desc">Flat $100 bets on agent's predicted direction at market odds. Low conf = $50, Medium = $100, High = $200.</p>
+        <p class="section-desc">You put in the wagered amount. The big number is what you'd walk away with. Low conf = $50/bet, Medium = $100, High = $200.</p>
         <div class="perf-grid">{pnl_cards}</div>
         <div class="chart-container" style="margin-top:16px">
             <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Cumulative P&amp;L</h3>
