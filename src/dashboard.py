@@ -638,6 +638,23 @@ def build_html():
 
     # -- P&L Section --
     if has_data and agent_pnl:
+        # Consolidated P&L across all agents
+        total_pnl_all = sum(p["total_pnl"] for p in agent_pnl.values())
+        total_wagered_all = sum(p["total_wagered"] for p in agent_pnl.values())
+        total_bets_all = sum(p["num_bets"] for p in agent_pnl.values())
+        total_return_all = total_wagered_all + total_pnl_all
+        roi_all = (total_pnl_all / total_wagered_all * 100) if total_wagered_all > 0 else 0
+        all_color = "#3fb950" if total_pnl_all >= 0 else "#f44336"
+        all_sign = "+" if total_pnl_all >= 0 else ""
+        all_roi_sign = "+" if roi_all >= 0 else ""
+
+        consolidated_html = f"""<div class="consolidated-pnl">
+            <div class="consolidated-label">TOTAL PORTFOLIO</div>
+            <div class="consolidated-return" style="color:{all_color}">${total_return_all:,.0f}</div>
+            <div class="consolidated-detail">from ${total_wagered_all:,.0f} wagered across {total_bets_all} bets</div>
+            <div class="consolidated-profit" style="color:{all_color}">{all_sign}${total_pnl_all:,.0f} profit &middot; {all_roi_sign}{roi_all:.0f}% ROI</div>
+        </div>"""
+
         pnl_cards = ""
         for agent in sorted(agent_pnl.keys()):
             p = agent_pnl[agent]
@@ -672,6 +689,7 @@ def build_html():
 
         pnl_html = f"""<h2>Simulated P&amp;L ($100/bet, confidence-sized)</h2>
         <p class="section-desc">You put in the wagered amount. The big number is what you'd walk away with. Low conf = $50/bet, Medium = $100, High = $200.</p>
+        {consolidated_html}
         <div class="perf-grid">{pnl_cards}</div>
         <div class="chart-container" style="margin-top:16px">
             <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Cumulative P&amp;L</h3>
@@ -1008,6 +1026,36 @@ tr:hover {{
 .perf-ensemble {{
     border-color: #f0883e;
     border-width: 2px;
+}}
+.consolidated-pnl {{
+    background: #161b22;
+    border: 2px solid #3fb950;
+    border-radius: 10px;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 16px;
+}}
+.consolidated-label {{
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #8b949e;
+    margin-bottom: 4px;
+}}
+.consolidated-return {{
+    font-size: 3rem;
+    font-weight: 800;
+    line-height: 1.1;
+}}
+.consolidated-detail {{
+    color: #8b949e;
+    font-size: 0.9rem;
+    margin: 4px 0;
+}}
+.consolidated-profit {{
+    font-size: 1.1rem;
+    font-weight: 700;
 }}
 .perf-agent {{
     font-size: 0.85rem;

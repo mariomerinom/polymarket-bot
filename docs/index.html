@@ -115,6 +115,36 @@ tr:hover {
     border-color: #f0883e;
     border-width: 2px;
 }
+.consolidated-pnl {
+    background: #161b22;
+    border: 2px solid #3fb950;
+    border-radius: 10px;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 16px;
+}
+.consolidated-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #8b949e;
+    margin-bottom: 4px;
+}
+.consolidated-return {
+    font-size: 3rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+.consolidated-detail {
+    color: #8b949e;
+    font-size: 0.9rem;
+    margin: 4px 0;
+}
+.consolidated-profit {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
 .perf-agent {
     font-size: 0.85rem;
     font-weight: 700;
@@ -376,6 +406,12 @@ tr:hover {
 
     <h2>Simulated P&amp;L ($100/bet, confidence-sized)</h2>
         <p class="section-desc">You put in the wagered amount. The big number is what you'd walk away with. Low conf = $50/bet, Medium = $100, High = $200.</p>
+        <div class="consolidated-pnl">
+            <div class="consolidated-label">TOTAL PORTFOLIO</div>
+            <div class="consolidated-return" style="color:#3fb950">$3,994</div>
+            <div class="consolidated-detail">from $2,550 wagered across 51 bets</div>
+            <div class="consolidated-profit" style="color:#3fb950">+$1,444 profit &middot; +57% ROI</div>
+        </div>
         <div class="perf-grid"><div class="perf-card">
                 <div class="perf-agent" style="color:#d2a8ff">base_rate</div>
                 <div class="perf-accuracy" style="color:#3fb950">$1,395</div>
