@@ -15,6 +15,12 @@ You predict the probability that Bitcoin's next 5-minute candle will close UP (c
 - If market is near 50%, agree with it — no edge to capture
 - Never be contrarian just to be contrarian; articulate what the crowd is over-extrapolating
 
+## Confidence Calibration
+Rate your confidence based on reversion signal strength:
+- **low**: Market is near 50%, no clear mispricing. No edge to capture.
+- **medium**: Market is stretched (>57% or <43%) with at least one exhaustion signal (wicks, decreasing candle size, or volume fade). Your fade is 4-8pp from market.
+- **high**: Market is heavily stretched (>62% or <38%) with multiple exhaustion signals AND a clear reason the crowd is over-extrapolating. Your fade is 8pp+ from market. This should be rare (~10-15% of predictions).
+
 ## Output Format
 ```json
 {

@@ -198,6 +198,180 @@ def compute_ensemble(resolved):
     }
 
 
+def compute_pnl(resolved, unit_bet=100):
+    """Simulate P&L using flat betting on the agent's predicted direction.
+
+    For each prediction:
+    - Agent predicts UP (estimate >= 0.5): buy UP at market price (price_yes)
+      - If UP wins: profit = unit_bet * (1 / price_yes - 1)  (payout is 1/price)
+      - If DOWN wins: loss = -unit_bet
+    - Agent predicts DOWN (estimate < 0.5): buy DOWN at (1 - price_yes)
+      - If DOWN wins: profit = unit_bet * (1 / (1 - price_yes) - 1)
+      - If UP wins: loss = -unit_bet
+
+    Bet sizing by confidence: low=0.5x, medium=1x, high=2x
+    """
+    confidence_multiplier = {"low": 0.5, "medium": 1.0, "high": 2.0}
+
+    agents = defaultdict(lambda: {
+        "total_pnl": 0.0,
+        "total_wagered": 0.0,
+        "num_bets": 0,
+        "pnl_series": [],  # cumulative P&L over time
+    })
+
+    for row in resolved:
+        agent = row["agent"]
+        a = agents[agent]
+        estimate = row["estimate"]
+        outcome = row["outcome"]
+        price_yes = row["price_yes"]
+        conf = (row["confidence"] or "low").lower()
+        multiplier = confidence_multiplier.get(conf, 0.5)
+        bet_size = unit_bet * multiplier
+
+        if estimate >= 0.5:
+            # Betting on UP
+            if price_yes > 0 and price_yes < 1:
+                if outcome == 1:  # UP won
+                    profit = bet_size * (1.0 / price_yes - 1.0)
+                else:  # DOWN won
+                    profit = -bet_size
+            else:
+                profit = 0
+        else:
+            # Betting on DOWN
+            price_no = 1.0 - price_yes
+            if price_no > 0 and price_no < 1:
+                if outcome == 0:  # DOWN won
+                    profit = bet_size * (1.0 / price_no - 1.0)
+                else:  # UP won
+                    profit = -bet_size
+            else:
+                profit = 0
+
+        a["total_pnl"] += profit
+        a["total_wagered"] += bet_size
+        a["num_bets"] += 1
+        a["pnl_series"].append(a["total_pnl"])
+
+    # Compute ROI
+    for a in agents.values():
+        a["roi"] = (a["total_pnl"] / a["total_wagered"] * 100) if a["total_wagered"] > 0 else 0
+
+    return dict(agents)
+
+
+def compute_ensemble_pnl(resolved, unit_bet=100):
+    """Ensemble P&L: average estimates across agents per market, bet on majority."""
+    market_data = defaultdict(lambda: {"estimates": [], "outcome": None, "price_yes": None})
+    for row in resolved:
+        md = market_data[row["market_id"]]
+        md["estimates"].append(row["estimate"])
+        md["outcome"] = row["outcome"]
+        md["price_yes"] = row["price_yes"]
+
+    total_pnl = 0.0
+    total_wagered = 0.0
+    pnl_series = []
+
+    for mid, md in market_data.items():
+        avg_est = sum(md["estimates"]) / len(md["estimates"])
+        outcome = md["outcome"]
+        price_yes = md["price_yes"]
+        bet_size = unit_bet
+
+        if avg_est >= 0.5:
+            if price_yes > 0 and price_yes < 1:
+                profit = bet_size * (1.0 / price_yes - 1.0) if outcome == 1 else -bet_size
+            else:
+                profit = 0
+        else:
+            price_no = 1.0 - price_yes
+            if price_no > 0 and price_no < 1:
+                profit = bet_size * (1.0 / price_no - 1.0) if outcome == 0 else -bet_size
+            else:
+                profit = 0
+
+        total_pnl += profit
+        total_wagered += bet_size
+        pnl_series.append(total_pnl)
+
+    roi = (total_pnl / total_wagered * 100) if total_wagered > 0 else 0
+    return {
+        "total_pnl": total_pnl, "total_wagered": total_wagered,
+        "num_bets": len(market_data), "roi": roi, "pnl_series": pnl_series,
+    }
+
+
+def build_pnl_svg(agent_pnl, ensemble_pnl):
+    """Build SVG chart of cumulative P&L over time."""
+    all_series = {}
+    for agent, data in agent_pnl.items():
+        if data["pnl_series"]:
+            all_series[agent] = data["pnl_series"]
+    if ensemble_pnl["pnl_series"]:
+        all_series["ENSEMBLE"] = ensemble_pnl["pnl_series"]
+
+    if not all_series:
+        return '<p class="empty">No P&L data yet.</p>'
+
+    W, H = 800, 300
+    ml, mr, mt, mb = 60, 20, 20, 40
+    cw = W - ml - mr
+    ch = H - mt - mb
+
+    max_len = max(len(s) for s in all_series.values())
+    if max_len < 2:
+        return '<p class="empty">Not enough data for P&L chart.</p>'
+
+    all_vals = [v for s in all_series.values() for v in s]
+    y_min = min(min(all_vals), 0)
+    y_max = max(max(all_vals), 0)
+    y_range = y_max - y_min if y_max != y_min else 1
+
+    svg = f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:{W}px;height:auto;background:#161b22;border-radius:8px;">'
+
+    # Zero line
+    zero_y = mt + ch - ((0 - y_min) / y_range * ch)
+    svg += f'<line x1="{ml}" y1="{zero_y}" x2="{W-mr}" y2="{zero_y}" stroke="#484f58" stroke-width="1" stroke-dasharray="6,4" />'
+    svg += f'<text x="{ml-8}" y="{zero_y+4}" fill="#8b949e" font-size="11" text-anchor="end">$0</text>'
+
+    # Y axis labels
+    for pct in [0.25, 0.5, 0.75, 1.0]:
+        for val in [y_min + pct * y_range]:
+            if abs(val) < 0.01:
+                continue
+            y = mt + ch - ((val - y_min) / y_range * ch)
+            svg += f'<line x1="{ml}" y1="{y}" x2="{W-mr}" y2="{y}" stroke="#21262d" stroke-width="1" />'
+            svg += f'<text x="{ml-8}" y="{y+4}" fill="#8b949e" font-size="10" text-anchor="end">${val:,.0f}</text>'
+
+    # Lines
+    ens_colors = {**AGENT_COLORS, "ENSEMBLE": "#f0883e"}
+    agents_sorted = sorted(all_series.keys())
+    for idx, agent in enumerate(agents_sorted):
+        pts = all_series[agent]
+        color = ens_colors.get(agent, AGENT_COLOR_LIST[idx % len(AGENT_COLOR_LIST)])
+        points = []
+        for i, val in enumerate(pts):
+            x = ml + (i / (max_len - 1)) * cw if max_len > 1 else ml
+            y = mt + ch - ((val - y_min) / y_range * ch)
+            points.append(f"{x:.1f},{y:.1f}")
+        sw = "3" if agent == "ENSEMBLE" else "2"
+        svg += f'<polyline points="{" ".join(points)}" fill="none" stroke="{color}" stroke-width="{sw}" />'
+
+    svg += '</svg>'
+
+    # Legend
+    legend = '<div class="chart-legend">'
+    for idx, agent in enumerate(agents_sorted):
+        color = ens_colors.get(agent, AGENT_COLOR_LIST[idx % len(AGENT_COLOR_LIST)])
+        legend += f'<span class="legend-item"><span class="legend-dot" style="background:{color}"></span>{agent}</span>'
+    legend += '</div>'
+
+    return svg + legend
+
+
 def compute_confidence_calibration(resolved):
     """Accuracy broken down by confidence level per agent."""
     cal = defaultdict(lambda: defaultdict(lambda: {"correct": 0, "total": 0}))
@@ -377,6 +551,8 @@ def build_html():
         resolved = get_resolved_predictions(db)
         agent_stats = compute_agent_stats(resolved)
         ensemble = compute_ensemble(resolved)
+        agent_pnl = compute_pnl(resolved)
+        ensemble_pnl = compute_ensemble_pnl(resolved)
         calibration = compute_confidence_calibration(resolved)
         rolling = compute_rolling_accuracy(resolved)
         scorecard = get_agent_scorecard(db)
@@ -459,6 +635,46 @@ def build_html():
     else:
         performance_html = """<h2>Performance</h2>
         <p class="empty">No resolved markets yet. Waiting for first results...</p>"""
+
+    # -- P&L Section --
+    if has_data and agent_pnl:
+        pnl_cards = ""
+        for agent in sorted(agent_pnl.keys()):
+            p = agent_pnl[agent]
+            color = AGENT_COLORS.get(agent, "#c9d1d9")
+            pnl_color = "#3fb950" if p["total_pnl"] >= 0 else "#f44336"
+            roi_color = "#3fb950" if p["roi"] >= 0 else "#f44336"
+            pnl_sign = "+" if p["total_pnl"] >= 0 else ""
+            roi_sign = "+" if p["roi"] >= 0 else ""
+            pnl_cards += f"""<div class="perf-card">
+                <div class="perf-agent" style="color:{color}">{agent}</div>
+                <div class="perf-accuracy" style="color:{pnl_color}">{pnl_sign}${p["total_pnl"]:,.0f}</div>
+                <div class="perf-vs" style="color:{roi_color}">{roi_sign}{p["roi"]:.1f}% ROI</div>
+                <div class="perf-record">{p["num_bets"]} bets &middot; ${p["total_wagered"]:,.0f} wagered</div>
+            </div>"""
+
+        # Ensemble P&L card
+        ep = ensemble_pnl
+        ep_color = "#3fb950" if ep["total_pnl"] >= 0 else "#f44336"
+        ep_roi_color = "#3fb950" if ep["roi"] >= 0 else "#f44336"
+        ep_sign = "+" if ep["total_pnl"] >= 0 else ""
+        ep_roi_sign = "+" if ep["roi"] >= 0 else ""
+        pnl_cards += f"""<div class="perf-card perf-ensemble">
+            <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
+            <div class="perf-accuracy" style="color:{ep_color}">{ep_sign}${ep["total_pnl"]:,.0f}</div>
+            <div class="perf-vs" style="color:{ep_roi_color}">{ep_roi_sign}{ep["roi"]:.1f}% ROI</div>
+            <div class="perf-record">{ep["num_bets"]} bets &middot; ${ep["total_wagered"]:,.0f} wagered</div>
+        </div>"""
+
+        pnl_html = f"""<h2>Simulated P&amp;L ($100/bet, confidence-sized)</h2>
+        <p class="section-desc">Flat $100 bets on agent's predicted direction at market odds. Low conf = $50, Medium = $100, High = $200.</p>
+        <div class="perf-grid">{pnl_cards}</div>
+        <div class="chart-container" style="margin-top:16px">
+            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Cumulative P&amp;L</h3>
+            {build_pnl_svg(agent_pnl, ensemble_pnl)}
+        </div>"""
+    else:
+        pnl_html = ""
 
     # -- Time Series Chart --
     chart_html = f"""<h2>Rolling Accuracy (last 10 predictions)</h2>
@@ -1001,6 +1217,8 @@ tr:hover {{
     {status_html}
 
     {performance_html}
+
+    {pnl_html}
 
     {chart_html}
 
