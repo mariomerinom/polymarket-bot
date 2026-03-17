@@ -21,15 +21,19 @@ DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 EVOLUTION_LOG = Path(__file__).parent.parent / "data" / "evolution_log.json"
 
 AGENT_COLORS = {
-    "base_rate": "#d2a8ff",
-    "news_momentum": "#58a6ff",
     "contrarian": "#f0883e",
+    "volume_wick": "#58a6ff",
+    # Legacy (kept for backward compat with old DBs)
+    "pattern_reader": "#8b949e",
+    "base_rate": "#8b949e",
+    "news_momentum": "#8b949e",
 }
 AGENT_COLOR_LIST = ["#d2a8ff", "#58a6ff", "#f0883e", "#3fb950", "#f778ba"]
 
 
-def get_db():
-    db = sqlite3.connect(DB_PATH)
+def get_db(db_path=None):
+    path = db_path or DB_PATH
+    db = sqlite3.connect(path)
     db.row_factory = sqlite3.Row
     return db
 
@@ -209,14 +213,25 @@ def get_live_context(db):
 
 def get_resolved_predictions(db):
     """Get all resolved predictions ordered chronologically. Used by multiple sections."""
-    rows = db.execute("""
-        SELECT p.agent, p.estimate, p.confidence, p.predicted_at, p.market_id,
-               m.outcome, m.price_yes
-        FROM predictions p
-        JOIN markets m ON p.market_id = m.id
-        WHERE m.resolved = 1
-        ORDER BY p.predicted_at ASC
-    """).fetchall()
+    # Try v2 schema first (with conviction_score)
+    try:
+        rows = db.execute("""
+            SELECT p.agent, p.estimate, p.confidence, p.predicted_at, p.market_id,
+                   p.conviction_score, m.outcome, m.price_yes
+            FROM predictions p
+            JOIN markets m ON p.market_id = m.id
+            WHERE m.resolved = 1
+            ORDER BY p.predicted_at ASC
+        """).fetchall()
+    except sqlite3.OperationalError:
+        rows = db.execute("""
+            SELECT p.agent, p.estimate, p.confidence, p.predicted_at, p.market_id,
+                   NULL as conviction_score, m.outcome, m.price_yes
+            FROM predictions p
+            JOIN markets m ON p.market_id = m.id
+            WHERE m.resolved = 1
+            ORDER BY p.predicted_at ASC
+        """).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -424,6 +439,76 @@ def compute_ensemble_pnl(resolved, unit_bet=100):
         "total_pnl": total_pnl, "total_wagered": total_wagered,
         "num_bets": len(market_data), "roi": roi, "pnl_series": pnl_series,
     }
+
+
+def compute_conviction_breakdown(resolved):
+    """Compute accuracy and P&L by conviction tier. v2 feature."""
+    # Group by market, get conviction score per market
+    market_data = defaultdict(lambda: {"estimates": [], "outcome": None, "price_yes": None, "conviction": None})
+    for row in resolved:
+        md = market_data[row["market_id"]]
+        md["estimates"].append({"agent": row["agent"], "estimate": row["estimate"]})
+        md["outcome"] = row["outcome"]
+        md["price_yes"] = row["price_yes"]
+        if row.get("conviction_score") is not None:
+            md["conviction"] = row["conviction_score"]
+
+    def score_to_tier(score):
+        if score is None:
+            return "UNKNOWN"
+        if score <= 1:
+            return "NO_BET"
+        elif score == 2:
+            return "LOW"
+        elif score == 3:
+            return "MEDIUM"
+        else:
+            return "HIGH"
+
+    bet_sizes = {"NO_BET": 0, "LOW": 0, "MEDIUM": 75, "HIGH": 200, "UNKNOWN": 0}
+    weights = {"contrarian": 0.55, "volume_wick": 0.45}
+
+    tiers = defaultdict(lambda: {"wins": 0, "losses": 0, "total": 0, "pnl": 0.0, "wagered": 0.0})
+
+    for mid, md in market_data.items():
+        tier = score_to_tier(md["conviction"])
+        outcome = md["outcome"]
+        price_yes = md["price_yes"]
+
+        # Weighted ensemble
+        total_w = 0
+        weighted_sum = 0
+        for p in md["estimates"]:
+            w = weights.get(p["agent"], 1.0 / len(md["estimates"]))
+            weighted_sum += w * p["estimate"]
+            total_w += w
+        ens_est = weighted_sum / total_w if total_w > 0 else 0.5
+
+        correct = is_correct(ens_est, outcome)
+        ts = tiers[tier]
+        ts["total"] += 1
+        if correct:
+            ts["wins"] += 1
+        else:
+            ts["losses"] += 1
+
+        bet_size = bet_sizes.get(tier, 0)
+        if bet_size > 0:
+            ts["wagered"] += bet_size
+            if ens_est >= 0.5:
+                if 0 < price_yes < 1:
+                    ts["pnl"] += bet_size * (1.0 / price_yes - 1.0) if outcome == 1 else -bet_size
+            else:
+                price_no = 1.0 - price_yes
+                if 0 < price_no < 1:
+                    ts["pnl"] += bet_size * (1.0 / price_no - 1.0) if outcome == 0 else -bet_size
+
+    # Compute ROI per tier
+    for ts in tiers.values():
+        ts["accuracy"] = ts["wins"] / ts["total"] * 100 if ts["total"] > 0 else 0
+        ts["roi"] = ts["pnl"] / ts["wagered"] * 100 if ts["wagered"] > 0 else 0
+
+    return dict(tiers)
 
 
 def build_pnl_svg(agent_pnl, ensemble_pnl):
@@ -678,6 +763,7 @@ def build_html():
         agent_pnl = compute_pnl(resolved)
         ensemble_pnl = compute_ensemble_pnl(resolved)
         calibration = compute_confidence_calibration(resolved)
+        conviction_tiers = compute_conviction_breakdown(resolved)
         rolling = compute_rolling_accuracy(resolved)
         scorecard = get_agent_scorecard(db)
         predictions = get_recent_predictions(db)
@@ -949,6 +1035,66 @@ def build_html():
         </div>"""
     else:
         pnl_html = ""
+
+    # -- Conviction Breakdown (v2) --
+    conviction_html = ""
+    if has_data and conviction_tiers:
+        has_conviction_data = any(t != "UNKNOWN" for t in conviction_tiers.keys())
+        if has_conviction_data:
+            tier_colors = {
+                "HIGH": "#3fb950", "MEDIUM": "#58a6ff",
+                "LOW": "#ffc107", "NO_BET": "#8b949e", "UNKNOWN": "#484f58",
+            }
+            tier_labels = {
+                "HIGH": "HIGH (4-5)", "MEDIUM": "MEDIUM (3)",
+                "LOW": "LOW (2)", "NO_BET": "NO BET (0-1)", "UNKNOWN": "N/A",
+            }
+            tier_bets = {"NO_BET": "$0", "LOW": "$25", "MEDIUM": "$75", "HIGH": "$200", "UNKNOWN": "$0"}
+
+            conv_rows = ""
+            total_conv_pnl = 0.0
+            total_conv_wagered = 0.0
+            for tier_name in ["HIGH", "MEDIUM", "LOW", "NO_BET"]:
+                ts = conviction_tiers.get(tier_name)
+                if ts is None or ts["total"] == 0:
+                    continue
+                tc = tier_colors.get(tier_name, "#8b949e")
+                acc = ts["accuracy"]
+                acc_c = accuracy_color(acc)
+                pnl_str = f"${ts['pnl']:+,.0f}" if ts["wagered"] > 0 else "—"
+                pnl_c = "#3fb950" if ts["pnl"] >= 0 else "#f44336"
+                roi_str = f"{ts['roi']:+.0f}%" if ts["wagered"] > 0 else "—"
+                total_conv_pnl += ts["pnl"]
+                total_conv_wagered += ts["wagered"]
+                conv_rows += f"""<tr>
+                    <td style="color:{tc};font-weight:700">{tier_labels.get(tier_name, tier_name)}</td>
+                    <td>{ts["total"]}</td>
+                    <td style="color:{acc_c}">{acc:.1f}%</td>
+                    <td>{ts["wins"]}</td>
+                    <td>{ts["losses"]}</td>
+                    <td>{tier_bets.get(tier_name, '$0')}</td>
+                    <td style="color:{pnl_c}">{pnl_str}</td>
+                    <td>{roi_str}</td>
+                </tr>"""
+
+            total_roi = total_conv_pnl / total_conv_wagered * 100 if total_conv_wagered > 0 else 0
+            total_c = "#3fb950" if total_conv_pnl >= 0 else "#f44336"
+
+            conviction_html = f"""<h2>Conviction Scoreboard</h2>
+            <p class="section-desc">Conviction measures agreement across 5 independent signal layers. Higher conviction = bigger bet. Only bet when conviction &ge; 2.</p>
+            <div class="table-wrap"><table>
+                <thead><tr>
+                    <th>Tier</th><th>Markets</th><th>Accuracy</th><th>W</th><th>L</th><th>Bet Size</th><th>P&amp;L</th><th>ROI</th>
+                </tr></thead>
+                <tbody>{conv_rows}
+                <tr style="border-top:2px solid #30363d">
+                    <td style="font-weight:700;color:#f0883e">TOTAL (bets only)</td>
+                    <td></td><td></td><td></td><td></td>
+                    <td></td>
+                    <td style="color:{total_c};font-weight:700">${total_conv_pnl:+,.0f}</td>
+                    <td style="font-weight:700">{total_roi:+.0f}%</td>
+                </tr></tbody>
+            </table></div>"""
 
     # -- Time Series Chart --
     chart_html = f"""<h2>Rolling Accuracy (last 10 predictions)</h2>
@@ -1647,6 +1793,8 @@ tr:hover {{
     {performance_html}
 
     {pnl_html}
+
+    {conviction_html}
 
     {chart_html}
 

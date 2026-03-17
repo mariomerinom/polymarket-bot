@@ -153,6 +153,63 @@ def _compute_summary(candles):
     # Last candle details
     last = candles[-1]
 
+    # --- Micro-TA fields (v2) ---
+
+    # Range position: where current close sits in the 12-candle range (0=bottom, 1=top)
+    range_high = max(c["high"] for c in candles)
+    range_low = min(c["low"] for c in candles)
+    range_span = range_high - range_low
+    range_position = round((current_price - range_low) / range_span, 3) if range_span > 0 else 0.5
+
+    # Volume analysis
+    volumes = [c["volume"] for c in candles]
+    avg_volume = sum(volumes) / len(volumes) if volumes else 1.0
+    last_volume_ratio = round(last["volume"] / avg_volume, 2) if avg_volume > 0 else 1.0
+
+    # Compression: are last 3 candle ranges shrinking?
+    last_3_range_shrinking = False
+    if len(candles) >= 3:
+        ranges = [c["high"] - c["low"] for c in candles[-3:]]
+        last_3_range_shrinking = ranges[0] > ranges[1] > ranges[2] and ranges[2] > 0
+
+    # Average candle range for expansion detection
+    avg_range = sum(c["high"] - c["low"] for c in candles) / len(candles) if candles else 0
+    last_range = last["high"] - last["low"]
+    last_range_ratio = round(last_range / avg_range, 2) if avg_range > 0 else 1.0
+
+    # Candle pattern detection (last candle)
+    last_body = abs(last["close"] - last["open"])
+    last_full_range = last["high"] - last["low"]
+    last_upper_wick = last["high"] - max(last["open"], last["close"])
+    last_lower_wick = min(last["open"], last["close"]) - last["low"]
+
+    # Wick ratios relative to body
+    last_wick_upper_ratio = round(last_upper_wick / last_body, 2) if last_body > 0 else 0.0
+    last_wick_lower_ratio = round(last_lower_wick / last_body, 2) if last_body > 0 else 0.0
+
+    # Pattern classification
+    last_candle_pattern = "none"
+    if last_full_range > 0:
+        body_frac = last_body / last_full_range
+        if body_frac < 0.15 and last["wick_ratio"] > 0.7:
+            last_candle_pattern = "doji"
+        elif last["direction"] == "DOWN" and last_lower_wick > 2 * last_body and last_body > 0:
+            last_candle_pattern = "hammer"
+        elif last["direction"] == "UP" and last_upper_wick > 2 * last_body and last_body > 0:
+            last_candle_pattern = "inv_hammer"
+
+    # Engulfing detection (last 2 candles)
+    if len(candles) >= 2:
+        prev = candles[-2]
+        prev_body = abs(prev["close"] - prev["open"])
+        if last_body > prev_body * 1.1 and last["direction"] != prev["direction"]:
+            if last["direction"] == "UP":
+                last_candle_pattern = "engulfing_bull"
+            else:
+                last_candle_pattern = "engulfing_bear"
+        elif (last["high"] < prev["high"] and last["low"] > prev["low"]):
+            last_candle_pattern = "inside_bar"
+
     return {
         "candles": candles,
         "current_price": current_price,
@@ -168,22 +225,41 @@ def _compute_summary(candles):
             "body_pct": last["body_pct"],
             "wick_ratio": last["wick_ratio"],
         },
+        # v2 micro-TA fields
+        "range_high": range_high,
+        "range_low": range_low,
+        "range_position": range_position,
+        "avg_volume": round(avg_volume, 2),
+        "last_volume_ratio": last_volume_ratio,
+        "last_3_range_shrinking": last_3_range_shrinking,
+        "last_range_ratio": last_range_ratio,
+        "last_candle_pattern": last_candle_pattern,
+        "last_wick_upper_ratio": last_wick_upper_ratio,
+        "last_wick_lower_ratio": last_wick_lower_ratio,
     }
 
 
 def format_for_prompt(data):
     """Format BTC data as a readable string for injection into agent prompts."""
     if data is None:
-        return "## Recent BTC Price Action\n(Data unavailable — make your best estimate from market price alone)\n"
+        return "## Recent BTC Price Action\n(Data unavailable — make your best estimate from the macro prior alone)\n"
 
     lines = [
         "## Recent BTC Price Action (last 1 hour, 5-min candles)",
         f"- **Current BTC price:** ${data['current_price']:,.0f}",
         f"- **1h change:** {data['1h_change_pct']:+.3f}%",
-        f"- **Trend:** {data['trend'].upper()} ({data['up_count']} up / {data['down_count']} down candles)",
         f"- **Consecutive:** {data['consecutive_direction']} {data['consecutive_dir_label']} candles in a row",
-        f"- **Volatility:** {data['volatility']:.4f}% per 5-min candle (std dev of returns)",
+        f"- **Volatility:** {data['volatility']:.4f}% per 5-min candle",
         f"- **Last candle:** {data['last_candle']['direction']} ({data['last_candle']['body_pct']:+.4f}%), wick ratio {data['last_candle']['wick_ratio']:.2f}",
+        "",
+        "## Micro-TA Signals (pre-computed)",
+        f"- **Range position:** {data.get('range_position', 0.5):.2f} (0=bottom, 1=top of 12-candle range)",
+        f"- **Last volume ratio:** {data.get('last_volume_ratio', 1.0):.2f}x average",
+        f"- **Last range ratio:** {data.get('last_range_ratio', 1.0):.2f}x average (>2 = expansion)",
+        f"- **Compression:** {'YES — last 3 ranges shrinking' if data.get('last_3_range_shrinking') else 'No'}",
+        f"- **Candle pattern:** {data.get('last_candle_pattern', 'none')}",
+        f"- **Upper wick/body ratio:** {data.get('last_wick_upper_ratio', 0):.1f}x",
+        f"- **Lower wick/body ratio:** {data.get('last_wick_lower_ratio', 0):.1f}x",
         "",
         "| Time  | Open     | Close    | Dir  | Body%   | Wick  | Vol    |",
         "|-------|----------|----------|------|---------|-------|--------|",
@@ -195,6 +271,45 @@ def format_for_prompt(data):
         )
 
     return "\n".join(lines)
+
+
+def compute_rolling_bias(intervals=None):
+    """
+    Compute rolling UP% at multiple timeframes as an automatic sanity check
+    against the human macro bias. Returns dict with per-timeframe UP% and blend.
+    """
+    if intervals is None:
+        intervals = {"7d": 2016, "24h": 288, "1h": 12}
+
+    results = {}
+    weights = {"7d": 0.5, "24h": 0.3, "1h": 0.2}
+    blended = 0.0
+    total_weight = 0.0
+
+    for label, limit in intervals.items():
+        try:
+            resp = requests.get(BINANCE_KLINES, params={
+                "symbol": "BTCUSDT",
+                "interval": "5m",
+                "limit": min(limit, 1000),  # Binance caps at 1000
+            }, timeout=15)
+            resp.raise_for_status()
+            raw = resp.json()
+            ups = sum(1 for k in raw if float(k[4]) >= float(k[1]))  # close >= open
+            total = len(raw)
+            up_pct = round(ups / total, 4) if total > 0 else 0.5
+            results[label] = {"up_pct": up_pct, "candles": total}
+            w = weights.get(label, 0)
+            blended += up_pct * w
+            total_weight += w
+        except Exception as e:
+            results[label] = {"up_pct": 0.5, "candles": 0, "error": str(e)}
+            w = weights.get(label, 0)
+            blended += 0.5 * w
+            total_weight += w
+
+    results["blended"] = round(blended / total_weight, 4) if total_weight > 0 else 0.5
+    return results
 
 
 if __name__ == "__main__":
