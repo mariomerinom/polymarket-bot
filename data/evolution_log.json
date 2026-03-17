@@ -138,5 +138,15 @@
     "modification": "Diagnosis: The agent ignores the market price as a signal, defaulting to 0.50 as its base estimate when it should anchor to the macro prior provided in context. In the 10:55PM case, the market price was 0.09 (a strong signal of expected downward movement) but the agent estimated 0.50, showing it failed to use the market price as its starting point.\nOld text: ## Starting Point\nUse the **macro prior** provided in your context as your starting estimate. Adjust from there based on volume and wick evidence only.\nNew text: ## Starting Point\nUse the **macro prior** provided in your context as your starting estimate. Adjust from there based on volume and wick evidence only. If no macro prior is provided, use the **market_price** as your starting estimate \u2014 never default to 0.50.\nExpected effect: The agent will anchor to the market price when no macro prior is available, preventing wildly miscalibrated estimates like 0.50 when the market is pricing the outcome at 0.09.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 42,
+    "timestamp": "2026-03-17T07:13:23.802672+00:00",
+    "agent": "volume_wick",
+    "brier_before": 0.26545,
+    "brier_after": null,
+    "modification": "Diagnosis: When volume is normal and wicks are small, the agent ignores the macro prior and defaults to 0.50 instead of using the provided market_price as its estimate. This is clearly visible in the worst predictions where market_price was 0.09 and 0.055 but the agent output 0.50.\nOld text: - If volume is normal and wicks are small: return the macro prior with low confidence\nNew text: - If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence \u2014 never default to 0.50\nExpected effect: The agent will stop overriding extreme market prices with 0.50 when it has no signal, instead trusting the market_price as its base estimate in low-signal conditions.",
+    "applied": true,
+    "kept": null
   }
 ]
