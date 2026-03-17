@@ -21,6 +21,7 @@ except ImportError:
     pass
 
 from score import calculate_brier_scores, get_agent_brier
+from predict import V2_AGENTS
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
@@ -41,12 +42,17 @@ def save_evolution_log(log):
 
 
 def find_worst_agent(db):
-    """Identify the agent with the highest average Brier score."""
+    """Identify the worst-performing v2 agent by Brier score."""
     results = calculate_brier_scores(db)
     if not results:
         return None, None
 
-    worst_agent = max(results.items(), key=lambda x: x[1]["total_brier"] / x[1]["markets"])
+    # Only consider active v2 agents
+    v2_results = {k: v for k, v in results.items() if k in V2_AGENTS}
+    if not v2_results:
+        return None, None
+
+    worst_agent = max(v2_results.items(), key=lambda x: x[1]["total_brier"] / x[1]["markets"])
     agent_name = worst_agent[0]
     avg_brier = worst_agent[1]["total_brier"] / worst_agent[1]["markets"]
     return agent_name, avg_brier
@@ -167,8 +173,8 @@ def evolve(cycle):
     print(f"  Generating prompt modification...")
     modification = generate_prompt_modification(client, worst_agent, current_prompt, mistakes)
 
-    print(f"\n  Diagnosis: {modification['diagnosis']}")
-    print(f"  Expected effect: {modification['expected_effect']}")
+    print(f"\n  Diagnosis: {modification.get('diagnosis', 'N/A')}")
+    print(f"  Expected effect: {modification.get('expected_effect', 'N/A')}")
 
     applied = apply_modification(worst_agent, modification)
 
@@ -179,10 +185,10 @@ def evolve(cycle):
 
     # Log the evolution — store a readable summary, not raw JSON
     modification_summary = (
-        f"Diagnosis: {modification['diagnosis']}\n"
-        f"Old text: {modification['old_text']}\n"
-        f"New text: {modification['new_text']}\n"
-        f"Expected effect: {modification['expected_effect']}"
+        f"Diagnosis: {modification.get('diagnosis', 'N/A')}\n"
+        f"Old text: {modification.get('old_text', 'N/A')}\n"
+        f"New text: {modification.get('new_text', 'N/A')}\n"
+        f"Expected effect: {modification.get('expected_effect', 'N/A')}"
     )
 
     log = load_evolution_log()
