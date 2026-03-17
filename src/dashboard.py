@@ -23,10 +23,6 @@ EVOLUTION_LOG = Path(__file__).parent.parent / "data" / "evolution_log.json"
 AGENT_COLORS = {
     "contrarian": "#f0883e",
     "volume_wick": "#58a6ff",
-    # Legacy (kept for backward compat with old DBs)
-    "pattern_reader": "#8b949e",
-    "base_rate": "#8b949e",
-    "news_momentum": "#8b949e",
 }
 AGENT_COLOR_LIST = ["#d2a8ff", "#58a6ff", "#f0883e", "#3fb950", "#f778ba"]
 

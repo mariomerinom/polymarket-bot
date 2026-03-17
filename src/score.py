@@ -9,6 +9,7 @@ import sqlite3
 import json
 import requests
 from pathlib import Path
+from predict import V2_AGENTS
 
 GAMMA_API = "https://gamma-api.polymarket.com"
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
@@ -116,6 +117,8 @@ def print_scorecard(results):
         print(f"    Markets:       {data['markets']}")
         print(f"    vs Market:     {avg_vs_market:+.4f} ({beat_market} market)")
 
+        if agent not in V2_AGENTS:
+            continue  # Only consider v2 agents for worst-performer selection
         if avg_brier > worst_brier:
             worst_brier = avg_brier
             worst_agent = agent
