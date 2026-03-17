@@ -1,61 +1,86 @@
 """
-btc_data.py — Fetch recent BTC candlestick data from Binance public API.
+btc_data.py — Fetch recent BTC candlestick data for prediction agents.
 
-Provides real price action context (OHLCV, trend, volatility) so prediction
-agents can make informed estimates instead of guessing blind at 50%.
+Primary: Kraken (US-regulated, no auth, no geo-blocking)
+Fallback: Coinbase (US-based, no auth, 5-min candles with volume)
+
+Provides OHLCV candles + micro-TA signals so agents can read price action.
 """
 
 import requests
 import statistics
+import time
 from datetime import datetime, timezone
 
-
-BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
-COINGECKO_FALLBACK = "https://api.coingecko.com/api/v3/coins/bitcoin/ohlc"
+KRAKEN_OHLC = "https://api.kraken.com/0/public/OHLC"
+COINBASE_CANDLES = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
 
 
 def fetch_btc_candles(interval="5m", limit=12):
     """
-    Fetch recent BTC 5-minute candles from Binance.
+    Fetch recent BTC 5-minute candles.
+    Primary: Kraken. Fallback: Coinbase.
     Returns a dict with candles, summary stats, and derived signals.
-    Falls back to CoinGecko if Binance is unavailable.
     """
     try:
-        return _fetch_binance(interval, limit)
+        return _fetch_kraken(limit)
     except Exception as e:
-        print(f"  Binance API failed ({e}), trying CoinGecko fallback...")
+        print(f"  Kraken API failed ({e}), trying Coinbase fallback...")
         try:
-            return _fetch_coingecko()
+            return _fetch_coinbase(limit)
         except Exception as e2:
-            print(f"  CoinGecko also failed ({e2}), returning empty data")
+            print(f"  Coinbase also failed ({e2}), returning empty data")
             return None
 
 
-def _fetch_binance(interval, limit):
-    """Fetch from Binance public klines endpoint (no auth needed)."""
-    resp = requests.get(BINANCE_KLINES, params={
-        "symbol": "BTCUSDT",
-        "interval": interval,
-        "limit": limit,
+def _fetch_kraken(limit):
+    """Fetch from Kraken public OHLC endpoint (no auth needed).
+
+    Returns [time, open, high, low, close, vwap, volume, count] arrays.
+    Kraken returns all candles since `since` timestamp — we compute
+    the right start time to get approximately `limit` candles.
+    """
+    # Request candles starting from (limit * 5 minutes) ago
+    since = int(time.time()) - (limit + 2) * 5 * 60
+    resp = requests.get(KRAKEN_OHLC, params={
+        "pair": "XBTUSD",
+        "interval": 5,
+        "since": since,
     }, timeout=10)
     resp.raise_for_status()
-    raw = resp.json()
+    data = resp.json()
+
+    if data.get("error") and len(data["error"]) > 0:
+        raise Exception(f"Kraken error: {data['error']}")
+
+    # Response has result key with pair name (may vary: XXBTZUSD or XBTUSD)
+    result = data.get("result", {})
+    pair_key = None
+    for key in result:
+        if key != "last":
+            pair_key = key
+            break
+
+    if not pair_key or not result[pair_key]:
+        raise Exception("No candle data in Kraken response")
+
+    raw = result[pair_key]
+    # Take last `limit` candles
+    raw = raw[-limit:] if len(raw) > limit else raw
 
     candles = []
     for k in raw:
+        # Kraken: [time, open, high, low, close, vwap, volume, count]
+        open_time = datetime.fromtimestamp(int(k[0]), tz=timezone.utc)
         open_price = float(k[1])
         high = float(k[2])
         low = float(k[3])
         close = float(k[4])
-        volume = float(k[5])
-        open_time_ms = k[0]
-        open_time = datetime.fromtimestamp(open_time_ms / 1000, tz=timezone.utc)
+        volume = float(k[6])
 
         body = abs(close - open_price)
         full_range = high - low
         direction = "UP" if close >= open_price else "DOWN"
-
-        # Wick ratio: how much of the candle is wick vs body
         wick_ratio = round(1.0 - (body / full_range), 2) if full_range > 0 else 0.0
         body_pct = round((close - open_price) / open_price * 100, 4) if open_price > 0 else 0.0
 
@@ -77,33 +102,54 @@ def _fetch_binance(interval, limit):
     return _compute_summary(candles)
 
 
-def _fetch_coingecko():
-    """Fallback: fetch from CoinGecko OHLC (less granular but free)."""
-    resp = requests.get(COINGECKO_FALLBACK, params={
-        "vs_currency": "usd",
-        "days": "1",
+def _fetch_coinbase(limit):
+    """Fallback: Coinbase Exchange API (no auth needed for market data).
+
+    Returns [time, low, high, open, close, volume] arrays (note different order).
+    granularity=300 = 5-minute candles.
+    """
+    now = int(time.time())
+    start = now - (limit + 2) * 5 * 60
+
+    resp = requests.get(COINBASE_CANDLES, params={
+        "granularity": 300,
+        "start": start,
+        "end": now,
     }, timeout=10)
     resp.raise_for_status()
     raw = resp.json()
 
-    # CoinGecko returns [timestamp, open, high, low, close]
-    # Take last 12 entries
-    entries = raw[-12:] if len(raw) >= 12 else raw
+    if not raw:
+        raise Exception("Empty response from Coinbase")
+
+    # Coinbase returns newest first — reverse to chronological
+    raw.sort(key=lambda x: x[0])
+    # Take last `limit`
+    raw = raw[-limit:] if len(raw) > limit else raw
 
     candles = []
-    for entry in entries:
-        ts, o, h, l, c = entry
-        open_time = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
-        direction = "UP" if c >= o else "DOWN"
-        body = abs(c - o)
-        full_range = h - l
+    for k in raw:
+        # Coinbase: [time, low, high, open, close, volume]
+        open_time = datetime.fromtimestamp(int(k[0]), tz=timezone.utc)
+        low = float(k[1])
+        high = float(k[2])
+        open_price = float(k[3])
+        close = float(k[4])
+        volume = float(k[5])
+
+        body = abs(close - open_price)
+        full_range = high - low
+        direction = "UP" if close >= open_price else "DOWN"
         wick_ratio = round(1.0 - (body / full_range), 2) if full_range > 0 else 0.0
-        body_pct = round((c - o) / o * 100, 4) if o > 0 else 0.0
+        body_pct = round((close - open_price) / open_price * 100, 4) if open_price > 0 else 0.0
 
         candles.append({
             "time": open_time.strftime("%H:%M"),
-            "open": o, "high": h, "low": l, "close": c,
-            "volume": 0,  # CoinGecko OHLC doesn't include volume
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": round(volume, 2),
             "direction": direction,
             "body_pct": body_pct,
             "wick_ratio": wick_ratio,
@@ -242,7 +288,7 @@ def _compute_summary(candles):
 def format_for_prompt(data):
     """Format BTC data as a readable string for injection into agent prompts."""
     if data is None:
-        return "## Recent BTC Price Action\n(Data unavailable — make your best estimate from the macro prior alone)\n"
+        return "## Recent BTC Price Action\n(Data unavailable — use market_price as your estimate)\n"
 
     lines = [
         "## Recent BTC Price Action (last 1 hour, 5-min candles)",
@@ -276,7 +322,8 @@ def format_for_prompt(data):
 def compute_rolling_bias(intervals=None):
     """
     Compute rolling UP% at multiple timeframes as an automatic sanity check
-    against the human macro bias. Returns dict with per-timeframe UP% and blend.
+    against the human macro bias. Uses Kraken with Coinbase fallback.
+    Returns dict with per-timeframe UP% and blend.
     """
     if intervals is None:
         intervals = {"7d": 2016, "24h": 288, "1h": 12}
@@ -288,13 +335,28 @@ def compute_rolling_bias(intervals=None):
 
     for label, limit in intervals.items():
         try:
-            resp = requests.get(BINANCE_KLINES, params={
-                "symbol": "BTCUSDT",
-                "interval": "5m",
-                "limit": min(limit, 1000),  # Binance caps at 1000
+            # Kraken caps at 720 candles per request
+            fetch_limit = min(limit, 720)
+            since = int(time.time()) - (fetch_limit + 2) * 5 * 60
+            resp = requests.get(KRAKEN_OHLC, params={
+                "pair": "XBTUSD",
+                "interval": 5,
+                "since": since,
             }, timeout=15)
             resp.raise_for_status()
-            raw = resp.json()
+            data = resp.json()
+
+            if data.get("error") and len(data["error"]) > 0:
+                raise Exception(f"Kraken error: {data['error']}")
+
+            result = data.get("result", {})
+            pair_key = None
+            for key in result:
+                if key != "last":
+                    pair_key = key
+                    break
+
+            raw = result.get(pair_key, []) if pair_key else []
             ups = sum(1 for k in raw if float(k[4]) >= float(k[1]))  # close >= open
             total = len(raw)
             up_pct = round(ups / total, 4) if total > 0 else 0.5
