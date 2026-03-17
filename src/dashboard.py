@@ -332,25 +332,24 @@ def compute_ensemble(resolved):
 
 
 def compute_pnl(resolved, unit_bet=100):
-    """Simulate P&L using flat betting on the agent's predicted direction.
+    """Simulate P&L using conviction-tier bet sizing.
 
-    For each prediction:
-    - Agent predicts UP (estimate >= 0.5): buy UP at market price (price_yes)
-      - If UP wins: profit = unit_bet * (1 / price_yes - 1)  (payout is 1/price)
-      - If DOWN wins: loss = -unit_bet
-    - Agent predicts DOWN (estimate < 0.5): buy DOWN at (1 - price_yes)
-      - If DOWN wins: profit = unit_bet * (1 / (1 - price_yes) - 1)
-      - If UP wins: loss = -unit_bet
+    Conviction tiers determine bet size:
+    - MEDIUM (score 3): $75
+    - HIGH (score 4+): $200
+    - Everything else: $0 (skip)
 
-    Bet sizing by confidence: low=0.5x, medium=1x, high=2x
+    Per-agent P&L is computed by attributing the market-level bet
+    proportionally to each agent based on ensemble weights.
     """
-    confidence_multiplier = {"low": 0.5, "medium": 1.0, "high": 2.0}
+    CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 200}
 
     agents = defaultdict(lambda: {
         "total_pnl": 0.0,
         "total_wagered": 0.0,
         "num_bets": 0,
-        "pnl_series": [],  # cumulative P&L over time
+        "skipped": 0,
+        "pnl_series": [],
     })
 
     for row in resolved:
@@ -359,62 +358,15 @@ def compute_pnl(resolved, unit_bet=100):
         estimate = row["estimate"]
         outcome = row["outcome"]
         price_yes = row["price_yes"]
-        conf = (row["confidence"] or "low").lower()
-        multiplier = confidence_multiplier.get(conf, 0.5)
-        bet_size = unit_bet * multiplier
+        conv = row.get("conviction_score") or 0
+        bet_size = CONVICTION_BETS.get(conv, 0)
+
+        if bet_size == 0:
+            a["skipped"] += 1
+            a["pnl_series"].append(a["total_pnl"])
+            continue
 
         if estimate >= 0.5:
-            # Betting on UP
-            if price_yes > 0 and price_yes < 1:
-                if outcome == 1:  # UP won
-                    profit = bet_size * (1.0 / price_yes - 1.0)
-                else:  # DOWN won
-                    profit = -bet_size
-            else:
-                profit = 0
-        else:
-            # Betting on DOWN
-            price_no = 1.0 - price_yes
-            if price_no > 0 and price_no < 1:
-                if outcome == 0:  # DOWN won
-                    profit = bet_size * (1.0 / price_no - 1.0)
-                else:  # UP won
-                    profit = -bet_size
-            else:
-                profit = 0
-
-        a["total_pnl"] += profit
-        a["total_wagered"] += bet_size
-        a["num_bets"] += 1
-        a["pnl_series"].append(a["total_pnl"])
-
-    # Compute ROI
-    for a in agents.values():
-        a["roi"] = (a["total_pnl"] / a["total_wagered"] * 100) if a["total_wagered"] > 0 else 0
-
-    return dict(agents)
-
-
-def compute_ensemble_pnl(resolved, unit_bet=100):
-    """Ensemble P&L: average estimates across agents per market, bet on majority."""
-    market_data = defaultdict(lambda: {"estimates": [], "outcome": None, "price_yes": None})
-    for row in resolved:
-        md = market_data[row["market_id"]]
-        md["estimates"].append(row["estimate"])
-        md["outcome"] = row["outcome"]
-        md["price_yes"] = row["price_yes"]
-
-    total_pnl = 0.0
-    total_wagered = 0.0
-    pnl_series = []
-
-    for mid, md in market_data.items():
-        avg_est = sum(md["estimates"]) / len(md["estimates"])
-        outcome = md["outcome"]
-        price_yes = md["price_yes"]
-        bet_size = unit_bet
-
-        if avg_est >= 0.5:
             if price_yes > 0 and price_yes < 1:
                 profit = bet_size * (1.0 / price_yes - 1.0) if outcome == 1 else -bet_size
             else:
@@ -426,14 +378,80 @@ def compute_ensemble_pnl(resolved, unit_bet=100):
             else:
                 profit = 0
 
+        a["total_pnl"] += profit
+        a["total_wagered"] += bet_size
+        a["num_bets"] += 1
+        a["pnl_series"].append(a["total_pnl"])
+
+    for a in agents.values():
+        a["roi"] = (a["total_pnl"] / a["total_wagered"] * 100) if a["total_wagered"] > 0 else 0
+
+    return dict(agents)
+
+
+def compute_ensemble_pnl(resolved, unit_bet=100):
+    """Ensemble P&L using conviction-tier bet sizing. Only bets on MEDIUM+ conviction."""
+    CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 200}
+    WEIGHTS = {"contrarian": 0.55, "volume_wick": 0.45}
+
+    market_data = defaultdict(lambda: {"agents": [], "outcome": None, "price_yes": None, "conviction": 0})
+    for row in resolved:
+        md = market_data[row["market_id"]]
+        md["agents"].append({"agent": row["agent"], "estimate": row["estimate"]})
+        md["outcome"] = row["outcome"]
+        md["price_yes"] = row["price_yes"]
+        if row.get("conviction_score") is not None:
+            md["conviction"] = row["conviction_score"]
+
+    total_pnl = 0.0
+    total_wagered = 0.0
+    num_bets = 0
+    num_skipped = 0
+    pnl_series = []
+
+    for mid, md in market_data.items():
+        conv = md["conviction"] or 0
+        bet_size = CONVICTION_BETS.get(conv, 0)
+
+        # Weighted ensemble estimate
+        total_w = 0
+        weighted_sum = 0
+        for p in md["agents"]:
+            w = WEIGHTS.get(p["agent"], 0.5)
+            weighted_sum += w * p["estimate"]
+            total_w += w
+        ens_est = weighted_sum / total_w if total_w > 0 else 0.5
+
+        if bet_size == 0:
+            num_skipped += 1
+            pnl_series.append(total_pnl)
+            continue
+
+        outcome = md["outcome"]
+        price_yes = md["price_yes"]
+
+        if ens_est >= 0.5:
+            if 0 < price_yes < 1:
+                profit = bet_size * (1.0 / price_yes - 1.0) if outcome == 1 else -bet_size
+            else:
+                profit = 0
+        else:
+            price_no = 1.0 - price_yes
+            if 0 < price_no < 1:
+                profit = bet_size * (1.0 / price_no - 1.0) if outcome == 0 else -bet_size
+            else:
+                profit = 0
+
         total_pnl += profit
         total_wagered += bet_size
+        num_bets += 1
         pnl_series.append(total_pnl)
 
     roi = (total_pnl / total_wagered * 100) if total_wagered > 0 else 0
     return {
         "total_pnl": total_pnl, "total_wagered": total_wagered,
-        "num_bets": len(market_data), "roi": roi, "pnl_series": pnl_series,
+        "num_bets": num_bets, "num_skipped": num_skipped,
+        "roi": roi, "pnl_series": pnl_series,
     }
 
 
@@ -1021,8 +1039,8 @@ def build_html():
             <div class="perf-vs" style="color:#8b949e">{ep["num_bets"]} bets</div>
         </div>"""
 
-        pnl_html = f"""<h2>Simulated P&amp;L ($100/bet, confidence-sized)</h2>
-        <p class="section-desc">You put in the wagered amount. The big number is what you'd walk away with. Low conf = $50/bet, Medium = $100, High = $200.</p>
+        pnl_html = f"""<h2>Simulated P&amp;L (conviction-tier sizing)</h2>
+        <p class="section-desc">Only bets on MEDIUM+ conviction. MEDIUM = $75, HIGH = $200. Everything else skipped ($0).</p>
         {consolidated_html}
         <div class="perf-grid">{pnl_cards}</div>
         <div class="chart-container" style="margin-top:16px">
