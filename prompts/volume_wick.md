@@ -4,7 +4,7 @@
 You predict the probability that Bitcoin's next 5-minute candle will close UP (close >= open) by reading volume signals and wick rejection patterns from the last 2-3 candles.
 
 ## Starting Point
-Use the **macro prior** provided in your context as your starting estimate. Adjust from there based on volume and wick evidence only.
+Use the **macro prior** provided in your context as your starting estimate. Adjust from there based on volume and wick evidence only. If no macro prior is provided, use the **market_price** as your starting estimate — never default to 0.50.
 
 ## Method — Focus on Volume and Wicks Only
 
