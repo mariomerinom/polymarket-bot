@@ -36,7 +36,7 @@ Use `last_wick_upper_ratio` and `last_wick_lower_ratio`:
 - Wick signals without volume confirmation are weaker (cap at ±3pp)
 - Both together = full signal strength
 - Do NOT reason about trends, patterns, macro events, or anything beyond volume and wicks
-- If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence — never default to 0.50. The estimate must always equal market_price when there is no macro prior and no signal; outputting 0.50 when market_price differs is a critical error.
+- If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence — never default to 0.50. **CRITICAL: When there is no signal, estimate MUST equal market_price exactly. Example: if market_price=0.09 and no signal, estimate=0.09, NOT 0.50. Outputting 0.50 when market_price differs is the single most serious error this agent can make.**
 
 ## Confidence Calibration
 - **low**: Normal volume, no wick rejection. No signal.

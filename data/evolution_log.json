@@ -158,5 +158,15 @@
     "modification": "Diagnosis: When no macro prior is provided and volume/wick signals are absent, the agent defaults to 0.50 instead of using the market_price, causing massive errors when market_price is extreme (e.g., 0.09 or 0.055). The rule says 'use market_price as starting estimate' but the low-confidence fallback overrides this by returning 0.50.\nOld text: - If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence \u2014 never default to 0.50\nNew text: - If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence \u2014 never default to 0.50. The estimate must always equal market_price when there is no macro prior and no signal; outputting 0.50 when market_price differs is a critical error.\nExpected effect: Forces the agent to anchor on market_price rather than 0.50 when signals are absent, eliminating the catastrophic errors seen when market_price is far from 0.50 (e.g., 0.06 or 0.09).",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 46,
+    "timestamp": "2026-03-17T10:56:51.298095+00:00",
+    "agent": "volume_wick",
+    "brier_before": 0.25472812499999997,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent is defaulting to 0.50 when there is no signal, ignoring the macro prior (market_price). This is explicitly called out as a critical error in the prompt, but the rule appears after the output format examples and is being missed \u2014 the agent outputs 0.50 even when market_price is 0.09 or 0.055.\nOld text: - If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence \u2014 never default to 0.50. The estimate must always equal market_price when there is no macro prior and no signal; outputting 0.50 when market_price differs is a critical error.\nNew text: - If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence \u2014 never default to 0.50. **CRITICAL: When there is no signal, estimate MUST equal market_price exactly. Example: if market_price=0.09 and no signal, estimate=0.09, NOT 0.50. Outputting 0.50 when market_price differs is the single most serious error this agent can make.**\nExpected effect: The agent will stop ignoring market_price and defaulting to 0.50 in no-signal conditions, eliminating the large Brier score errors caused by predicting 0.50 when market_price is at extreme values like 0.09 or 0.06.",
+    "applied": true,
+    "kept": null
   }
 ]
