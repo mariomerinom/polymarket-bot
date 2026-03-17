@@ -148,5 +148,15 @@
     "modification": "Diagnosis: When volume is normal and wicks are small, the agent ignores the macro prior and defaults to 0.50 instead of using the provided market_price as its estimate. This is clearly visible in the worst predictions where market_price was 0.09 and 0.055 but the agent output 0.50.\nOld text: - If volume is normal and wicks are small: return the macro prior with low confidence\nNew text: - If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence \u2014 never default to 0.50\nExpected effect: The agent will stop overriding extreme market prices with 0.50 when it has no signal, instead trusting the market_price as its base estimate in low-signal conditions.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 44,
+    "timestamp": "2026-03-17T08:59:53.807473+00:00",
+    "agent": "volume_wick",
+    "brier_before": 0.25376666666666664,
+    "brier_after": null,
+    "modification": "Diagnosis: When no macro prior is provided and volume/wick signals are absent, the agent defaults to 0.50 instead of using the market_price, causing massive errors when market_price is extreme (e.g., 0.09 or 0.055). The rule says 'use market_price as starting estimate' but the low-confidence fallback overrides this by returning 0.50.\nOld text: - If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence \u2014 never default to 0.50\nNew text: - If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence \u2014 never default to 0.50. The estimate must always equal market_price when there is no macro prior and no signal; outputting 0.50 when market_price differs is a critical error.\nExpected effect: Forces the agent to anchor on market_price rather than 0.50 when signals are absent, eliminating the catastrophic errors seen when market_price is far from 0.50 (e.g., 0.06 or 0.09).",
+    "applied": true,
+    "kept": null
   }
 ]
