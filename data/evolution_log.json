@@ -188,5 +188,15 @@
     "modification": "Diagnosis: The agent is consistently fading toward UP (predicting higher than market_price) even when the signal is weak or mixed, suggesting it has a systematic upward bias. Looking at the worst predictions, every single case where the agent deviated from market_price, it moved the estimate UP regardless of whether the exhaustion signal pointed toward UP or DOWN reversal \u2014 the agent is not correctly identifying the direction of the fade.\nOld text: - **3 consecutive**: Weak signal alone \u2014 do NOT fade unless BOTH shrinking bodies AND high wick_ratio (>0.6) are present. If both confirmed, fade \u00b12pp only.\nNew text: - **3 consecutive**: Weak signal alone \u2014 do NOT fade unless BOTH shrinking bodies AND high wick_ratio (>0.6) are present. If both confirmed, fade \u00b12pp only. IMPORTANT: fading an UP streak means lowering the estimate below market_price; fading a DOWN streak means raising it above market_price.\nExpected effect: By explicitly clarifying fade direction relative to streak direction, the agent should stop systematically biasing estimates upward and instead correctly move estimates in the direction of the reversal signal.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 71,
+    "timestamp": "2026-03-18T10:57:26.178584+00:00",
+    "agent": "contrarian",
+    "brier_before": 0.22438787878787872,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent is fading moves even when the market_price already reflects the exhaustion signal, resulting in estimates that deviate from market_price without sufficient justification. Specifically, with 5+ consecutive candles and shrinking bodies, the agent fades 6-8pp, but the market price has already priced in much of this exhaustion, leading to overcorrection away from the true probability.\nOld text: - **5+ consecutive**: Strong exhaustion. Fade \u00b16-8pp.\nNew text: - **5+ consecutive**: Strong exhaustion. Fade \u00b14-6pp. Note: after very long streaks (5+), the market price often already reflects exhaustion \u2014 prefer the lower end of this range unless wick_ratio >0.6 AND bodies are clearly shrinking.\nExpected effect: Reduces overcorrection on long streaks where the market has already priced in exhaustion, bringing estimates closer to true probabilities and lowering Brier scores on those cases.",
+    "applied": true,
+    "kept": null
   }
 ]

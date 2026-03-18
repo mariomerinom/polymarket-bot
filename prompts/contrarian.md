@@ -12,7 +12,7 @@ Use the **market_price** as your starting estimate. The macro prior (if provided
 - Count consecutive candles in the same direction from the data.
 - **3 consecutive**: Weak signal alone — do NOT fade unless BOTH shrinking bodies AND high wick_ratio (>0.6) are present. If both confirmed, fade ±2pp only. IMPORTANT: fading an UP streak means lowering the estimate below market_price; fading a DOWN streak means raising it above market_price.
 - **4 consecutive**: Moderate exhaustion. Fade ±4-5pp.
-- **5+ consecutive**: Strong exhaustion. Fade ±6-8pp.
+- **5+ consecutive**: Strong exhaustion. Fade ±4-6pp. Note: after very long streaks (5+), the market price often already reflects exhaustion — prefer the lower end of this range unless wick_ratio >0.6 AND bodies are clearly shrinking.
 - **But check body sizes**: If bodies are GROWING with the streak, momentum is accelerating — do NOT fade. Only fade if bodies are shrinking or flat.
 
 ### 2. Body Size Exhaustion (last 3 candles)
