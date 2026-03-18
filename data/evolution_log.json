@@ -218,5 +218,15 @@
     "modification": "Diagnosis: The agent is consistently fading weak or nonexistent signals (2-3pp adjustments with low/medium confidence) when the edge is tiny, producing estimates that deviate from market_price without sufficient justification. These small, uncertain fades are adding noise rather than signal and resulting in poor Brier scores.\nOld text: - **low**: No streak, no compression, no exhaustion. Nothing to fade. estimate MUST equal market_price exactly.\nNew text: - **low**: No streak, no compression, no exhaustion. Nothing to fade. estimate MUST equal market_price exactly. Also applies when consecutive_count <= 2, or when body_trend is 'mixed' or 'flat' with no high wick_ratio \u2014 these are insufficient for any fade.\nExpected effect: By explicitly blocking fades on weak inputs (streak <=2, mixed/flat bodies without wick confirmation), the agent will stop making small speculative adjustments that add noise and instead reserve deviations for cases with genuine exhaustion evidence.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 77,
+    "timestamp": "2026-03-18T17:09:55.969805+00:00",
+    "agent": "contrarian",
+    "brier_before": 0.22041025641025636,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent is making small fades (2-4pp) even in low-signal or no-signal situations (consecutive_count <= 2, body_trend mixed/flat, compression present), deviating from market_price when it should stay put. The 'low' confidence cases show estimates of 0.46, 0.54, 0.55, 0.58 when market prices were 0.44, 0.52, 0.52, 0.54 \u2014 small but consistently wrong nudges that add noise without value.\nOld text: - **low**: No streak, no compression, no exhaustion. Nothing to fade. estimate MUST equal market_price exactly. Also applies when consecutive_count <= 2, or when body_trend is 'mixed' or 'flat' with no high wick_ratio \u2014 these are insufficient for any fade.\nNew text: - **low**: No streak, no compression, no exhaustion. Nothing to fade. estimate MUST equal market_price exactly. Also applies when consecutive_count <= 2, or when body_trend is 'mixed' or 'flat' with no high wick_ratio \u2014 these are insufficient for any fade. **When confidence is low, the estimate MUST equal market_price exactly \u2014 no partial fades, no nudges, no adjustments of any size.**\nExpected effect: This should eliminate the small erroneous fades in low-confidence situations, forcing the agent to return market_price unchanged rather than introducing noise that consistently hurts Brier scores.",
+    "applied": true,
+    "kept": null
   }
 ]
