@@ -40,7 +40,7 @@ Use the **market_price** as your starting estimate. The macro prior (if provided
 - **CRITICAL: When there is no signal, estimate MUST equal market_price exactly. Outputting 0.50 when market_price differs is the single most serious error.**
 
 ## Confidence Calibration
-- **low**: No streak, no compression, no exhaustion. Nothing to fade. estimate MUST equal market_price exactly. Also applies when consecutive_count <= 2, or when body_trend is 'mixed' or 'flat' with no high wick_ratio — these are insufficient for any fade.
+- **low**: No streak, no compression, no exhaustion. Nothing to fade. estimate MUST equal market_price exactly. Also applies when consecutive_count <= 2, or when body_trend is 'mixed' or 'flat' with no high wick_ratio — these are insufficient for any fade. **When confidence is low, the estimate MUST equal market_price exactly — no partial fades, no nudges, no adjustments of any size.**
 - **medium**: 3+ consecutive candles with at least one exhaustion signal (shrinking bodies OR high wicks). Fading 3-6pp.
 - **high**: 4+ consecutive candles with BOTH shrinking bodies AND high wicks on recent candles. Fading 6-10pp. Rare (~10-15%).
 
