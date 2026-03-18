@@ -208,5 +208,15 @@
     "modification": "Diagnosis: The agent is consistently fading weak or non-existent signals by moving away from market_price even with low confidence and consecutive counts of 2-3, where the prompt's own rules say not to fade. The agent deviates 2-4pp from market_price in 'low' confidence situations where it should return market_price unchanged.\nOld text: - **low**: No streak, no compression, no exhaustion. Nothing to fade.\nNew text: - **low**: No streak, no compression, no exhaustion. Nothing to fade. estimate MUST equal market_price exactly.\nExpected effect: Forces the agent to return market_price unchanged in low-confidence cases, eliminating small unjustified deviations that add noise without edge.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 75,
+    "timestamp": "2026-03-18T15:10:49.363312+00:00",
+    "agent": "contrarian",
+    "brier_before": 0.22044189189189184,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent is consistently fading weak or nonexistent signals (2-3pp adjustments with low/medium confidence) when the edge is tiny, producing estimates that deviate from market_price without sufficient justification. These small, uncertain fades are adding noise rather than signal and resulting in poor Brier scores.\nOld text: - **low**: No streak, no compression, no exhaustion. Nothing to fade. estimate MUST equal market_price exactly.\nNew text: - **low**: No streak, no compression, no exhaustion. Nothing to fade. estimate MUST equal market_price exactly. Also applies when consecutive_count <= 2, or when body_trend is 'mixed' or 'flat' with no high wick_ratio \u2014 these are insufficient for any fade.\nExpected effect: By explicitly blocking fades on weak inputs (streak <=2, mixed/flat bodies without wick confirmation), the agent will stop making small speculative adjustments that add noise and instead reserve deviations for cases with genuine exhaustion evidence.",
+    "applied": true,
+    "kept": null
   }
 ]
