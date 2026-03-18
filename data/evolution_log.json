@@ -178,5 +178,15 @@
     "modification": "Diagnosis: The agent consistently fades (moves estimate away from market_price) even when signals are weak or mixed, producing small but systematic edges that are wrong more often than right. The prompt encourages fading on 3 consecutive candles with only one exhaustion signal, which is too low a bar given the noisy 5-minute timeframe.\nOld text: - **3 consecutive**: Mild exhaustion signal. Fade \u00b12-3pp opposite to the streak direction.\nNew text: - **3 consecutive**: Weak signal alone \u2014 do NOT fade unless BOTH shrinking bodies AND high wick_ratio (>0.6) are present. If both confirmed, fade \u00b12pp only.\nExpected effect: By requiring two confirming exhaustion signals before fading a 3-candle streak, the agent will make fewer small incorrect fades on weak evidence, reducing Brier score on low-confidence predictions.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 69,
+    "timestamp": "2026-03-18T08:58:36.451779+00:00",
+    "agent": "contrarian",
+    "brier_before": 0.22405080645161285,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent is consistently fading toward UP (predicting higher than market_price) even when the signal is weak or mixed, suggesting it has a systematic upward bias. Looking at the worst predictions, every single case where the agent deviated from market_price, it moved the estimate UP regardless of whether the exhaustion signal pointed toward UP or DOWN reversal \u2014 the agent is not correctly identifying the direction of the fade.\nOld text: - **3 consecutive**: Weak signal alone \u2014 do NOT fade unless BOTH shrinking bodies AND high wick_ratio (>0.6) are present. If both confirmed, fade \u00b12pp only.\nNew text: - **3 consecutive**: Weak signal alone \u2014 do NOT fade unless BOTH shrinking bodies AND high wick_ratio (>0.6) are present. If both confirmed, fade \u00b12pp only. IMPORTANT: fading an UP streak means lowering the estimate below market_price; fading a DOWN streak means raising it above market_price.\nExpected effect: By explicitly clarifying fade direction relative to streak direction, the agent should stop systematically biasing estimates upward and instead correctly move estimates in the direction of the reversal signal.",
+    "applied": true,
+    "kept": null
   }
 ]
