@@ -168,5 +168,15 @@
     "modification": "Diagnosis: The agent is defaulting to 0.50 when there is no signal, ignoring the macro prior (market_price). This is explicitly called out as a critical error in the prompt, but the rule appears after the output format examples and is being missed \u2014 the agent outputs 0.50 even when market_price is 0.09 or 0.055.\nOld text: - If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence \u2014 never default to 0.50. The estimate must always equal market_price when there is no macro prior and no signal; outputting 0.50 when market_price differs is a critical error.\nNew text: - If volume is normal and wicks are small: return the macro prior (or market_price if no macro prior) unchanged with low confidence \u2014 never default to 0.50. **CRITICAL: When there is no signal, estimate MUST equal market_price exactly. Example: if market_price=0.09 and no signal, estimate=0.09, NOT 0.50. Outputting 0.50 when market_price differs is the single most serious error this agent can make.**\nExpected effect: The agent will stop ignoring market_price and defaulting to 0.50 in no-signal conditions, eliminating the large Brier score errors caused by predicting 0.50 when market_price is at extreme values like 0.09 or 0.06.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 67,
+    "timestamp": "2026-03-18T07:10:53.132047+00:00",
+    "agent": "contrarian",
+    "brier_before": 0.22326465517241373,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent consistently fades (moves estimate away from market_price) even when signals are weak or mixed, producing small but systematic edges that are wrong more often than right. The prompt encourages fading on 3 consecutive candles with only one exhaustion signal, which is too low a bar given the noisy 5-minute timeframe.\nOld text: - **3 consecutive**: Mild exhaustion signal. Fade \u00b12-3pp opposite to the streak direction.\nNew text: - **3 consecutive**: Weak signal alone \u2014 do NOT fade unless BOTH shrinking bodies AND high wick_ratio (>0.6) are present. If both confirmed, fade \u00b12pp only.\nExpected effect: By requiring two confirming exhaustion signals before fading a 3-candle streak, the agent will make fewer small incorrect fades on weak evidence, reducing Brier score on low-confidence predictions.",
+    "applied": true,
+    "kept": null
   }
 ]
