@@ -198,5 +198,15 @@
     "modification": "Diagnosis: The agent is fading moves even when the market_price already reflects the exhaustion signal, resulting in estimates that deviate from market_price without sufficient justification. Specifically, with 5+ consecutive candles and shrinking bodies, the agent fades 6-8pp, but the market price has already priced in much of this exhaustion, leading to overcorrection away from the true probability.\nOld text: - **5+ consecutive**: Strong exhaustion. Fade \u00b16-8pp.\nNew text: - **5+ consecutive**: Strong exhaustion. Fade \u00b14-6pp. Note: after very long streaks (5+), the market price often already reflects exhaustion \u2014 prefer the lower end of this range unless wick_ratio >0.6 AND bodies are clearly shrinking.\nExpected effect: Reduces overcorrection on long streaks where the market has already priced in exhaustion, bringing estimates closer to true probabilities and lowering Brier scores on those cases.",
     "applied": true,
     "kept": null
+  },
+  {
+    "cycle": 73,
+    "timestamp": "2026-03-18T13:26:42.958129+00:00",
+    "agent": "contrarian",
+    "brier_before": 0.22205785714285708,
+    "brier_after": null,
+    "modification": "Diagnosis: The agent is consistently fading weak or non-existent signals by moving away from market_price even with low confidence and consecutive counts of 2-3, where the prompt's own rules say not to fade. The agent deviates 2-4pp from market_price in 'low' confidence situations where it should return market_price unchanged.\nOld text: - **low**: No streak, no compression, no exhaustion. Nothing to fade.\nNew text: - **low**: No streak, no compression, no exhaustion. Nothing to fade. estimate MUST equal market_price exactly.\nExpected effect: Forces the agent to return market_price unchanged in low-confidence cases, eliminating small unjustified deviations that add noise without edge.",
+    "applied": true,
+    "kept": null
   }
 ]
