@@ -1,166 +1,266 @@
 """
-predict.py — Send markets to each agent (via Claude API) and store predictions.
+predict.py — Regime-filtered contrarian rule predictions.
 
-v2: Agents receive macro bias context + micro-TA signals. After all agents
-predict, a conviction score is computed from independent signal layers.
+V3: No LLM agents. Pure computation from BTC candle data.
+- Fetch 20 candles from Kraken/Coinbase
+- Compute regime (volatility + autocorrelation)
+- If mean-reverting → skip
+- If streak >= 3 + exhaustion → fade the streak
+- Cost: $0/day
 """
 
-import anthropic
 import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-try:
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent.parent / ".env", override=True)
-except ImportError:
-    pass
 
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
-MODEL = "claude-sonnet-4-6"  # Use sonnet for speed/cost; switch to opus for quality
-
-# v2 agents — 2-agent ensemble (pattern_reader dropped: anti-predictive in backtest)
-V2_AGENTS = {"volume_wick", "contrarian"}
 
 
-def load_agent_prompts():
-    """Load v2 agent prompt files from prompts/ directory."""
-    agents = {}
-    for prompt_file in PROMPTS_DIR.glob("*.md"):
-        agent_name = prompt_file.stem
-        if agent_name in V2_AGENTS:
-            agents[agent_name] = prompt_file.read_text()
-    # Fallback: if no v2 agents found, load all (backward compat)
-    if not agents:
-        for prompt_file in PROMPTS_DIR.glob("*.md"):
-            agents[prompt_file.stem] = prompt_file.read_text()
-    return agents
+def compute_regime_from_candles(candles):
+    """
+    Compute regime indicators from candle list.
+    Returns dict with autocorrelation, volatility, and label.
+    """
+    closes = [c["close"] for c in candles]
+
+    # Volatility: stdev of 5-min returns
+    returns = [(closes[i] - closes[i-1]) / closes[i-1]
+               for i in range(1, len(closes))]
+
+    if len(returns) < 3:
+        return {"autocorrelation": 0.0, "volatility": 0.0, "label": "UNKNOWN"}
+
+    import statistics
+    volatility = statistics.stdev(returns) * 100  # as percentage
+
+    # Autocorrelation: lag-1
+    n = len(returns)
+    mean_r = sum(returns) / n
+    var = sum((r - mean_r) ** 2 for r in returns) / n
+    autocorr = 0.0
+    if var > 0:
+        cov = sum(
+            (returns[i] - mean_r) * (returns[i-1] - mean_r)
+            for i in range(1, n)
+        ) / (n - 1)
+        autocorr = cov / var
+
+    # Labels
+    if volatility < 0.05:
+        vol_label = "LOW_VOL"
+    elif volatility < 0.12:
+        vol_label = "MEDIUM_VOL"
+    else:
+        vol_label = "HIGH_VOL"
+
+    if autocorr > 0.15:
+        trend_label = "TRENDING"
+    elif autocorr < -0.15:
+        trend_label = "MEAN_REVERTING"
+    else:
+        trend_label = "NEUTRAL"
+
+    return {
+        "autocorrelation": round(autocorr, 4),
+        "volatility": round(volatility, 4),
+        "label": f"{vol_label} / {trend_label}",
+        "is_mean_reverting": autocorr < -0.15,
+    }
 
 
-def build_market_context(market, macro_context="", btc_context="", current_time=None):
-    """Format market data into context for the agent. v2: macro context first."""
-    if current_time is None:
-        current_time = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')
-    elif hasattr(current_time, 'strftime'):
-        current_time = current_time.strftime('%Y-%m-%d %H:%M')
+def contrarian_signal(candles):
+    """
+    Contrarian exhaustion rule:
+    1. streak >= 3 same direction
+    2. At least one exhaustion signal (compression, volume spike, or shrinking range)
+    3. Fade the streak
 
-    return f"""{macro_context}
+    Returns dict with estimate, confidence, should_trade, and signal details.
+    """
+    if len(candles) < 5:
+        return {"estimate": 0.5, "should_trade": False, "reason": "insufficient_data"}
 
-{btc_context}
+    # Count consecutive streak (from most recent candle backward)
+    last_dir = "UP" if candles[-1]["close"] >= candles[-1]["open"] else "DOWN"
+    streak = 1
+    for i in range(len(candles) - 2, -1, -1):
+        d = "UP" if candles[i]["close"] >= candles[i]["open"] else "DOWN"
+        if d == last_dir:
+            streak += 1
+        else:
+            break
 
-## Bitcoin 5-Minute Candle Prediction
+    signed_streak = streak if last_dir == "UP" else -streak
 
-- **Market:** {market['question']}
-- **Current market price (UP):** {market['price_yes']:.1%}
-- **Resolution time:** {market['end_date']}
-- **Current time (UTC):** {current_time}
+    if abs(signed_streak) < 3:
+        return {
+            "estimate": 0.5, "should_trade": False,
+            "reason": f"streak_too_short ({signed_streak})",
+            "streak": signed_streak,
+        }
 
-Will Bitcoin close UP (>= open) or DOWN (< open) for this 5-minute candle?
+    # Exhaustion signals
+    # 1. Compression: last 3 candle ranges shrinking
+    compression = False
+    if len(candles) >= 3:
+        ranges = [c["high"] - c["low"] for c in candles[-3:]]
+        compression = ranges[0] > ranges[1] > ranges[2] and ranges[2] > 0
 
-Provide your analysis in the JSON format specified in your instructions.
-Return ONLY valid JSON, no other text."""
+    # 2. Volume spike: last candle volume > 1.8x average
+    volumes = [c["volume"] for c in candles]
+    avg_vol = sum(volumes) / len(volumes) if volumes else 1
+    vol_ratio = candles[-1]["volume"] / avg_vol if avg_vol > 0 else 1.0
+    volume_spike = vol_ratio > 1.8
+
+    # 3. Shrinking range: last candle range < 70% of average
+    avg_range = sum(c["high"] - c["low"] for c in candles) / len(candles)
+    last_range = candles[-1]["high"] - candles[-1]["low"]
+    range_ratio = last_range / avg_range if avg_range > 0 else 1.0
+    shrinking = range_ratio < 0.7
+
+    has_exhaustion = compression or volume_spike or shrinking
+
+    if not has_exhaustion:
+        return {
+            "estimate": 0.5, "should_trade": False,
+            "reason": f"no_exhaustion (streak={signed_streak})",
+            "streak": signed_streak,
+        }
+
+    # Fade the streak
+    if signed_streak >= 3:
+        estimate = 0.38  # streak UP → predict DOWN
+        direction = "DOWN"
+    else:
+        estimate = 0.62  # streak DOWN → predict UP
+        direction = "UP"
+
+    confidence = "medium"
+    if abs(signed_streak) >= 5:
+        confidence = "high"
+    if volume_spike and compression:
+        confidence = "high"
+
+    return {
+        "estimate": estimate,
+        "should_trade": True,
+        "direction": direction,
+        "confidence": confidence,
+        "streak": signed_streak,
+        "exhaustion": {
+            "compression": compression,
+            "volume_spike": volume_spike,
+            "vol_ratio": round(vol_ratio, 2),
+            "shrinking_range": shrinking,
+            "range_ratio": round(range_ratio, 2),
+        },
+        "reason": f"fade_streak_{direction}",
+    }
 
 
-def get_prediction(client, agent_name, agent_prompt, market, btc_context="", macro_context="", current_time=None):
-    """Call Claude API with agent prompt + market context, return structured prediction."""
-    market_context = build_market_context(market, macro_context, btc_context, current_time)
-
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1024,
-        system=agent_prompt,
-        messages=[{"role": "user", "content": market_context}],
-    )
-
-    text = response.content[0].text.strip()
-    # Extract JSON from response (handle markdown code blocks)
-    if "```json" in text:
-        text = text.split("```json")[1].split("```")[0].strip()
-    elif "```" in text:
-        text = text.split("```")[1].split("```")[0].strip()
-
-    prediction = json.loads(text)
-    prediction["agent"] = agent_name
-    prediction["market_id"] = market["id"]
-    return prediction
+def ensure_regime_column(db):
+    """Add regime column to predictions table if it doesn't exist."""
+    try:
+        db.execute("ALTER TABLE predictions ADD COLUMN regime TEXT")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass  # already exists
 
 
-def store_prediction(db, prediction, cycle, conviction_score=None, predicted_at=None):
+def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
     """Store a prediction in the database."""
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
 
-    # Try to store conviction_score if column exists
+    estimate = signal["estimate"]
+    edge = abs(estimate - 0.5)
+    confidence = signal.get("confidence", "low")
+
+    # Conviction: simple mapping
+    # MEDIUM if should_trade + medium/high confidence, else NO_BET
+    if signal["should_trade"] and confidence in ("medium", "high"):
+        conviction = 3
+    elif signal["should_trade"]:
+        conviction = 2
+    else:
+        conviction = 0
+
+    reasoning = json.dumps({
+        "signal": signal,
+        "regime": regime,
+    })
+
+    # Store as "contrarian_rule" agent
     try:
         db.execute("""
-            INSERT INTO predictions (market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle, conviction_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO predictions
+            (market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle, conviction_score, regime)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            prediction["market_id"],
-            prediction["agent"],
-            prediction.get("estimate", 0),
-            prediction.get("edge", 0),
-            prediction.get("confidence", "low"),
-            json.dumps(prediction),
-            predicted_at,
-            cycle,
-            conviction_score,
+            market_id, "contrarian_rule", estimate, edge, confidence,
+            reasoning, predicted_at, cycle, conviction, regime["label"],
         ))
     except sqlite3.OperationalError:
-        # conviction_score column doesn't exist yet — store without it
+        # regime column might not exist yet
         db.execute("""
-            INSERT INTO predictions (market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO predictions
+            (market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle, conviction_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            prediction["market_id"],
-            prediction["agent"],
-            prediction.get("estimate", 0),
-            prediction.get("edge", 0),
-            prediction.get("confidence", "low"),
-            json.dumps(prediction),
-            predicted_at,
-            cycle,
+            market_id, "contrarian_rule", estimate, edge, confidence,
+            reasoning, predicted_at, cycle, conviction,
         ))
     db.commit()
 
 
 def run_predictions(cycle=1, market_limit=5, btc_data=None):
-    """Main loop: fetch unresolved markets, run all agents, compute conviction, store."""
-    from btc_data import fetch_btc_candles, format_for_prompt, compute_rolling_bias
-    from conviction import load_macro_bias, compute_conviction, format_macro_for_prompt
+    """
+    Main prediction loop.
+    Fetch candles → compute regime → apply contrarian rule → store.
+    No API calls. $0 cost.
+    """
+    from btc_data import fetch_btc_candles, format_for_prompt
 
     db = sqlite3.connect(DB_PATH)
-    client = anthropic.Anthropic()
-    agents = load_agent_prompts()
+    ensure_regime_column(db)
 
     # Ensure conviction_score column exists
     try:
         db.execute("ALTER TABLE predictions ADD COLUMN conviction_score INTEGER")
         db.commit()
     except sqlite3.OperationalError:
-        pass  # column already exists
+        pass
 
-    # Load macro bias (human-in-the-loop)
-    macro_bias = load_macro_bias()
-    print(f"  Macro: {macro_bias['regime']} | Bias: {macro_bias['bias']} | Prior: {macro_bias['prior']:.2f}")
-
-    # Compute rolling bias (automatic sanity check)
-    rolling_bias = None
-    try:
-        rolling_bias = compute_rolling_bias()
-        blended = rolling_bias.get("blended", 0.5)
-        print(f"  Computed bias: {blended*100:.1f}% UP (blended)")
-    except Exception as e:
-        print(f"  Rolling bias unavailable: {e}")
-
-    # Format macro context for agents
-    macro_context = format_macro_for_prompt(macro_bias, rolling_bias)
-
-    # Fetch BTC price data
+    # Fetch BTC candles
     if btc_data is None:
-        btc_data = fetch_btc_candles()
-    btc_context = format_for_prompt(btc_data)
+        btc_data = fetch_btc_candles(limit=20)
+
+    if btc_data:
+        candles = btc_data["candles"]
+        print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}%")
+    else:
+        print("  WARNING: No BTC data available — skipping predictions")
+        db.close()
+        return
+
+    # Compute regime
+    regime = compute_regime_from_candles(candles)
+    print(f"  Regime: {regime['label']} (autocorr: {regime['autocorrelation']:+.4f})")
+
+    # Check regime gate
+    if regime["is_mean_reverting"]:
+        print(f"  SKIP: Mean-reverting regime detected — no trades")
+
+    # Compute contrarian signal
+    signal = contrarian_signal(candles)
+    if signal["should_trade"]:
+        print(f"  Signal: FADE {signal['direction']} (streak={signal['streak']}, conf={signal['confidence']})")
+        print(f"    Exhaustion: compression={signal['exhaustion']['compression']}, "
+              f"vol_spike={signal['exhaustion']['volume_spike']} ({signal['exhaustion']['vol_ratio']:.1f}x), "
+              f"shrink={signal['exhaustion']['shrinking_range']} ({signal['exhaustion']['range_ratio']:.2f}x)")
+    else:
+        print(f"  Signal: NONE ({signal['reason']})")
 
     # Get markets to predict
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -174,41 +274,44 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None):
                for row in cursor.fetchall()]
 
     if not markets:
-        print("No unresolved markets found. Run fetch_markets.py first.")
+        print("  No unresolved markets found.")
         db.close()
         return
 
-    print(f"Running {len(agents)} agents against {len(markets)} markets (cycle {cycle})")
-    if btc_data:
-        print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}%")
+    print(f"  Markets: {len(markets)}")
 
     for market in markets:
         print(f"\n  Market: {market['question'][:60]}...")
-        print(f"  Price:  {market['price_yes']:.0%}")
+        mkt_price = market['price_yes']
+        print(f"  Mkt price: {mkt_price:.0%}")
 
-        # Collect predictions from all agents
-        cycle_predictions = []
-        for agent_name, agent_prompt in agents.items():
-            try:
-                prediction = get_prediction(
-                    client, agent_name, agent_prompt, market,
-                    btc_context=btc_context, macro_context=macro_context
-                )
-                cycle_predictions.append(prediction)
-                est = prediction.get("estimate", "?")
-                edge = prediction.get("edge", "?")
-                conf = prediction.get("confidence", "?")
-                print(f"    {agent_name:20s} → {est:.0%} (edge: {edge:+.0%}, {conf})")
-            except Exception as e:
-                print(f"    {agent_name:20s} → ERROR: {e}")
+        # Apply regime gate: if mean-reverting, store as NO_BET (estimate=market price)
+        if regime["is_mean_reverting"]:
+            skip_signal = {
+                "estimate": mkt_price,  # anchor to market
+                "should_trade": False,
+                "confidence": "skip",
+                "reason": "regime_skip_mean_reverting",
+            }
+            store_prediction(db, market["id"], skip_signal, regime, cycle)
+            print(f"    → SKIP (mean-reverting regime)")
+            continue
 
-        # Compute conviction from all predictions
-        conv = compute_conviction(cycle_predictions, macro_bias, rolling_bias)
-        print(f"    {'CONVICTION':20s} → {conv['tier']} ({conv['score']}/5) | Ensemble: {conv['ensemble_estimate']:.0%} | Bet: ${conv['bet_size']}")
-
-        # Store all predictions with conviction score
-        for prediction in cycle_predictions:
-            store_prediction(db, prediction, cycle, conviction_score=conv["score"])
+        # Apply contrarian signal
+        if signal["should_trade"]:
+            store_prediction(db, market["id"], signal, regime, cycle)
+            direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
+            print(f"    → {direction} @ {signal['estimate']:.0%} ({signal['confidence']})")
+        else:
+            # No signal — store as NO_BET
+            no_signal = {
+                "estimate": mkt_price,
+                "should_trade": False,
+                "confidence": "skip",
+                "reason": signal.get("reason", "no_signal"),
+            }
+            store_prediction(db, market["id"], no_signal, regime, cycle)
+            print(f"    → SKIP ({signal.get('reason', 'no_signal')})")
 
     db.close()
     print(f"\nDone. Predictions stored in {DB_PATH}")

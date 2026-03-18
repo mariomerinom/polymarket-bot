@@ -9,7 +9,8 @@ import sqlite3
 import json
 import requests
 from pathlib import Path
-from predict import V2_AGENTS
+# V3: single contrarian_rule agent. Keep set for backward compat with scoring.
+V2_AGENTS = {"contrarian_rule", "contrarian", "volume_wick"}
 
 GAMMA_API = "https://gamma-api.polymarket.com"
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"

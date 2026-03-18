@@ -1,8 +1,9 @@
 name: Evolve Agent
 
 on:
-  schedule:
-    - cron: '0 */2 * * *'
+  # Disabled: V3 uses contrarian rule, no LLM agents to evolve
+  # schedule:
+  #   - cron: '0 */2 * * *'
   workflow_dispatch:
     inputs:
       force:
