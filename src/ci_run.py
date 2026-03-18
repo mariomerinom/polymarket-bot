@@ -1,11 +1,11 @@
 """
 ci_run.py — One-shot cycle for GitHub Actions.
 
-Runs the full pipeline once:
+V3: No LLM agents. Pure computation.
   1. Fetch active BTC 5-min markets
-  2. Predict on the next unpredicted market
+  2. Predict using regime-filtered contrarian rule ($0 cost)
   3. Auto-resolve closed markets
-  4. Score agents
+  4. Score
   5. Generate static dashboard HTML
 """
 
@@ -52,7 +52,7 @@ def main():
         print(f"  Fetch error: {e}")
         markets = []
 
-    # 2. Auto-resolve closed markets (do this BEFORE predicting so we don't waste on stale markets)
+    # 2. Auto-resolve closed markets
     print("[2/5] Auto-resolving...")
     resolved = auto_resolve(db)
     if resolved:
@@ -60,19 +60,19 @@ def main():
 
     if not markets and not has_unpredicted_market(db):
         print("No active markets. Exiting early.")
-        # Still generate dashboard even with no new data
         db.close()
         _generate_dashboard()
         return
 
-    # 3. Fetch BTC price data + Predict on next unpredicted market
+    # 3. Predict using contrarian rule (no API calls)
     cycle = get_next_cycle(db)
-    print(f"[3/5] Predictions (cycle {cycle})...")
-    btc_data = fetch_btc_candles()
+    print(f"[3/5] Predictions — contrarian rule (cycle {cycle})...")
+    btc_data = fetch_btc_candles(limit=20)
     if btc_data:
         print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}% | Trend: {btc_data['trend']}")
     else:
         print("  Warning: BTC price data unavailable")
+
     if has_unpredicted_market(db):
         db.close()
         try:

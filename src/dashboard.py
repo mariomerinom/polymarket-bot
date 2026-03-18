@@ -21,8 +21,9 @@ DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 EVOLUTION_LOG = Path(__file__).parent.parent / "data" / "evolution_log.json"
 
 AGENT_COLORS = {
-    "contrarian": "#f0883e",
-    "volume_wick": "#58a6ff",
+    "contrarian_rule": "#3fb950",  # V3: regime-filtered contrarian
+    "contrarian": "#f0883e",       # Legacy V2
+    "volume_wick": "#58a6ff",      # Legacy V2
 }
 AGENT_COLOR_LIST = ["#d2a8ff", "#58a6ff", "#f0883e", "#3fb950", "#f778ba"]
 
@@ -392,7 +393,7 @@ def compute_pnl(resolved, unit_bet=100):
 def compute_ensemble_pnl(resolved, unit_bet=100):
     """Ensemble P&L using conviction-tier bet sizing. Only bets on MEDIUM+ conviction."""
     CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 200}
-    WEIGHTS = {"contrarian": 0.55, "volume_wick": 0.45}
+    WEIGHTS = {"contrarian_rule": 1.0, "contrarian": 0.55, "volume_wick": 0.45}
 
     market_data = defaultdict(lambda: {"agents": [], "outcome": None, "price_yes": None, "conviction": 0})
     for row in resolved:
@@ -480,7 +481,7 @@ def compute_conviction_breakdown(resolved):
             return "HIGH"
 
     bet_sizes = {"NO_BET": 0, "LOW": 0, "MEDIUM": 75, "HIGH": 200, "UNKNOWN": 0}
-    weights = {"contrarian": 0.55, "volume_wick": 0.45}
+    weights = {"contrarian_rule": 1.0, "contrarian": 0.55, "volume_wick": 0.45}
 
     tiers = defaultdict(lambda: {"wins": 0, "losses": 0, "total": 0, "pnl": 0.0, "wagered": 0.0})
 
