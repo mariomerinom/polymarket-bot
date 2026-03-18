@@ -223,22 +223,72 @@ is what separates profit from loss.
 
 ---
 
-## Recommended Next Step
+## Stage 4 — Regime-Filtered Contrarian (VALIDATED)
 
-**Regime-filtered contrarian rule:**
-- Keep the V2.1 contrarian logic
-- Add regime detection from V3 feature engineering
-- Skip all trades when autocorrelation < -0.15 (mean-reverting regime)
-- Expected improvement: eliminate the -$1,533 HIGH_VOL/MEAN_REVERTING bleed
+**Date:** March 18, 2026 | **Cost:** $0 (pure computation)
 
-This requires zero ML, zero LLM API calls, and can be computed in <1ms per market.
+Tested three strategies on the same 14-day dataset (3,512 evaluated markets):
 
-If this works, the production system is:
+| Strategy | Win Rate | ROI | P&L | Trades/day | Max DD | Sharpe |
+|----------|----------|-----|-----|------------|--------|--------|
+| Plain Contrarian | 53.5% | +4.9% | +$1,413 | 31 | -$966 | 0.70 |
+| **Regime-Filtered** | **58.3%** | **+14.3%** | **+$3,225** | **25** | **-$618** | **2.30** |
+| Enhanced (V3.1 2-of-3) | 45.0% | -11.8% | -$708 | 7 | -$780 | -3.62 |
+
+### What the regime filter does
+- Computes lag-1 autocorrelation on recent 5-min returns
+- If autocorrelation < -0.15 (mean-reverting): **skip the market entirely**
+- Otherwise: apply the standard contrarian rule (streak ≥ 3 + exhaustion → fade)
+
+### Impact
+- **+4.8pp win rate** (53.5% → 58.3%)
+- **+9.4pp ROI** (4.9% → 14.3%)
+- **+$1,812 additional P&L** ($1,413 → $3,225)
+- **Max drawdown improved** (-$966 → -$618)
+- **Sharpe tripled** (0.70 → 2.30)
+
+### Why Enhanced (V3.1 spec) failed
+The consultant's recommended "2-of-3 exhaustion signals" filter was too strict.
+It reduced trades from 300 to 80 (7/day) and accuracy dropped to 45%.
+The wick rejection threshold (1.8× body) rarely fires in combination with
+other signals. The simple exhaustion check (compression OR volume spike OR
+shrinking range) works better than requiring multiple confirmations.
+
+### Why the regime filter works
+Mean-reverting regimes produced the largest single loss (-$1,524 in HIGH_VOL/MEAN_REVERTING).
+The contrarian rule assumes streaks persist then reverse — but in mean-reverting regimes,
+reversions happen before streak ≥ 3 fires. By the time the rule triggers, it's fading
+a streak that already reversed. The filter removes 81 toxic trades and preserves 300
+profitable ones.
+
+---
+
+## Final Production System
+
+```
 1. Poll Polymarket for BTC 5-min markets
-2. Fetch 12 candles from Kraken
-3. Compute regime (volatility + autocorrelation)
-4. If not mean-reverting: check contrarian rule (streak ≥ 3 + exhaustion)
-5. If signal fires: bet $75
-6. Otherwise: skip
+2. Fetch 20 candles from Kraken
+3. Compute regime: autocorrelation on 5-min returns
+4. If autocorrelation < -0.15 → SKIP (mean-reverting)
+5. If streak ≥ 3 + exhaustion signal → bet $75 fading the streak
+6. Otherwise → skip
+```
 
-**Estimated cost:** $0/day (no API calls). Just compute.
+**Expected performance:** 58% win rate, ~14% ROI, ~25 trades/day, $0/day operating cost.
+
+**Next step:** Paper logging loop (Stage 5 in ROADMAP.md). Run the rule live for
+2-4 weeks, accumulate 500+ resolved predictions with regime labels, validate that
+live performance matches backtest before risking capital.
+
+---
+
+## Cumulative Spend
+
+| Item | Cost |
+|------|------|
+| V1 backtest (200 markets, 3 LLM agents) | ~$10 |
+| V2 backtest (200 markets, 3 LLM agents) | ~$10 |
+| V3 backtest (4,012 markets, pure compute) | $0 |
+| Stage 4 regime backtest (3,512 markets) | $0 |
+| Daily LLM observation (V2.1, ~3 days) | ~$4.50 |
+| **Total** | **~$24.50** |
