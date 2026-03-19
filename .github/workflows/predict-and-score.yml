@@ -2,7 +2,9 @@ name: Predict and Score
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/30 * * * *'  # Fallback safety net (free-tier cron is unreliable)
+  repository_dispatch:
+    types: [next-cycle]
   workflow_dispatch: {}
 
 concurrency:
@@ -11,6 +13,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   run-cycle:
@@ -41,3 +44,25 @@ jobs:
           git diff --cached --quiet || git commit -m "Auto: cycle update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git pull --rebase
           git push
+
+      - name: Schedule next cycle in 5 minutes
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Guard: max 300 dispatches/day to prevent runaway loops
+          TODAY=$(date -u +%Y-%m-%d)
+          COUNT=$(gh api repos/${{ github.repository }}/actions/runs \
+            --jq "[.workflow_runs[] | select(.event==\"repository_dispatch\" and .created_at[:10]==\"$TODAY\")] | length" \
+            2>/dev/null || echo "0")
+
+          if [ "$COUNT" -lt "300" ]; then
+            echo "Scheduling next cycle (dispatch #$COUNT today)..."
+            sleep 300
+            gh api repos/${{ github.repository }}/dispatches \
+              -f event_type=next-cycle \
+              --silent
+            echo "Next cycle dispatched."
+          else
+            echo "Daily dispatch limit reached ($COUNT). Relying on cron fallback."
+          fi
