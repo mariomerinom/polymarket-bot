@@ -177,18 +177,17 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
     edge = abs(estimate - 0.5)
     confidence = signal.get("confidence", "low")
 
-    # Conviction: simple mapping
-    # MEDIUM if should_trade + medium/high confidence, else NO_BET
-    if signal["should_trade"] and confidence in ("medium", "high"):
-        conviction = 3
-    elif signal["should_trade"]:
-        conviction = 2
-    else:
-        conviction = 0
+    # OBSERVATION MODE — log all signals but never bet
+    # The contrarian rule is inverted on live Polymarket (26% accuracy on bets,
+    # 69% on skips). We need 500+ observations to understand which signal
+    # actually has edge before risking capital again.
+    conviction = 0
 
     reasoning = json.dumps({
         "signal": signal,
         "regime": regime,
+        "observation_mode": True,
+        "would_have_bet": signal.get("should_trade", False) and confidence in ("medium", "high"),
     })
 
     # Store as "contrarian_rule" agent

@@ -821,6 +821,12 @@ def build_html():
         </div>
     </div>"""
 
+    # -- Observation Mode Banner --
+    observation_html = """<div style="background:rgba(255,193,7,0.12);border:1px solid #9e6a03;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:#ffc107;letter-spacing:1px">👁 OBSERVATION MODE</div>
+        <div style="color:#8b949e;font-size:13px;margin-top:4px">$0 wagered — logging predictions only. Accumulating data to validate signals before risking capital.</div>
+    </div>"""
+
     # -- Pipeline Health Banner --
     health_pct = pipeline["health_pct"]
     on_time = pipeline["on_time"]
@@ -1800,6 +1806,8 @@ tr:hover {{
     <p class="subtitle">BTC 5-minute candle prediction &mdash; autoresearch loop</p>
 
     {status_html}
+
+    {observation_html}
 
     {pipeline_html}
 
