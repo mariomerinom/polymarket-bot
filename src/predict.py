@@ -177,11 +177,13 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
     edge = abs(estimate - 0.5)
     confidence = signal.get("confidence", "low")
 
-    # OBSERVATION MODE — log all signals but never bet
-    # The contrarian rule is inverted on live Polymarket (26% accuracy on bets,
-    # 69% on skips). We need 500+ observations to understand which signal
-    # actually has edge before risking capital again.
-    conviction = 0
+    # PAPER TRADING — full conviction scoring, simulated P&L only
+    if signal["should_trade"] and confidence in ("medium", "high"):
+        conviction = 3
+    elif signal["should_trade"]:
+        conviction = 2
+    else:
+        conviction = 0
 
     reasoning = json.dumps({
         "signal": signal,

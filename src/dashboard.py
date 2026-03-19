@@ -822,9 +822,9 @@ def build_html():
     </div>"""
 
     # -- Observation Mode Banner --
-    observation_html = """<div style="background:rgba(255,193,7,0.12);border:1px solid #9e6a03;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#ffc107;letter-spacing:1px">👁 OBSERVATION MODE</div>
-        <div style="color:#8b949e;font-size:13px;margin-top:4px">$0 wagered — logging predictions only. Accumulating data to validate signals before risking capital.</div>
+    observation_html = """<div style="background:rgba(88,166,255,0.12);border:1px solid #1f6feb;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">📋 PAPER TRADING</div>
+        <div style="color:#8b949e;font-size:13px;margin-top:4px">Simulated $75 bets — no real capital at risk. Tracking P&amp;L to validate before going live.</div>
     </div>"""
 
     # -- Pipeline Health Banner --
