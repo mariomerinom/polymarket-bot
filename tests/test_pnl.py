@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from dashboard import compute_pnl, compute_ensemble_pnl
+from dashboard import compute_pnl, compute_ensemble_pnl, compute_ev_breakeven, build_distribution_svg
 
 
 def _make_resolved(agent, estimate, price_yes, outcome, conviction=3):
@@ -163,3 +163,72 @@ def test_pnl_asymmetry_tracking():
     assert len(a["bet_results"]) == 4
     assert a["bet_results"][0]["won"] is True
     assert a["bet_results"][2]["won"] is False
+
+
+def test_ev_breakeven_positive_edge():
+    """EV is positive when win rate exceeds breakeven."""
+    rows = [
+        _make_resolved("contrarian_rule", 0.62, 0.20, 1, conviction=3),  # win: +300
+        _make_resolved("contrarian_rule", 0.62, 0.30, 1, conviction=3),  # win: +175
+        _make_resolved("contrarian_rule", 0.62, 0.50, 0, conviction=3),  # lose: -75
+    ]
+    rows[0]["market_id"] = "m1"
+    rows[1]["market_id"] = "m2"
+    rows[2]["market_id"] = "m3"
+    pnl = compute_pnl(rows)
+    ev = compute_ev_breakeven(pnl)
+    assert ev["ev"] > 0, f"Expected positive EV, got {ev['ev']}"
+    assert ev["current_wr"] > ev["breakeven_wr"]
+    assert ev["margin"] > 0
+
+
+def test_ev_breakeven_formula():
+    """Breakeven WR = |avg_loss| / (avg_win + |avg_loss|)."""
+    rows = [
+        _make_resolved("contrarian_rule", 0.62, 0.50, 1, conviction=3),  # win: +75
+        _make_resolved("contrarian_rule", 0.62, 0.50, 0, conviction=3),  # lose: -75
+    ]
+    rows[0]["market_id"] = "m1"
+    rows[1]["market_id"] = "m2"
+    pnl = compute_pnl(rows)
+    ev = compute_ev_breakeven(pnl)
+    # avg_win = 75, avg_loss = -75 → breakeven = 75/(75+75) = 50%
+    assert abs(ev["breakeven_wr"] - 0.50) < 0.01
+
+
+def test_ev_breakeven_no_bets():
+    """No bets → safe defaults."""
+    ev = compute_ev_breakeven({})
+    assert ev["total_bets"] == 0
+    assert ev["ev"] == 0
+    assert ev["breakeven_wr"] == 0.5
+
+
+def test_ev_breakeven_all_wins():
+    """All wins → breakeven WR is 0% (any positive win rate profits)."""
+    rows = [
+        _make_resolved("contrarian_rule", 0.62, 0.50, 1, conviction=3),
+        _make_resolved("contrarian_rule", 0.62, 0.30, 1, conviction=3),
+    ]
+    rows[0]["market_id"] = "m1"
+    rows[1]["market_id"] = "m2"
+    pnl = compute_pnl(rows)
+    ev = compute_ev_breakeven(pnl)
+    assert ev["current_wr"] == 1.0
+    assert ev["ev"] > 0
+
+
+def test_distribution_svg_renders():
+    """Distribution SVG renders without error with sufficient data."""
+    rows = [
+        _make_resolved("contrarian_rule", 0.62, 0.20, 1, conviction=3),
+        _make_resolved("contrarian_rule", 0.62, 0.80, 1, conviction=3),
+        _make_resolved("contrarian_rule", 0.62, 0.50, 0, conviction=3),
+        _make_resolved("contrarian_rule", 0.62, 0.50, 0, conviction=3),
+    ]
+    for i, r in enumerate(rows):
+        r["market_id"] = f"m{i}"
+    pnl = compute_pnl(rows)
+    svg = build_distribution_svg(pnl)
+    assert "<svg" in svg
+    assert "Losses cluster" in svg

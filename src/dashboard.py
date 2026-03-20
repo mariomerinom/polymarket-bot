@@ -694,6 +694,12 @@ def build_waterfall_svg(agent_pnl):
         svg += f'<rect x="{x:.1f}" y="{bar_top:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" fill="{color}" opacity="{opacity}" rx="1">'
         svg += f'<title>Bet #{i+1}: {"WIN" if b["won"] else "LOSS"} ${b["profit"]:+,.0f} (price: {b["price"]:.2f})</title>'
         svg += '</rect>'
+        # Price annotations on winning bars (when not too crowded)
+        if b["won"] and num_bars <= 30:
+            label_y = bar_top - 4
+            if label_y < mt + 8:
+                label_y = bar_top + bar_h + 10
+            svg += f'<text x="{x + bar_w/2:.1f}" y="{label_y:.1f}" fill="#8b949e" font-size="8" text-anchor="middle">@{b["price"]:.2f}</text>'
 
     # Running total line overlay
     points = []
@@ -706,6 +712,130 @@ def build_waterfall_svg(agent_pnl):
 
     # X axis label
     svg += f'<text x="{ml + cw/2}" y="{H-8}" fill="#8b949e" font-size="10" text-anchor="middle">{num_bars} bets (green = variable win, red = fixed loss)</text>'
+
+    svg += '</svg>'
+    return svg
+
+
+def compute_ev_breakeven(agent_pnl):
+    """Compute expected value per bet and breakeven win rate.
+
+    EV = win_rate × avg_win + loss_rate × avg_loss
+    Breakeven WR = |avg_loss| / (avg_win + |avg_loss|)
+    """
+    total_wins = sum(p["num_wins"] for p in agent_pnl.values())
+    total_losses = sum(p["num_losses"] for p in agent_pnl.values())
+    total_bets = total_wins + total_losses
+    if total_bets == 0:
+        return {"ev": 0, "breakeven_wr": 0.5, "current_wr": 0, "margin": 0, "total_bets": 0}
+
+    gross_wins = sum(p["gross_wins"] for p in agent_pnl.values())
+    gross_losses = sum(p["gross_losses"] for p in agent_pnl.values())
+    avg_win = gross_wins / total_wins if total_wins > 0 else 0
+    avg_loss = gross_losses / total_losses if total_losses > 0 else 0  # negative
+
+    win_rate = total_wins / total_bets
+    ev = win_rate * avg_win + (1 - win_rate) * avg_loss
+
+    # Breakeven: WR where EV = 0 → WR × avg_win + (1-WR) × avg_loss = 0
+    denom = avg_win + abs(avg_loss)
+    breakeven_wr = abs(avg_loss) / denom if denom > 0 else 0.5
+
+    return {
+        "ev": ev,
+        "breakeven_wr": breakeven_wr,
+        "current_wr": win_rate,
+        "margin": win_rate - breakeven_wr,
+        "total_bets": total_bets,
+        "avg_win": avg_win,
+        "avg_loss": avg_loss,
+    }
+
+
+def build_distribution_svg(agent_pnl):
+    """Build SVG histogram showing win/loss amount distribution.
+
+    Wins spread across many buckets (variable), losses cluster at 1-2 values (fixed).
+    This makes the binary options asymmetry visually obvious.
+    """
+    all_profits = []
+    for data in agent_pnl.values():
+        for bet in data.get("bet_results", []):
+            all_profits.append(bet["profit"])
+
+    if len(all_profits) < 2:
+        return '<p class="empty">Need more bets for distribution chart.</p>'
+
+    wins = [p for p in all_profits if p > 0]
+    losses = [p for p in all_profits if p <= 0]
+
+    # Build buckets
+    p_min = min(all_profits)
+    p_max = max(all_profits)
+    spread = p_max - p_min
+    if spread == 0:
+        spread = 100
+    num_buckets = min(20, max(6, len(all_profits) // 2))
+    bucket_width = spread / num_buckets
+
+    buckets = []
+    for i in range(num_buckets):
+        lo = p_min + i * bucket_width
+        hi = lo + bucket_width
+        w_count = sum(1 for p in wins if lo <= p < hi or (i == num_buckets - 1 and p == hi))
+        l_count = sum(1 for p in losses if lo <= p < hi or (i == num_buckets - 1 and p == hi))
+        buckets.append({"lo": lo, "hi": hi, "wins": w_count, "losses": l_count})
+
+    max_count = max((b["wins"] + b["losses"] for b in buckets), default=1) or 1
+
+    W, H = 800, 220
+    ml, mr, mt, mb = 60, 20, 20, 50
+    cw = W - ml - mr
+    ch = H - mt - mb
+    bar_w = cw / num_buckets - 1
+
+    svg = f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:{W}px;height:auto;background:#161b22;border-radius:8px;">'
+
+    # Zero line (where $0 falls)
+    zero_bucket_x = ml + ((0 - p_min) / spread) * cw
+    if ml < zero_bucket_x < W - mr:
+        svg += f'<line x1="{zero_bucket_x:.1f}" y1="{mt}" x2="{zero_bucket_x:.1f}" y2="{H-mb}" stroke="#c9d1d9" stroke-width="1" stroke-dasharray="6,3" opacity="0.5" />'
+        svg += f'<text x="{zero_bucket_x:.1f}" y="{mt - 4}" fill="#c9d1d9" font-size="10" text-anchor="middle">$0</text>'
+
+    # Draw stacked bars
+    for i, b in enumerate(buckets):
+        x = ml + i * (bar_w + 1)
+        total = b["wins"] + b["losses"]
+        if total == 0:
+            continue
+
+        # Losses on bottom, wins on top (stacked)
+        loss_h = (b["losses"] / max_count) * ch
+        win_h = (b["wins"] / max_count) * ch
+
+        if b["losses"] > 0:
+            y_loss = mt + ch - loss_h
+            svg += f'<rect x="{x:.1f}" y="{y_loss:.1f}" width="{bar_w:.1f}" height="{loss_h:.1f}" fill="#f44336" opacity="0.85" rx="1">'
+            svg += f'<title>${b["lo"]:+,.0f} to ${b["hi"]:+,.0f}: {b["losses"]} loss(es)</title></rect>'
+
+        if b["wins"] > 0:
+            y_win = mt + ch - loss_h - win_h
+            svg += f'<rect x="{x:.1f}" y="{y_win:.1f}" width="{bar_w:.1f}" height="{win_h:.1f}" fill="#3fb950" opacity="0.85" rx="1">'
+            svg += f'<title>${b["lo"]:+,.0f} to ${b["hi"]:+,.0f}: {b["wins"]} win(s)</title></rect>'
+
+    # X-axis labels (a few key bucket boundaries)
+    label_indices = [0, num_buckets // 4, num_buckets // 2, 3 * num_buckets // 4, num_buckets - 1]
+    for idx in label_indices:
+        if idx < len(buckets):
+            x = ml + idx * (bar_w + 1) + bar_w / 2
+            val = buckets[idx]["lo"]
+            svg += f'<text x="{x:.1f}" y="{H-mb+14}" fill="#8b949e" font-size="9" text-anchor="middle">${val:+,.0f}</text>'
+
+    # Annotation
+    svg += f'<text x="{ml + cw/2}" y="{H-8}" fill="#8b949e" font-size="10" text-anchor="middle">Losses cluster at fixed bet sizes. Wins spread based on entry price.</text>'
+
+    # Y-axis label
+    svg += f'<text x="{ml-8}" y="{mt + ch/2}" fill="#8b949e" font-size="10" text-anchor="end" transform="rotate(-90,{ml-8},{mt+ch/2})">Count</text>'
 
     svg += '</svg>'
     return svg
@@ -1182,13 +1312,65 @@ def build_html():
             <div class="perf-vs">from ${ep["total_wagered"]:,.0f} cumulative ({ep["num_skipped"]} skipped)</div>
         </div>"""
 
+        # EV & Breakeven analysis
+        ev_data = compute_ev_breakeven(agent_pnl)
+        ev_html = ""
+        if ev_data["total_bets"] >= 2:
+            ev = ev_data["ev"]
+            be_wr = ev_data["breakeven_wr"]
+            cur_wr = ev_data["current_wr"]
+            margin = ev_data["margin"]
+            ev_color = "#3fb950" if ev >= 0 else "#f44336"
+            ev_sign = "+" if ev >= 0 else ""
+            margin_color = "#3fb950" if margin >= 0 else "#f44336"
+            margin_sign = "+" if margin >= 0 else ""
+            # Gauge: bar from 0% to 100%, marker at breakeven, fill to current WR
+            gauge_fill_pct = min(100, max(0, cur_wr * 100))
+            gauge_be_pct = min(100, max(0, be_wr * 100))
+            ev_html = f"""<div class="ev-box">
+                <div class="ev-row">
+                    <div class="ev-metric">
+                        <div class="ev-label">EV per bet</div>
+                        <div class="ev-value" style="color:{ev_color}">{ev_sign}${ev:,.1f}</div>
+                    </div>
+                    <div class="ev-metric">
+                        <div class="ev-label">Breakeven WR</div>
+                        <div class="ev-value">{be_wr*100:.1f}%</div>
+                    </div>
+                    <div class="ev-metric">
+                        <div class="ev-label">Current WR</div>
+                        <div class="ev-value" style="color:{margin_color}">{cur_wr*100:.1f}%</div>
+                    </div>
+                    <div class="ev-metric">
+                        <div class="ev-label">Edge</div>
+                        <div class="ev-value" style="color:{margin_color}">{margin_sign}{margin*100:.1f}pp</div>
+                    </div>
+                </div>
+                <div class="ev-gauge-wrap">
+                    <div class="ev-gauge-bg">
+                        <div class="ev-gauge-fill" style="width:{gauge_fill_pct:.0f}%;background:{margin_color}"></div>
+                        <div class="ev-gauge-marker" style="left:{gauge_be_pct:.0f}%" title="Breakeven: {be_wr*100:.1f}%"></div>
+                    </div>
+                    <div class="ev-gauge-labels">
+                        <span>0%</span>
+                        <span style="position:absolute;left:{gauge_be_pct:.0f}%;transform:translateX(-50%);color:#c9d1d9;font-weight:700">BE</span>
+                        <span>100%</span>
+                    </div>
+                </div>
+            </div>"""
+
         pnl_html = f"""<h2>Simulated P&amp;L</h2>
         <p class="section-desc">Binary options: wins are variable (depends on entry price), losses are fixed ($75 or $200). Bets are discrete and sequential.</p>
         {consolidated_html}
+        {ev_html}
         <div class="perf-grid">{pnl_cards}</div>
         <div class="chart-container" style="margin-top:16px">
             <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Per-Bet Waterfall</h3>
             {build_waterfall_svg(agent_pnl)}
+        </div>
+        <div class="chart-container" style="margin-top:16px">
+            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Win/Loss Distribution</h3>
+            {build_distribution_svg(agent_pnl)}
         </div>
         <div class="chart-container" style="margin-top:16px">
             <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Cumulative P&amp;L</h3>
@@ -1660,6 +1842,69 @@ tr:hover {{
     font-size: 0.75rem;
     width: 110px;
     flex-shrink: 0;
+}}
+/* EV & Breakeven Box */
+.ev-box {{
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 10px;
+    padding: 16px 24px;
+    margin-bottom: 16px;
+}}
+.ev-row {{
+    display: flex;
+    justify-content: space-around;
+    gap: 16px;
+    margin-bottom: 12px;
+}}
+.ev-metric {{
+    text-align: center;
+}}
+.ev-label {{
+    font-size: 0.7rem;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+}}
+.ev-value {{
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #c9d1d9;
+}}
+.ev-gauge-wrap {{
+    max-width: 500px;
+    margin: 0 auto;
+}}
+.ev-gauge-bg {{
+    position: relative;
+    height: 14px;
+    background: #21262d;
+    border-radius: 7px;
+    overflow: visible;
+}}
+.ev-gauge-fill {{
+    height: 100%;
+    border-radius: 7px;
+    opacity: 0.7;
+    transition: width 0.3s;
+}}
+.ev-gauge-marker {{
+    position: absolute;
+    top: -4px;
+    width: 3px;
+    height: 22px;
+    background: #c9d1d9;
+    border-radius: 2px;
+    transform: translateX(-50%);
+}}
+.ev-gauge-labels {{
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: #484f58;
+    margin-top: 2px;
+    position: relative;
 }}
 .perf-agent {{
     font-size: 0.85rem;
