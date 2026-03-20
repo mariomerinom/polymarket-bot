@@ -18,7 +18,7 @@ except ImportError:
     app = None
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
-EVOLUTION_LOG = Path(__file__).parent.parent / "data" / "evolution_log.json"
+EVOLUTION_LOG = None  # Legacy — evolution system removed in V3
 
 AGENT_COLORS = {
     "contrarian_rule": "#3fb950",  # V3: regime-filtered contrarian
@@ -36,11 +36,7 @@ def get_db(db_path=None):
 
 
 def load_evolution_log():
-    if EVOLUTION_LOG.exists():
-        try:
-            return json.loads(EVOLUTION_LOG.read_text())
-        except (json.JSONDecodeError, OSError):
-            return []
+    """Legacy — evolution system removed in V3."""
     return []
 
 
