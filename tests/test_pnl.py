@@ -126,3 +126,40 @@ def test_ensemble_only_bets_medium_plus():
     result = compute_ensemble_pnl(rows)
     assert result["num_bets"] == 1  # only m2
     assert result["num_skipped"] == 1  # m1 skipped
+
+
+def test_pnl_asymmetry_tracking():
+    """Win/loss breakdown shows the binary options asymmetry.
+    Wins are variable (depends on entry price), losses are fixed.
+    """
+    rows = [
+        _make_resolved("contrarian_rule", 0.62, 0.20, 1, conviction=3),  # win big: 75*(1/0.2-1) = 300
+        _make_resolved("contrarian_rule", 0.62, 0.80, 1, conviction=3),  # win small: 75*(1/0.8-1) = 18.75
+        _make_resolved("contrarian_rule", 0.62, 0.50, 0, conviction=3),  # lose: -75
+        _make_resolved("contrarian_rule", 0.62, 0.30, 0, conviction=3),  # lose: -75
+    ]
+    rows[0]["market_id"] = "m1"
+    rows[1]["market_id"] = "m2"
+    rows[2]["market_id"] = "m3"
+    rows[3]["market_id"] = "m4"
+    result = compute_pnl(rows)
+    a = result["contrarian_rule"]
+
+    # Check decomposition
+    assert a["num_wins"] == 2
+    assert a["num_losses"] == 2
+    assert a["gross_wins"] > 0  # positive
+    assert a["gross_losses"] < 0  # negative
+    assert abs(a["gross_wins"] - (300 + 18.75)) < 0.1  # variable wins
+    assert a["gross_losses"] == -150  # fixed losses: 2 × -75
+
+    # Average win >> average loss (that's the asymmetry)
+    assert a["avg_win"] > abs(a["avg_loss"])  # $159.38 avg win vs $75 avg loss
+
+    # Max drawdown tracked
+    assert a["max_drawdown"] >= 0
+
+    # Bet results list has per-bet detail
+    assert len(a["bet_results"]) == 4
+    assert a["bet_results"][0]["won"] is True
+    assert a["bet_results"][2]["won"] is False

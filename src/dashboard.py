@@ -336,8 +336,9 @@ def compute_pnl(resolved, unit_bet=100):
     - HIGH (score 4+): $200
     - Everything else: $0 (skip)
 
-    Per-agent P&L is computed by attributing the market-level bet
-    proportionally to each agent based on ensemble weights.
+    Tracks per-bet detail to show the asymmetry:
+    - Wins are variable: profit = bet × (1/price - 1)
+    - Losses are fixed: always exactly -bet_size
     """
     CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 200}
 
@@ -347,6 +348,13 @@ def compute_pnl(resolved, unit_bet=100):
         "num_bets": 0,
         "skipped": 0,
         "pnl_series": [],
+        # New: per-bet breakdown for asymmetry visualization
+        "gross_wins": 0.0,      # sum of all winning bet profits
+        "gross_losses": 0.0,    # sum of all losing bet losses (negative)
+        "num_wins": 0,
+        "num_losses": 0,
+        "bet_results": [],      # list of {profit, bet_size, price, won}
+        "max_drawdown": 0.0,    # worst peak-to-trough in cumulative P&L
     })
 
     for row in resolved:
@@ -380,8 +388,35 @@ def compute_pnl(resolved, unit_bet=100):
         a["num_bets"] += 1
         a["pnl_series"].append(a["total_pnl"])
 
+        # Track win/loss detail
+        won = profit > 0
+        if won:
+            a["gross_wins"] += profit
+            a["num_wins"] += 1
+        else:
+            a["gross_losses"] += profit  # negative number
+            a["num_losses"] += 1
+        a["bet_results"].append({
+            "profit": round(profit, 2),
+            "bet_size": bet_size,
+            "price": price_yes,
+            "won": won,
+        })
+
     for a in agents.values():
         a["roi"] = (a["total_pnl"] / a["total_wagered"] * 100) if a["total_wagered"] > 0 else 0
+        a["avg_win"] = (a["gross_wins"] / a["num_wins"]) if a["num_wins"] > 0 else 0
+        a["avg_loss"] = (a["gross_losses"] / a["num_losses"]) if a["num_losses"] > 0 else 0  # negative
+        # Max drawdown: worst peak-to-trough drop in cumulative P&L
+        peak = 0.0
+        max_dd = 0.0
+        for val in a["pnl_series"]:
+            if val > peak:
+                peak = val
+            dd = peak - val
+            if dd > max_dd:
+                max_dd = dd
+        a["max_drawdown"] = max_dd
 
     return dict(agents)
 
@@ -588,6 +623,92 @@ def build_pnl_svg(agent_pnl, ensemble_pnl):
     legend += '</div>'
 
     return svg + legend
+
+
+def build_waterfall_svg(agent_pnl):
+    """Build SVG waterfall chart showing each discrete bet as a bar.
+
+    Green bars go UP (variable win amounts), red bars go DOWN (fixed loss).
+    This makes the asymmetry visible: losses are uniform, wins vary by price.
+    """
+    # Collect all bet results from the first agent (primary view)
+    all_bets = []
+    for agent, data in agent_pnl.items():
+        for bet in data.get("bet_results", []):
+            all_bets.append(bet)
+
+    if len(all_bets) < 1:
+        return '<p class="empty">No bet data for waterfall chart.</p>'
+
+    W, H = 800, 280
+    ml, mr, mt, mb = 60, 20, 20, 50
+    cw = W - ml - mr
+    ch = H - mt - mb
+
+    # Compute cumulative running total for bar positioning
+    running = 0.0
+    bars = []
+    for bet in all_bets:
+        start = running
+        running += bet["profit"]
+        bars.append({"start": start, "end": running, "profit": bet["profit"],
+                      "won": bet["won"], "bet_size": bet["bet_size"], "price": bet["price"]})
+
+    all_vals = [0.0] + [b["end"] for b in bars]
+    y_min = min(all_vals)
+    y_max = max(all_vals)
+    y_pad = max(abs(y_max - y_min) * 0.1, 10)
+    y_min -= y_pad
+    y_max += y_pad
+    y_range = y_max - y_min if y_max != y_min else 1
+
+    num_bars = len(bars)
+    bar_w = max(2, min(20, cw / num_bars - 1))
+    gap = max(0.5, (cw - bar_w * num_bars) / max(num_bars, 1))
+
+    svg = f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:{W}px;height:auto;background:#161b22;border-radius:8px;">'
+
+    # Zero line
+    zero_y = mt + ch - ((0 - y_min) / y_range * ch)
+    svg += f'<line x1="{ml}" y1="{zero_y}" x2="{W-mr}" y2="{zero_y}" stroke="#484f58" stroke-width="1" stroke-dasharray="6,4" />'
+    svg += f'<text x="{ml-8}" y="{zero_y+4}" fill="#8b949e" font-size="11" text-anchor="end">$0</text>'
+
+    # Y axis labels
+    for pct in [0.25, 0.5, 0.75, 1.0]:
+        val = y_min + pct * y_range
+        if abs(val) < 0.01:
+            continue
+        y = mt + ch - ((val - y_min) / y_range * ch)
+        svg += f'<line x1="{ml}" y1="{y}" x2="{W-mr}" y2="{y}" stroke="#21262d" stroke-width="1" />'
+        svg += f'<text x="{ml-8}" y="{y+4}" fill="#8b949e" font-size="10" text-anchor="end">${val:,.0f}</text>'
+
+    # Bars
+    for i, b in enumerate(bars):
+        x = ml + i * (bar_w + gap)
+        y_start = mt + ch - ((b["start"] - y_min) / y_range * ch)
+        y_end = mt + ch - ((b["end"] - y_min) / y_range * ch)
+        bar_top = min(y_start, y_end)
+        bar_h = max(abs(y_end - y_start), 1)
+        color = "#3fb950" if b["won"] else "#f44336"
+        opacity = "0.85"
+        svg += f'<rect x="{x:.1f}" y="{bar_top:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" fill="{color}" opacity="{opacity}" rx="1">'
+        svg += f'<title>Bet #{i+1}: {"WIN" if b["won"] else "LOSS"} ${b["profit"]:+,.0f} (price: {b["price"]:.2f})</title>'
+        svg += '</rect>'
+
+    # Running total line overlay
+    points = []
+    for i, b in enumerate(bars):
+        x = ml + i * (bar_w + gap) + bar_w / 2
+        y = mt + ch - ((b["end"] - y_min) / y_range * ch)
+        points.append(f"{x:.1f},{y:.1f}")
+    if points:
+        svg += f'<polyline points="{" ".join(points)}" fill="none" stroke="#c9d1d9" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.6" />'
+
+    # X axis label
+    svg += f'<text x="{ml + cw/2}" y="{H-8}" fill="#8b949e" font-size="10" text-anchor="middle">{num_bars} bets (green = variable win, red = fixed loss)</text>'
+
+    svg += '</svg>'
+    return svg
 
 
 def compute_confidence_calibration(resolved):
@@ -997,55 +1118,78 @@ def build_html():
         total_pnl_all = sum(p["total_pnl"] for p in agent_pnl.values())
         total_wagered_all = sum(p["total_wagered"] for p in agent_pnl.values())
         total_bets_all = sum(p["num_bets"] for p in agent_pnl.values())
-        total_return_all = total_wagered_all + total_pnl_all
+        total_wins_all = sum(p["num_wins"] for p in agent_pnl.values())
+        total_losses_all = sum(p["num_losses"] for p in agent_pnl.values())
+        gross_wins_all = sum(p["gross_wins"] for p in agent_pnl.values())
+        gross_losses_all = sum(p["gross_losses"] for p in agent_pnl.values())
+        max_dd_all = max((p["max_drawdown"] for p in agent_pnl.values()), default=0)
         roi_all = (total_pnl_all / total_wagered_all * 100) if total_wagered_all > 0 else 0
         all_color = "#3fb950" if total_pnl_all >= 0 else "#f44336"
         all_sign = "+" if total_pnl_all >= 0 else ""
-        all_roi_sign = "+" if roi_all >= 0 else ""
+        avg_win_all = (gross_wins_all / total_wins_all) if total_wins_all > 0 else 0
+        avg_loss_all = (gross_losses_all / total_losses_all) if total_losses_all > 0 else 0
 
         consolidated_html = f"""<div class="consolidated-pnl">
             <div class="consolidated-label">TOTAL PORTFOLIO</div>
-            <div class="consolidated-return" style="color:{all_color}">${total_return_all:,.0f}</div>
-            <div class="consolidated-detail">from ${total_wagered_all:,.0f} wagered across {total_bets_all} bets</div>
-            <div class="consolidated-profit" style="color:{all_color}">{all_sign}${total_pnl_all:,.0f} profit &middot; {all_roi_sign}{roi_all:.0f}% ROI</div>
+            <div class="consolidated-return" style="color:{all_color}">{all_sign}${total_pnl_all:,.0f}</div>
+            <div class="consolidated-detail">{total_bets_all} discrete bets &middot; {roi_all:+.0f}% ROI</div>
+            <div class="pnl-asymmetry">
+                <div class="pnl-asym-row">
+                    <span class="pnl-asym-label" style="color:#3fb950">{total_wins_all}W</span>
+                    <span class="pnl-asym-bar-wrap"><span class="pnl-asym-bar" style="background:#3fb950;width:{max(5, gross_wins_all / max(gross_wins_all, abs(gross_losses_all), 1) * 100):.0f}%"></span></span>
+                    <span class="pnl-asym-val" style="color:#3fb950">+${gross_wins_all:,.0f}</span>
+                    <span class="pnl-asym-avg">avg +${avg_win_all:,.0f}/win</span>
+                </div>
+                <div class="pnl-asym-row">
+                    <span class="pnl-asym-label" style="color:#f44336">{total_losses_all}L</span>
+                    <span class="pnl-asym-bar-wrap"><span class="pnl-asym-bar" style="background:#f44336;width:{max(5, abs(gross_losses_all) / max(gross_wins_all, abs(gross_losses_all), 1) * 100):.0f}%"></span></span>
+                    <span class="pnl-asym-val" style="color:#f44336">${gross_losses_all:,.0f}</span>
+                    <span class="pnl-asym-avg">fixed ${avg_loss_all:,.0f}/loss</span>
+                </div>
+            </div>
+            <div class="consolidated-detail" style="margin-top:8px;font-size:0.75rem;color:#8b949e">
+                Max drawdown: <span style="color:#f44336">${max_dd_all:,.0f}</span>
+                &middot; Cumulative risked: ${total_wagered_all:,.0f} (sequential, not simultaneous)
+            </div>
         </div>"""
 
         pnl_cards = ""
         for agent in sorted(agent_pnl.keys()):
             p = agent_pnl[agent]
             color = AGENT_COLORS.get(agent, "#c9d1d9")
-            total_return = p["total_wagered"] + p["total_pnl"]
             pnl_color = "#3fb950" if p["total_pnl"] >= 0 else "#f44336"
-            roi_color = "#3fb950" if p["roi"] >= 0 else "#f44336"
             pnl_sign = "+" if p["total_pnl"] >= 0 else ""
             roi_sign = "+" if p["roi"] >= 0 else ""
+            wr = (p["num_wins"] / p["num_bets"] * 100) if p["num_bets"] > 0 else 0
             pnl_cards += f"""<div class="perf-card">
                 <div class="perf-agent" style="color:{color}">{agent}</div>
-                <div class="perf-accuracy" style="color:{pnl_color}">${total_return:,.0f}</div>
-                <div class="perf-vs">from ${p["total_wagered"]:,.0f} wagered</div>
-                <div class="perf-record" style="color:{pnl_color};font-weight:700">{pnl_sign}${p["total_pnl"]:,.0f} profit ({roi_sign}{p["roi"]:.0f}% ROI)</div>
-                <div class="perf-vs" style="color:#8b949e">{p["num_bets"]} bets</div>
+                <div class="perf-accuracy" style="color:{pnl_color}">{pnl_sign}${p["total_pnl"]:,.0f}</div>
+                <div class="perf-record">{p["num_wins"]}W-{p["num_losses"]}L ({wr:.0f}% WR)</div>
+                <div class="perf-vs" style="color:#3fb950">+${p["gross_wins"]:,.0f} won (avg +${p["avg_win"]:,.0f})</div>
+                <div class="perf-vs" style="color:#f44336">${p["gross_losses"]:,.0f} lost (fixed ${p["avg_loss"]:,.0f})</div>
+                <div class="perf-vs" style="color:#8b949e">Max DD: ${p["max_drawdown"]:,.0f} &middot; {roi_sign}{p["roi"]:.0f}% ROI</div>
             </div>"""
 
         # Ensemble P&L card
         ep = ensemble_pnl
-        ep_return = ep["total_wagered"] + ep["total_pnl"]
         ep_color = "#3fb950" if ep["total_pnl"] >= 0 else "#f44336"
-        ep_roi_color = "#3fb950" if ep["roi"] >= 0 else "#f44336"
         ep_sign = "+" if ep["total_pnl"] >= 0 else ""
         ep_roi_sign = "+" if ep["roi"] >= 0 else ""
         pnl_cards += f"""<div class="perf-card perf-ensemble">
             <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
-            <div class="perf-accuracy" style="color:{ep_color}">${ep_return:,.0f}</div>
-            <div class="perf-vs">from ${ep["total_wagered"]:,.0f} wagered</div>
-            <div class="perf-record" style="color:{ep_color};font-weight:700">{ep_sign}${ep["total_pnl"]:,.0f} profit ({ep_roi_sign}{ep["roi"]:.0f}% ROI)</div>
-            <div class="perf-vs" style="color:#8b949e">{ep["num_bets"]} bets</div>
+            <div class="perf-accuracy" style="color:{ep_color}">{ep_sign}${ep["total_pnl"]:,.0f}</div>
+            <div class="perf-record">{ep["num_bets"]} bets &middot; {ep_roi_sign}{ep["roi"]:.0f}% ROI</div>
+            <div class="perf-vs">from ${ep["total_wagered"]:,.0f} cumulative ({ep["num_skipped"]} skipped)</div>
         </div>"""
 
-        pnl_html = f"""<h2>Simulated P&amp;L (conviction-tier sizing)</h2>
-        <p class="section-desc">Only bets on MEDIUM+ conviction. MEDIUM = $75, HIGH = $200. Everything else skipped ($0).</p>
+        pnl_html = f"""<h2>Simulated P&amp;L</h2>
+        <p class="section-desc">Binary options: wins are variable (depends on entry price), losses are fixed ($75 or $200). Bets are discrete and sequential.</p>
         {consolidated_html}
         <div class="perf-grid">{pnl_cards}</div>
+        <div class="chart-container" style="margin-top:16px">
+            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Per-Bet Waterfall</h3>
+            {build_waterfall_svg(agent_pnl)}
+        </div>
         <div class="chart-container" style="margin-top:16px">
             <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Cumulative P&amp;L</h3>
             {build_pnl_svg(agent_pnl, ensemble_pnl)}
@@ -1471,6 +1615,51 @@ tr:hover {{
 .consolidated-profit {{
     font-size: 1.1rem;
     font-weight: 700;
+}}
+.pnl-asymmetry {{
+    margin-top: 12px;
+    text-align: left;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+}}
+.pnl-asym-row {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+    font-size: 0.85rem;
+}}
+.pnl-asym-label {{
+    width: 30px;
+    font-weight: 700;
+    text-align: right;
+    flex-shrink: 0;
+}}
+.pnl-asym-bar-wrap {{
+    flex: 1;
+    background: #21262d;
+    border-radius: 4px;
+    height: 18px;
+    overflow: hidden;
+}}
+.pnl-asym-bar {{
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    min-width: 4px;
+}}
+.pnl-asym-val {{
+    width: 80px;
+    font-weight: 700;
+    text-align: right;
+    flex-shrink: 0;
+}}
+.pnl-asym-avg {{
+    color: #8b949e;
+    font-size: 0.75rem;
+    width: 110px;
+    flex-shrink: 0;
 }}
 .perf-agent {{
     font-size: 0.85rem;
