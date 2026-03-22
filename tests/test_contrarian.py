@@ -1,5 +1,6 @@
 """
-Unit tests for the contrarian signal logic.
+Unit tests for the momentum signal logic (inverted contrarian).
+V4: streak UP → predict UP (ride it), streak DOWN → predict DOWN (ride it).
 """
 import sys
 import os
@@ -42,7 +43,7 @@ def test_no_signal_insufficient_data():
 
 
 def test_streak_3_up_with_compression():
-    """3 UP candles with shrinking ranges → fade DOWN."""
+    """3 UP candles with shrinking ranges → ride UP (momentum)."""
     candles = []
     price = 100.0
     # 7 mixed candles first
@@ -60,12 +61,12 @@ def test_streak_3_up_with_compression():
 
     result = contrarian_signal(candles)
     assert result["should_trade"] is True
-    assert result["estimate"] == 0.38  # fade UP → predict DOWN
-    assert result["direction"] == "DOWN"
+    assert result["estimate"] == 0.62  # ride UP → predict UP (momentum)
+    assert result["direction"] == "UP"
 
 
 def test_streak_3_down_with_volume_spike():
-    """3 DOWN candles with volume spike → fade UP."""
+    """3 DOWN candles with volume spike → ride DOWN (momentum)."""
     # 7 mixed, then 3 DOWN with last one having volume spike
     candles = []
     price = 100.0
@@ -83,8 +84,8 @@ def test_streak_3_down_with_volume_spike():
 
     result = contrarian_signal(candles)
     assert result["should_trade"] is True
-    assert result["estimate"] == 0.62  # fade DOWN → predict UP
-    assert result["direction"] == "UP"
+    assert result["estimate"] == 0.38  # ride DOWN → predict DOWN (momentum)
+    assert result["direction"] == "DOWN"
 
 
 def test_streak_without_exhaustion_no_trade():

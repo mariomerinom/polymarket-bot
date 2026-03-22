@@ -1070,8 +1070,8 @@ def build_html():
 
     # -- Observation Mode Banner --
     observation_html = """<div style="background:rgba(88,166,255,0.12);border:1px solid #1f6feb;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">📋 PAPER TRADING</div>
-        <div style="color:#8b949e;font-size:13px;margin-top:4px">Simulated $75 bets — no real capital at risk. Tracking P&amp;L to validate before going live.</div>
+        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">📋 PAPER TRADING — V4 MOMENTUM</div>
+        <div style="color:#8b949e;font-size:13px;margin-top:4px">Inverted contrarian: ride the streak. V3 contrarian lost at 37% WR / -$962. Validating momentum before going live.</div>
     </div>"""
 
     # -- Pipeline Health Banner --

@@ -263,22 +263,56 @@ profitable ones.
 
 ---
 
-## Final Production System
+## V3 Paper Trading Results — FAILED (March 19–22, 2026)
+
+**632 predictions over 3 days (paper trading, no real capital).**
+
+| Metric | Skip (conv=0) | Bet (conv=3) |
+|--------|---------------|--------------|
+| Count | 562 | 70 |
+| Win Rate | **62.6%** | **37.1%** |
+
+| Bet Direction | Count | Wins | WR |
+|---------------|-------|------|----|
+| Fade UP (est=0.38) | 38 | 15 | 39.5% |
+| Fade DOWN (est=0.62) | 32 | 11 | 34.4% |
+
+**Simulated P&L: -$962 | -18% ROI | EV per bet: -$13.70 | Edge: -8.3pp below breakeven**
+
+### Why Contrarian Failed on Live Polymarket
+
+The backtest used **synthetic markets** (fabricated price_yes ≈ 0.50) where streaks
+hadn't been priced in yet. Live Polymarket already prices in BTC candle patterns —
+we were fading streaks the market already faded.
+
+The 62.6% skip accuracy is an **artifact**: skips anchor estimate = market_price,
+which mechanically matches outcomes on skewed markets. It's not genuine signal.
+
+### Decision: Invert to Momentum
+
+If the contrarian signal loses at 37%, the **opposite** (momentum — ride the streak)
+should win at ~63%. This is a V4 paper trading experiment to validate.
+
+**Risk**: The 63% figure may itself be an artifact. Paper trading validates this
+before any capital is risked.
+
+---
+
+## V4 — Momentum Signal (Inverted Contrarian)
+
+**Date:** March 22, 2026 | **Status:** Paper trading
 
 ```
 1. Poll Polymarket for BTC 5-min markets
 2. Fetch 20 candles from Kraken
 3. Compute regime: autocorrelation on 5-min returns
 4. If autocorrelation < -0.15 → SKIP (mean-reverting)
-5. If streak ≥ 3 + exhaustion signal → bet $75 fading the streak
+5. If streak ≥ 3 + exhaustion signal → bet $75 RIDING the streak (momentum)
 6. Otherwise → skip
 ```
 
-**Expected performance:** 58% win rate, ~14% ROI, ~25 trades/day, $0/day operating cost.
-
-**Next step:** Paper logging loop (Stage 5 in ROADMAP.md). Run the rule live for
-2-4 weeks, accumulate 500+ resolved predictions with regime labels, validate that
-live performance matches backtest before risking capital.
+**Hypothesis:** BTC momentum persists beyond what Polymarket prices in.
+**Validation gate:** 200+ bets, WR ≥ 52%, positive ROI. If fails, pause project.
 
 ---
 

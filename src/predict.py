@@ -71,10 +71,10 @@ def compute_regime_from_candles(candles):
 
 def contrarian_signal(candles):
     """
-    Contrarian exhaustion rule:
+    Momentum signal (inverted contrarian):
     1. streak >= 3 same direction
     2. At least one exhaustion signal (compression, volume spike, or shrinking range)
-    3. Fade the streak
+    3. RIDE the streak (momentum) — V3 contrarian faded and lost at 37% WR
 
     Returns dict with estimate, confidence, should_trade, and signal details.
     """
@@ -128,13 +128,13 @@ def contrarian_signal(candles):
             "streak": signed_streak,
         }
 
-    # Fade the streak
+    # Ride the streak (momentum — inverted from V3 contrarian which lost at 37% WR)
     if signed_streak >= 3:
-        estimate = 0.38  # streak UP → predict DOWN
-        direction = "DOWN"
-    else:
-        estimate = 0.62  # streak DOWN → predict UP
+        estimate = 0.62  # streak UP → predict UP (ride it)
         direction = "UP"
+    else:
+        estimate = 0.38  # streak DOWN → predict DOWN (ride it)
+        direction = "DOWN"
 
     confidence = "medium"
     if abs(signed_streak) >= 5:
