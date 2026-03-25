@@ -1,0 +1,70 @@
+name: Predict 15m
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Fallback safety net
+  repository_dispatch:
+    types: [next-cycle-15m]
+  workflow_dispatch: {}
+
+concurrency:
+  group: predict-15m
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  run-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
+
+      - name: Run 15-min prediction cycle
+        working-directory: src
+        run: python ci_run_15m.py
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/predictions_15m.db docs/15m.html
+          git diff --cached --quiet || git commit -m "Auto: 15m cycle update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git pull --rebase
+          git push
+
+      - name: Schedule next cycle in 15 minutes
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TODAY=$(date -u +%Y-%m-%d)
+          COUNT=$(gh api repos/${{ github.repository }}/actions/runs \
+            --jq "[.workflow_runs[] | select(.event==\"repository_dispatch\" and .created_at[:10]==\"$TODAY\")] | length" \
+            2>/dev/null || echo "0")
+
+          if [ "$COUNT" -lt "300" ]; then
+            echo "Scheduling next 15m cycle (dispatch #$COUNT today)..."
+            sleep 900
+            gh api repos/${{ github.repository }}/dispatches \
+              -f event_type=next-cycle-15m \
+              --silent
+            echo "Next 15m cycle dispatched."
+          else
+            echo "Daily dispatch limit reached ($COUNT). Relying on cron fallback."
+          fi

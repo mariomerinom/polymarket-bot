@@ -81,8 +81,74 @@ def init_db():
     return db
 
 
+def _is_15min_window(title):
+    """Check if the title contains a 15-minute time window."""
+    match = TIME_RANGE_RE.search(title)
+    if not match:
+        return False
+    try:
+        t1 = datetime.strptime(match.group(1), "%I:%M%p")
+        t2 = datetime.strptime(match.group(2), "%I:%M%p")
+        diff = (t2 - t1).total_seconds()
+        if diff < 0:
+            diff += 12 * 3600
+        return diff == 900  # exactly 15 minutes
+    except ValueError:
+        return False
+
+
+DB_PATH_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
+
+
+def init_db_15m():
+    """Initialize the 15-minute database (identical schema, separate file)."""
+    db = sqlite3.connect(DB_PATH_15M)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS markets (
+            id TEXT PRIMARY KEY,
+            question TEXT,
+            category TEXT,
+            end_date TEXT,
+            volume REAL,
+            price_yes REAL,
+            price_no REAL,
+            fetched_at TEXT,
+            resolved INTEGER DEFAULT 0,
+            outcome INTEGER DEFAULT NULL
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market_id TEXT,
+            agent TEXT,
+            estimate REAL,
+            edge REAL,
+            confidence TEXT,
+            reasoning TEXT,
+            predicted_at TEXT,
+            cycle INTEGER,
+            conviction_score INTEGER,
+            regime TEXT,
+            FOREIGN KEY (market_id) REFERENCES markets(id)
+        )
+    """)
+    db.commit()
+    return db
+
+
+def fetch_active_markets_15m():
+    """Fetch upcoming, unresolved 'Bitcoin Up or Down' 15-minute markets."""
+    return _fetch_btc_markets(window_check=_is_15min_window)
+
+
 def fetch_active_markets():
     """Fetch upcoming, unresolved 'Bitcoin Up or Down' 5-minute markets."""
+    return _fetch_btc_markets(window_check=_is_5min_window)
+
+
+def _fetch_btc_markets(window_check):
+    """Shared logic for fetching Bitcoin Up or Down markets with a given time window filter."""
     now = datetime.now(timezone.utc)
     cutoff = now + timedelta(hours=24)
 
@@ -101,10 +167,10 @@ def fetch_active_markets():
     for event in events:
         title = event.get("title", "")
 
-        # Must contain "Bitcoin Up or Down" and a hyphenated time range
+        # Must contain "Bitcoin Up or Down" and match the time window
         if "Bitcoin Up or Down" not in title:
             continue
-        if not _is_5min_window(title):
+        if not window_check(title):
             continue
 
         for market in event.get("markets", []):
