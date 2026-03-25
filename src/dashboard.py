@@ -1255,6 +1255,8 @@ def build_html():
         gross_losses_all = sum(p["gross_losses"] for p in agent_pnl.values())
         max_dd_all = max((p["max_drawdown"] for p in agent_pnl.values()), default=0)
         roi_all = (total_pnl_all / total_wagered_all * 100) if total_wagered_all > 0 else 0
+        avg_bet_size = (total_wagered_all / total_bets_all) if total_bets_all > 0 else 75
+        roi_per_bet = (total_pnl_all / total_bets_all / avg_bet_size * 100) if total_bets_all > 0 else 0
         all_color = "#3fb950" if total_pnl_all >= 0 else "#f44336"
         all_sign = "+" if total_pnl_all >= 0 else ""
         avg_win_all = (gross_wins_all / total_wins_all) if total_wins_all > 0 else 0
@@ -1263,7 +1265,7 @@ def build_html():
         consolidated_html = f"""<div class="consolidated-pnl">
             <div class="consolidated-label">TOTAL PORTFOLIO</div>
             <div class="consolidated-return" style="color:{all_color}">{all_sign}${total_pnl_all:,.0f}</div>
-            <div class="consolidated-detail">{total_bets_all} discrete bets &middot; {roi_all:+.0f}% ROI</div>
+            <div class="consolidated-detail">{total_bets_all} discrete bets &middot; {roi_all:+.0f}% ROI (cumulative) &middot; <span style="color:{all_color};font-weight:700">{roi_per_bet:+.0f}% ROI/bet</span></div>
             <div class="pnl-asymmetry">
                 <div class="pnl-asym-row">
                     <span class="pnl-asym-label" style="color:#3fb950">{total_wins_all}W</span>
