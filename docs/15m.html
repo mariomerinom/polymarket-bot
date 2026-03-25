@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="300">
+<title>Polymarket Bot Dashboard</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+    line-height: 1.5;
+    padding: 20px;
+}
+h1 {
+    color: #58a6ff;
+    font-size: 1.8rem;
+    margin-bottom: 8px;
+}
+.subtitle {
+    color: #8b949e;
+    margin-bottom: 28px;
+    font-size: 0.95rem;
+}
+h2 {
+    color: #58a6ff;
+    font-size: 1.25rem;
+    margin: 32px 0 12px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #21262d;
+}
+.section-desc {
+    color: #8b949e;
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+}
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+}
+th {
+    background: #161b22;
+    color: #58a6ff;
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid #21262d;
+    white-space: nowrap;
+}
+td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #21262d;
+    vertical-align: middle;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+tr:hover {
+    background: #161b22;
+}
+.agent-name {
+    color: #d2a8ff;
+    font-weight: 600;
+}
+.badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.badge-yes {
+    background: #238636;
+    color: #fff;
+}
+.badge-no {
+    background: #da3633;
+    color: #fff;
+}
+.badge-pending {
+    background: #30363d;
+    color: #8b949e;
+    border: 1px solid #484f58;
+}
+.empty {
+    text-align: center;
+    color: #484f58;
+    padding: 24px;
+    font-style: italic;
+}
+
+/* Performance Cards */
+.perf-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 8px;
+}
+.perf-card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+}
+.perf-ensemble {
+    border-color: #f0883e;
+    border-width: 2px;
+}
+.consolidated-pnl {
+    background: #161b22;
+    border: 2px solid #3fb950;
+    border-radius: 10px;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 16px;
+}
+.consolidated-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #8b949e;
+    margin-bottom: 4px;
+}
+.consolidated-return {
+    font-size: 3rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+.consolidated-detail {
+    color: #8b949e;
+    font-size: 0.9rem;
+    margin: 4px 0;
+}
+.consolidated-profit {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+.pnl-asymmetry {
+    margin-top: 12px;
+    text-align: left;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.pnl-asym-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+    font-size: 0.85rem;
+}
+.pnl-asym-label {
+    width: 30px;
+    font-weight: 700;
+    text-align: right;
+    flex-shrink: 0;
+}
+.pnl-asym-bar-wrap {
+    flex: 1;
+    background: #21262d;
+    border-radius: 4px;
+    height: 18px;
+    overflow: hidden;
+}
+.pnl-asym-bar {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    min-width: 4px;
+}
+.pnl-asym-val {
+    width: 80px;
+    font-weight: 700;
+    text-align: right;
+    flex-shrink: 0;
+}
+.pnl-asym-avg {
+    color: #8b949e;
+    font-size: 0.75rem;
+    width: 110px;
+    flex-shrink: 0;
+}
+/* EV & Breakeven Box */
+.ev-box {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 10px;
+    padding: 16px 24px;
+    margin-bottom: 16px;
+}
+.ev-row {
+    display: flex;
+    justify-content: space-around;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+.ev-metric {
+    text-align: center;
+}
+.ev-label {
+    font-size: 0.7rem;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+}
+.ev-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #c9d1d9;
+}
+.ev-gauge-wrap {
+    max-width: 500px;
+    margin: 0 auto;
+}
+.ev-gauge-bg {
+    position: relative;
+    height: 14px;
+    background: #21262d;
+    border-radius: 7px;
+    overflow: visible;
+}
+.ev-gauge-fill {
+    height: 100%;
+    border-radius: 7px;
+    opacity: 0.7;
+    transition: width 0.3s;
+}
+.ev-gauge-marker {
+    position: absolute;
+    top: -4px;
+    width: 3px;
+    height: 22px;
+    background: #c9d1d9;
+    border-radius: 2px;
+    transform: translateX(-50%);
+}
+.ev-gauge-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: #484f58;
+    margin-top: 2px;
+    position: relative;
+}
+.perf-agent {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+}
+.perf-record {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #c9d1d9;
+    margin-bottom: 4px;
+}
+.perf-accuracy {
+    font-size: 2rem;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+.perf-vs {
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+}
+.perf-streak {
+    margin-top: 4px;
+}
+
+/* Streaks */
+.streak {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+.streak-w {
+    background: #238636;
+    color: #fff;
+}
+.streak-l {
+    background: #da3633;
+    color: #fff;
+}
+
+/* Bar Chart */
+.bar-chart {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 20px;
+}
+.bar-group {
+    margin-bottom: 20px;
+}
+.bar-group:last-child {
+    margin-bottom: 0;
+}
+.bar-label {
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 6px;
+}
+.bar-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+    gap: 8px;
+}
+.bar-tag {
+    width: 55px;
+    font-size: 0.75rem;
+    color: #8b949e;
+    text-align: right;
+    flex-shrink: 0;
+}
+.bar-track {
+    flex: 1;
+    height: 22px;
+    background: #0d1117;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+}
+.bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    min-width: 45px;
+    transition: width 0.3s ease;
+}
+
+/* Chart */
+.chart-container {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 8px;
+}
+.chart-legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding-top: 12px;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: #8b949e;
+}
+.legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.legend-line {
+    width: 16px;
+    height: 0;
+    border-top: 2px dashed;
+    display: inline-block;
+}
+
+/* Evolution */
+.evo-card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+}
+.evo-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+.evo-cycle {
+    color: #58a6ff;
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+.evo-time {
+    color: #484f58;
+    font-size: 0.85rem;
+    margin-left: auto;
+}
+.evo-body p {
+    margin: 4px 0;
+    font-size: 0.9rem;
+}
+.evo-scores {
+    color: #8b949e;
+    font-size: 0.85rem;
+}
+
+/* Pipeline Health Banner */
+.pipeline-banner {
+    background: #161b22;
+    border: 2px solid #21262d;
+    border-radius: 10px;
+    padding: 16px 24px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.pipeline-main {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.pipeline-fraction {
+    font-weight: 800;
+}
+.pipeline-big {
+    font-size: 2.2rem;
+    line-height: 1;
+}
+.pipeline-slash {
+    font-size: 1.2rem;
+    opacity: 0.6;
+}
+.pipeline-labels {
+    display: flex;
+    flex-direction: column;
+}
+.pipeline-status {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+.pipeline-desc {
+    color: #8b949e;
+    font-size: 0.8rem;
+}
+.pipeline-meta {
+    text-align: right;
+}
+.pipeline-detail {
+    color: #8b949e;
+    font-size: 0.8rem;
+}
+.pipeline-ago {
+    color: #8b949e;
+    font-size: 0.75rem;
+    margin-top: 2px;
+}
+
+/* Live Context Banner */
+.live-banner {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+}
+.live-card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 14px 18px;
+}
+.live-label {
+    color: #484f58;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+}
+.live-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #c9d1d9;
+    margin-bottom: 2px;
+}
+.live-detail {
+    font-size: 0.8rem;
+    color: #8b949e;
+}
+.live-sub {
+    font-size: 0.72rem;
+    color: #484f58;
+    margin-top: 4px;
+    word-break: break-all;
+}
+.live-result {
+    border-width: 2px;
+}
+.live-verdict {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 4px;
+}
+.live-outcome {
+    font-size: 0.85rem;
+    color: #8b949e;
+    margin-bottom: 4px;
+}
+.result-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+.result-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 14px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* Status Bar */
+.status-bar {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+}
+.status-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.status-label {
+    color: #484f58;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.status-value {
+    color: #c9d1d9;
+    font-size: 1rem;
+    font-weight: 600;
+}
+.table-wrap {
+    overflow-x: auto;
+}
+@media (max-width: 768px) {
+    body { padding: 10px; }
+    h1 { font-size: 1.4rem; }
+    td, th { padding: 6px 8px; font-size: 0.82rem; }
+    .perf-grid { grid-template-columns: repeat(2, 1fr); }
+    .evo-header { flex-direction: column; align-items: flex-start; gap: 4px; }
+    .evo-time { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Polymarket Autoresearch Bot</h1>
+    <p class="subtitle">BTC 15-minute candle prediction &mdash; autoresearch loop</p>
+
+    <div class="status-bar">
+        <div class="status-item">
+            <span class="status-label">Status</span>
+            <span class="status-value" style="color:#238636">Active</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Last Cycle</span>
+            <span class="status-value">2026-03-25 22:23 UTC</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Markets</span>
+            <span class="status-value">0 / 6 resolved</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Next Market</span>
+            <span class="status-value" id="countdown" data-next-market="2026-03-25T22:30:00Z">--</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Evolutions</span>
+            <span class="status-value">0</span>
+        </div>
+    </div>
+
+    <div style="background:rgba(88,166,255,0.12);border:1px solid #1f6feb;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">📋 PAPER TRADING — V4 MOMENTUM</div>
+        <div style="color:#8b949e;font-size:13px;margin-top:4px">Inverted contrarian: ride the streak. V3 contrarian lost at 37% WR / -$962. Validating momentum before going live.</div>
+    </div>
+
+    <div class="pipeline-banner" style="background:rgba(63,185,80,0.08);border-color:#238636">
+        <div class="pipeline-main">
+            <div class="pipeline-fraction" style="color:#3fb950">
+                <span class="pipeline-big">1</span><span class="pipeline-slash">/1</span>
+            </div>
+            <div class="pipeline-labels">
+                <span class="pipeline-status" style="color:#3fb950">HEALTHY</span>
+                <span class="pipeline-desc">cycles on time (100%)</span>
+            </div>
+        </div>
+        <div class="pipeline-meta">
+            <div class="pipeline-detail">Avg gap: 0min &middot; 1 total &middot; 0 missed</div>
+            <div class='pipeline-ago'>Last cycle: 1m ago</div>
+        </div>
+    </div>
+
+    <div class="live-banner"><div class="live-card">
+            <div class="live-label">BTC Price</div>
+            <div class="live-value">$71,000</div>
+            <div class="live-detail" style="color:#3fb950">+0.005% &middot; NEUTRAL</div>
+        </div><div class="live-card">
+            <div class="live-label">Current Prediction</div>
+            <div class="live-value" style="color:#58a6ff">Mkt 40%</div>
+            <div class="live-detail">Bitcoin Up or Down - March 25, 6:15PM-6:30PM ...</div>
+            <div class="live-sub">momentum_rule:40%(skip)</div>
+        </div></div>
+
+    <h2>Performance</h2>
+        <p class="empty">No resolved markets yet. Waiting for first results...</p>
+
+    
+
+    
+
+    <h2>Rolling Accuracy (last 10 predictions)</h2>
+    <div class="chart-container"><p class="empty">Not enough data for time series (need 10+ resolved predictions per agent).</p></div>
+
+    
+
+    
+
+    
+
+    <h2>Recent Predictions</h2>
+    <div class="table-wrap">
+    <table>
+        <thead><tr>
+            <th>Agent</th>
+            <th>Market</th>
+            <th>Estimate</th>
+            <th>Market Price</th>
+            <th>Edge</th>
+            <th>Confidence</th>
+            <th>Outcome</th>
+            <th>Cycle</th>
+        </tr></thead>
+        <tbody><tr>
+                <td class="agent-name">momentum_rule</td>
+                <td title="Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET">Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET</td>
+                <td>40.5%</td>
+                <td>40.5%</td>
+                <td>+9.5%</td>
+                <td>skip</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+                <td>C1</td>
+            </tr></tbody>
+    </table>
+    </div>
+
+    <h2>Technical Metrics (Brier Scores)</h2>
+    <div class="table-wrap">
+    <table>
+        <thead><tr>
+            <th>Agent</th>
+            <th>Avg Brier Score</th>
+            <th>Resolved Markets</th>
+            <th>vs Market</th>
+        </tr></thead>
+        <tbody><tr><td colspan="4" class="empty">No resolved markets yet.</td></tr></tbody>
+    </table>
+    </div>
+
+    <h2>Markets</h2>
+    <div class="table-wrap">
+    <table>
+        <thead><tr>
+            <th>Question</th>
+            <th>Category</th>
+            <th>Price (UP)</th>
+            <th>Volume</th>
+            <th>End Date</th>
+            <th>Status</th>
+        </tr></thead>
+        <tbody><tr>
+                <td title="Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET">Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET</td>
+                <td>crypto</td>
+                <td>40.5%</td>
+                <td>$24,799</td>
+                <td>2026-03-25</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 25, 6:30PM-6:45PM ET">Bitcoin Up or Down - March 25, 6:30PM-6:45PM ET</td>
+                <td>crypto</td>
+                <td>51.5%</td>
+                <td>$480</td>
+                <td>2026-03-25</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 25, 6:45PM-7:00PM ET">Bitcoin Up or Down - March 25, 6:45PM-7:00PM ET</td>
+                <td>crypto</td>
+                <td>50.5%</td>
+                <td>$10</td>
+                <td>2026-03-25</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 25, 7:00PM-7:15PM ET">Bitcoin Up or Down - March 25, 7:00PM-7:15PM ET</td>
+                <td>crypto</td>
+                <td>50.5%</td>
+                <td>$22</td>
+                <td>2026-03-25</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 25, 7:15PM-7:30PM ET">Bitcoin Up or Down - March 25, 7:15PM-7:30PM ET</td>
+                <td>crypto</td>
+                <td>50.5%</td>
+                <td>$44</td>
+                <td>2026-03-25</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 25, 7:30PM-7:45PM ET">Bitcoin Up or Down - March 25, 7:30PM-7:45PM ET</td>
+                <td>crypto</td>
+                <td>49.5%</td>
+                <td>$20</td>
+                <td>2026-03-25</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr></tbody>
+    </table>
+    </div>
+
+    <h2>Evolution History</h2>
+    <p class="empty">No evolution history yet.</p>
+</div>
+<script>
+(function() {
+    var el = document.getElementById('countdown');
+    if (!el) return;
+    var endStr = el.getAttribute('data-next-market');
+    if (!endStr) { el.textContent = 'No upcoming market'; return; }
+    var end = new Date(endStr.replace('Z','+00:00'));
+    function update() {
+        var now = new Date();
+        var diff = Math.floor((end - now) / 1000);
+        if (diff <= 0) { el.textContent = 'Resolving...'; return; }
+        var h = Math.floor(diff / 3600);
+        var m = Math.floor((diff % 3600) / 60);
+        var s = diff % 60;
+        if (h > 0) {
+            el.textContent = h + 'h ' + m + 'm';
+        } else {
+            el.textContent = m + 'm ' + (s < 10 ? '0' : '') + s + 's';
+        }
+    }
+    update();
+    setInterval(update, 1000);
+})();
+</script>
+</body>
+</html>
