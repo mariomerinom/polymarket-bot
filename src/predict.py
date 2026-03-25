@@ -327,7 +327,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None):
             print(f"    → SKIP ({signal.get('reason', 'no_signal')})")
 
     db.close()
-    print(f"\nDone. Predictions stored in {DB_PATH}")
+    print(f"\nDone. Predictions stored in {db_path or DB_PATH}")
 
 
 if __name__ == "__main__":
