@@ -56,3 +56,57 @@ def test_build_html_accepts_db_path():
     sig = inspect.signature(build_html)
     assert "db_path" in sig.parameters
     assert "subtitle" in sig.parameters
+
+
+def test_15m_ci_workflow_commits_correct_files():
+    """15m CI workflow only commits 15m files, not 5m files."""
+    workflow = os.path.join(os.path.dirname(__file__), "..",
+                           ".github", "workflows", "predict-15m.yml")
+    with open(workflow) as f:
+        content = f.read()
+    # Must commit 15m-specific files
+    assert "data/predictions_15m.db" in content
+    assert "docs/15m.html" in content
+    # Must NOT commit 5m files
+    assert "data/predictions.db" not in content
+    assert "docs/index.html" not in content
+
+
+def test_15m_write_does_not_touch_5m_db():
+    """Writing to 15m DB does not affect 5m DB."""
+    import sqlite3
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_5m = os.path.join(tmpdir, "predictions.db")
+        db_15m = os.path.join(tmpdir, "predictions_15m.db")
+
+        # Create both DBs with a market table
+        for path in [db_5m, db_15m]:
+            conn = sqlite3.connect(path)
+            conn.execute("CREATE TABLE markets (id TEXT PRIMARY KEY, question TEXT)")
+            conn.commit()
+            conn.close()
+
+        # Write to 15m only
+        conn_15m = sqlite3.connect(db_15m)
+        conn_15m.execute("INSERT INTO markets VALUES ('test_15m', '15m market')")
+        conn_15m.commit()
+        conn_15m.close()
+
+        # Verify 5m is untouched
+        conn_5m = sqlite3.connect(db_5m)
+        count = conn_5m.execute("SELECT COUNT(*) FROM markets").fetchone()[0]
+        conn_5m.close()
+        assert count == 0, "15m write contaminated 5m database"
+
+
+def test_5m_workflow_does_not_commit_15m_files():
+    """5m CI workflow does not touch 15m files."""
+    workflow = os.path.join(os.path.dirname(__file__), "..",
+                           ".github", "workflows", "predict-and-score.yml")
+    with open(workflow) as f:
+        content = f.read()
+    assert "predictions_15m" not in content
+    assert "15m.html" not in content
