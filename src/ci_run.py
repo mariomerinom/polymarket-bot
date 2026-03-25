@@ -1,9 +1,9 @@
 """
 ci_run.py — One-shot cycle for GitHub Actions.
 
-V3: No LLM agents. Pure computation.
+V4: No LLM agents. Pure computation.
   1. Fetch active BTC 5-min markets
-  2. Predict using regime-filtered contrarian rule ($0 cost)
+  2. Predict using regime-filtered momentum rule ($0 cost)
   3. Auto-resolve closed markets
   4. Score
   5. Generate static dashboard HTML
@@ -64,9 +64,9 @@ def main():
         _generate_dashboard()
         return
 
-    # 3. Predict using contrarian rule (no API calls)
+    # 3. Predict using momentum rule (no API calls)
     cycle = get_next_cycle(db)
-    print(f"[3/5] Predictions — contrarian rule (cycle {cycle})...")
+    print(f"[3/5] Predictions — momentum rule (cycle {cycle})...")
     btc_data = fetch_btc_candles(limit=20)
     if btc_data:
         print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}% | Trend: {btc_data['trend']}")

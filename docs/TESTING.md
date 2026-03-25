@@ -40,7 +40,7 @@ Tests run automatically in CI **before** the prediction cycle. If any test fails
 
 **When these fail:** Something fundamental is broken — a deleted file, bad import, or syntax error. Fix before doing anything else.
 
-### 2. Contrarian Rule Tests (`test_contrarian.py`) — 7 tests
+### 2. Momentum Signal Tests (`test_momentum.py`) — 7 tests
 
 **Purpose:** Verify the core trading logic produces correct signals.
 
@@ -48,13 +48,13 @@ Tests run automatically in CI **before** the prediction cycle. If any test fails
 |------|----------------|
 | `test_no_signal_short_streak` | Streak < 3 returns no trade signal |
 | `test_no_signal_insufficient_data` | < 5 candles returns no trade signal |
-| `test_streak_3_up_with_compression` | 3 UP candles + shrinking ranges → fade DOWN at 0.38 |
-| `test_streak_3_down_with_volume_spike` | 3 DOWN candles + volume spike → fade UP at 0.62 |
+| `test_streak_3_up_with_compression` | 3 UP candles + shrinking ranges → ride UP at 0.62 (momentum) |
+| `test_streak_3_down_with_volume_spike` | 3 DOWN candles + volume spike → ride DOWN at 0.38 (momentum) |
 | `test_streak_without_exhaustion_no_trade` | Streak ≥ 3 but no exhaustion signal → no trade |
 | `test_high_confidence_streak_5` | Streak ≥ 5 → confidence upgrades to "high" |
 | `test_estimate_always_in_range` | Estimate is always between 0 and 1, regardless of input |
 
-**When these fail:** The trading logic changed. If intentional, update the test. If not, you just prevented a bad deploy.
+**When these fail:** The trading logic changed. If intentional, update the test. If not, you just prevented a bad deploy. **CRITICAL: The strategy is MOMENTUM (ride). V3 contrarian (fade) lost at 37% WR. Do not revert.**
 
 ### 3. Regime Detection Tests (`test_regime.py`) — 6 tests
 

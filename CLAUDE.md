@@ -18,5 +18,6 @@
 ## Bot Design
 
 - **No agent bias.** The bot must not have built-in directional bias (UP or DOWN). All bias comes from human macro config, not prompts or code.
+- **The strategy is MOMENTUM (ride streaks), not contrarian (fade).** V3 contrarian lost at 37% WR on live Polymarket. Inverting to momentum validated at 63% WR. Do NOT revert the signal direction. Streak UP + exhaustion → predict UP. Streak DOWN + exhaustion → predict DOWN.
 - **Paper trade first.** Every new signal must accumulate 200+ resolved predictions in paper trading before risking real capital.
 - **Conviction gates real money.** Only conviction >= 3 places bets. Conviction 0-2 = skip.

@@ -1,6 +1,6 @@
 # Polymarket BTC 5-Min Prediction Bot
 
-An autonomous prediction system for Polymarket's "Bitcoin Up or Down" 5-minute candle markets, using Karpathy's autoresearch feedback loop pattern. Three AI agents predict each candle, get scored, and the worst agent's prompt self-evolves.
+A zero-cost prediction system for Polymarket's "Bitcoin Up or Down" 5-minute candle markets. Uses regime-filtered momentum signals from BTC price data — no LLM, no API keys, pure computation.
 
 **[Live Dashboard](https://mariomerinom.github.io/polymarket-bot/)**
 
@@ -8,123 +8,81 @@ An autonomous prediction system for Polymarket's "Bitcoin Up or Down" 5-minute c
 
 ```
 fetch_markets.py  →  Pulls live BTC 5-min markets from Polymarket Gamma API
-predict.py        →  3 agents estimate probability via Claude API (sonnet)
+btc_data.py       →  Fetches 20 × 5-min candles from Kraken (Coinbase fallback)
+predict.py        →  Regime filter + momentum signal → conviction score
 score.py          →  Auto-resolves markets, calculates Brier scores
-evolve.py         →  Identifies worst agent, generates ONE prompt modification
-prompts/*.md      →  The ONLY thing that gets modified (the "weights")
-program.md        →  Strategy & rules (human-refined, read by agents)
+dashboard.py      →  Generates static HTML dashboard with P&L analytics
 ```
+
+## Strategy (V4 Momentum)
+
+1. Fetch 20 recent 5-min BTC/USD candles
+2. Compute regime: volatility level × autocorrelation pattern
+3. If mean-reverting (autocorr < -0.15) → **skip** (no edge)
+4. If streak ≥ 3 same direction + exhaustion signal → **ride the streak** (momentum)
+5. Otherwise → skip
+
+**Exhaustion signals:** compression (shrinking ranges), volume spike (>1.8× avg), shrinking last candle (<70% of avg range).
+
+### History
+
+| Version | Strategy | Win Rate | ROI | Cost/day |
+|---------|----------|----------|-----|----------|
+| V1-V2 | 3 LLM agents (Claude) | 50-55% | -13% to +19% | $1.50 |
+| V3 | Contrarian (fade streaks) | 37% | -18% | $0 |
+| **V4** | **Momentum (ride streaks)** | **63%** | **Validating** | **$0** |
+
+V3 contrarian faded streaks and lost — Polymarket already prices in BTC patterns. Inverting to momentum (ride) captures the pricing lag.
 
 ## Architecture
 
-The bot runs autonomously on **GitHub Actions**:
+Runs autonomously on **GitHub Actions** with self-rescheduling (every ~5 min via `repository_dispatch`).
 
-| Workflow | Schedule | What it does |
-|----------|----------|-------------|
-| `predict-and-score` | Every 5 minutes | Fetch → Predict → Score → Update dashboard |
-| `evolve` | Every 2 hours | Evaluate agents → Evolve worst performer (if 10+ new resolutions) |
-
-Results are published to **GitHub Pages** as a static dashboard with:
-- Win/loss rates and streaks per agent
-- Simulated P&L with confidence-based position sizing
-- Rolling accuracy time series
-- Confidence calibration analysis
-- Agent vs coin-flip comparison
-- Evolution history
-
-## Agents
-
-| Agent | Prompt | Strategy |
-|-------|--------|----------|
-| Base Rate | `prompts/base_rate.md` | Statistical priors: time-of-day, autocorrelation, mean reversion. Max ±10pp from 50% |
-| News Momentum | `prompts/news_momentum.md` | Short-term momentum + macro catalysts. Up to ±15pp from 50% with strong catalyst |
-| Contrarian | `prompts/contrarian.md` | Mean-reversion when market is mispriced. Fades stretched moves up to 12pp |
-
-Each agent outputs structured JSON with `estimate`, `edge`, `confidence` (low/medium/high), and reasoning fields.
+- **Data**: Kraken public REST (primary), Coinbase Exchange (fallback)
+- **Database**: `data/predictions.db` (SQLite, auto-committed by CI)
+- **Dashboard**: GitHub Pages (`docs/index.html`, auto-generated)
+- **Tests**: 44+ tests gate every CI commit
 
 ## Setup
 
 ```bash
-python -m venv venv
-source venv/bin/activate
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Required environment variable:
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+No API keys required — all data sources are free and public.
 
 ## Usage
 
-### Run a single cycle locally
-```bash
-cd src/
-python ci_run.py
-```
-
-### Run continuously (local)
-```bash
-cd src/
-python run_loop.py
-```
-
-### Manual CLI
 ```bash
 cd src/
 
-# Fetch markets
-python fetch_markets.py
+# Run a single prediction cycle
+python run_cycle.py --cycle 1
 
-# Run predictions for a cycle
-python predict.py --cycle 1 --markets 5
+# Score resolved markets only
+python run_cycle.py --score-only
 
-# Score resolved markets
-python score.py
-
-# Evolve worst agent
-python evolve.py
-
-# Full manual cycle
-python run_cycle.py --full --cycle 2
+# Run tests
+python -m pytest tests/ -v
 ```
-
-### Local dashboard
-```bash
-cd src/
-python dashboard.py  # http://localhost:5050
-```
-
-## Data
-
-- **Database**: `data/predictions.db` (SQLite) — markets, predictions, evolution log
-- **Evolution log**: `data/evolution_log.json` — human-readable change history
-- **Dashboard**: `docs/index.html` — auto-generated static HTML
-
-## Tech Stack
-
-- **Model**: Claude Sonnet (claude-sonnet-4-6) via Anthropic API
-- **Market data**: Polymarket Gamma API (read-only, no auth required)
-- **CI/CD**: GitHub Actions (cron workflows)
-- **Dashboard**: GitHub Pages (static HTML from `docs/`)
-- **Database**: SQLite
-- **Language**: Python 3.14
 
 ## P&L Simulation
 
-The dashboard simulates financial returns using confidence-based position sizing:
+Binary options P&L is asymmetric:
+- **Win**: `bet_size × (1/market_price - 1)` — variable, depends on entry price
+- **Loss**: `-bet_size` — fixed ($75 for medium conviction, $200 for high)
 
-| Confidence | Bet Size |
-|-----------|----------|
-| Low | $50 |
-| Medium | $100 |
-| High | $200 |
+| Conviction | Bet Size | When |
+|-----------|----------|------|
+| 0 (skip) | $0 | No streak or no exhaustion |
+| 2 (low) | $0 | Signal fires but low confidence |
+| 3 (medium) | $75 | Streak + exhaustion + medium/high confidence |
+| 4+ (high) | $200 | Streak ≥ 5 or multiple exhaustion signals |
 
-Profit on correct prediction: `bet_size × (1/market_price - 1)`
-Loss on incorrect prediction: `-bet_size`
+## Key Documents
 
-## Extending
-
-- **Add agents**: Create a new `.md` file in `prompts/` — auto-discovered by `predict.py`
-- **Change model**: Edit `MODEL` constant in `predict.py` and `evolve.py`
-- **Live trading**: See `docs/DEPLOYMENT_PLAN.md` for what's needed to place real bets
+- [`docs/BACKTEST_FINDINGS.md`](docs/BACKTEST_FINDINGS.md) — V1→V4 results with regime analysis
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — Execution plan and validation gates
+- [`docs/TESTING.md`](docs/TESTING.md) — Test strategy and CI pipeline
+- [`docs/BREAK_FIX_LOG.md`](docs/BREAK_FIX_LOG.md) — Production incident log

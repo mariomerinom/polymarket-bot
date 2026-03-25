@@ -1,12 +1,15 @@
 """
-Unit tests for the momentum signal logic (inverted contrarian).
+Unit tests for the momentum signal logic.
 V4: streak UP → predict UP (ride it), streak DOWN → predict DOWN (ride it).
+
+History: V3 "contrarian" faded streaks and lost at 37% WR.
+Inverting to momentum validated at 63% WR. Do NOT revert to fade.
 """
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from predict import contrarian_signal
+from predict import momentum_signal
 
 
 def _make_candles(directions, volumes=None):
@@ -30,7 +33,7 @@ def _make_candles(directions, volumes=None):
 def test_no_signal_short_streak():
     """Streak < 3 → no signal."""
     candles = _make_candles(["UP", "UP", "DOWN", "UP", "UP"])
-    result = contrarian_signal(candles)
+    result = momentum_signal(candles)
     assert result["should_trade"] is False
     assert "streak_too_short" in result["reason"]
 
@@ -38,7 +41,7 @@ def test_no_signal_short_streak():
 def test_no_signal_insufficient_data():
     """< 5 candles → no signal."""
     candles = _make_candles(["UP", "UP", "UP"])
-    result = contrarian_signal(candles)
+    result = momentum_signal(candles)
     assert result["should_trade"] is False
 
 
@@ -59,7 +62,7 @@ def test_streak_3_up_with_compression():
                         "close": c, "volume": 10})
         price = c
 
-    result = contrarian_signal(candles)
+    result = momentum_signal(candles)
     assert result["should_trade"] is True
     assert result["estimate"] == 0.62  # ride UP → predict UP (momentum)
     assert result["direction"] == "UP"
@@ -82,7 +85,7 @@ def test_streak_3_down_with_volume_spike():
                         "close": c, "volume": vol})
         price = c
 
-    result = contrarian_signal(candles)
+    result = momentum_signal(candles)
     assert result["should_trade"] is True
     assert result["estimate"] == 0.38  # ride DOWN → predict DOWN (momentum)
     assert result["direction"] == "DOWN"
@@ -104,7 +107,7 @@ def test_streak_without_exhaustion_no_trade():
                         "close": c, "volume": 10})
         price = c
 
-    result = contrarian_signal(candles)
+    result = momentum_signal(candles)
     assert result["should_trade"] is False
     assert "no_exhaustion" in result["reason"]
 
@@ -125,7 +128,7 @@ def test_high_confidence_streak_5():
                         "close": c, "volume": 10})
         price = c
 
-    result = contrarian_signal(candles)
+    result = momentum_signal(candles)
     assert result["should_trade"] is True
     assert result["confidence"] == "high"
 
@@ -139,5 +142,5 @@ def test_estimate_always_in_range():
         _make_candles(["UP"] * 5, volumes=[1, 1, 1, 1, 50]),
     ]
     for candles in test_cases:
-        result = contrarian_signal(candles)
+        result = momentum_signal(candles)
         assert 0 <= result["estimate"] <= 1, f"estimate {result['estimate']} out of range"

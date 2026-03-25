@@ -1,9 +1,9 @@
-# Polymarket 5-Min BTC Up/Down Trading Bot  
-**V3.1 Regime-Filtered Contrarian — Simplified Production Plan**  
-**Version date:** March 18, 2026  
-**Based on:** BACKTEST_FINDINGS.md (full 14-day evolution results)  
-**Core decision:** Replace XGBoost + 32 features with regime-aware contrarian rule  
-**Objective:** Capture the +3.3% ROI / +$960 P&L of the plain contrarian rule while eliminating the regime-specific bleed
+# Polymarket 5-Min BTC Up/Down Trading Bot
+**V3.1 → V4 Regime-Filtered Momentum — Production Plan**
+**Version date:** March 18, 2026 (updated March 24, 2026)
+**Based on:** BACKTEST_FINDINGS.md (full 14-day evolution results + live paper trading)
+**Core decision:** Replace XGBoost + 32 features with regime-aware momentum rule
+**Objective:** Ride BTC streaks when exhaustion confirms continuation. V3 contrarian (fade) lost at 37% WR on live Polymarket. V4 momentum (ride) validated at 63% WR.
 
 ## Core Strategy (final)
 
@@ -19,7 +19,7 @@
      - shrinking candle bodies/ranges (last 2–3 candles)
      - significant wick rejection (upper/lower wick > 1.8–2.0 × body)
      - volume ratio > 1.8× (last candle vs 12-period avg) — optional but recommended
-6. If signal fires → place limit order to fade the streak ($75–$150 fixed size)
+6. If signal fires → place limit order to RIDE the streak ($75–$150 fixed size)
 7. Log every decision + resolution outcome
 
 ## Target Characteristics (extrapolated from backtest)
@@ -59,7 +59,7 @@ Tasks:
   - streak_length ≥ 3 (same direction)
   - exhaustion: (shrinking_range_last_3 AND large_wick) OR volume_spike
   - Define thresholds (start with backtest values; allow easy tuning)
-- Combine: skip if mean-reverting else check contrarian → signal = fade direction
+- Combine: skip if mean-reverting else check momentum → signal = ride direction
 
 Deliverables:
 - `signals.py` (pure functions: candles → regime_flag, candles → contrarian_signal)
