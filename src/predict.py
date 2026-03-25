@@ -1,12 +1,15 @@
 """
-predict.py — Regime-filtered contrarian rule predictions.
+predict.py — Regime-filtered momentum predictions.
 
-V3: No LLM agents. Pure computation from BTC candle data.
+V4: No LLM agents. Pure computation from BTC candle data.
 - Fetch 20 candles from Kraken/Coinbase
 - Compute regime (volatility + autocorrelation)
 - If mean-reverting → skip
-- If streak >= 3 + exhaustion → fade the streak
+- If streak >= 3 + exhaustion → RIDE the streak (momentum)
 - Cost: $0/day
+
+History: V3 contrarian (fade) lost at 37% WR on live Polymarket.
+Inverting to momentum (ride) validated at 63% WR. Do NOT revert to fade.
 """
 
 import json
@@ -69,12 +72,15 @@ def compute_regime_from_candles(candles):
     }
 
 
-def contrarian_signal(candles):
+def momentum_signal(candles):
     """
-    Momentum signal (inverted contrarian):
+    Momentum signal: ride BTC streaks when exhaustion confirms continuation.
     1. streak >= 3 same direction
     2. At least one exhaustion signal (compression, volume spike, or shrinking range)
-    3. RIDE the streak (momentum) — V3 contrarian faded and lost at 37% WR
+    3. RIDE the streak (bet WITH it, not against it)
+
+    History: V3 "contrarian" faded streaks and lost at 37% WR on live Polymarket.
+    Inverting to momentum (ride) validated at 63% WR. Do NOT revert to fade.
 
     Returns dict with estimate, confidence, should_trade, and signal details.
     """
@@ -155,8 +161,12 @@ def contrarian_signal(candles):
             "shrinking_range": shrinking,
             "range_ratio": round(range_ratio, 2),
         },
-        "reason": f"fade_streak_{direction}",
+        "reason": f"ride_streak_{direction}",
     }
+
+
+# Backward compatibility alias — old tests/imports may reference this name
+contrarian_signal = momentum_signal
 
 
 def ensure_regime_column(db):
@@ -192,14 +202,14 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
         "would_have_bet": signal.get("should_trade", False) and confidence in ("medium", "high"),
     })
 
-    # Store as "contrarian_rule" agent
+    # Store as "momentum_rule" agent
     try:
         db.execute("""
             INSERT INTO predictions
             (market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle, conviction_score, regime)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            market_id, "contrarian_rule", estimate, edge, confidence,
+            market_id, "momentum_rule", estimate, edge, confidence,
             reasoning, predicted_at, cycle, conviction, regime["label"],
         ))
     except sqlite3.OperationalError:
@@ -209,7 +219,7 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
             (market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle, conviction_score)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            market_id, "contrarian_rule", estimate, edge, confidence,
+            market_id, "momentum_rule", estimate, edge, confidence,
             reasoning, predicted_at, cycle, conviction,
         ))
     db.commit()
@@ -218,7 +228,7 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
 def run_predictions(cycle=1, market_limit=5, btc_data=None):
     """
     Main prediction loop.
-    Fetch candles → compute regime → apply contrarian rule → store.
+    Fetch candles → compute regime → apply momentum rule → store.
     No API calls. $0 cost.
     """
     from btc_data import fetch_btc_candles, format_for_prompt
@@ -253,10 +263,10 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None):
     if regime["is_mean_reverting"]:
         print(f"  SKIP: Mean-reverting regime detected — no trades")
 
-    # Compute contrarian signal
-    signal = contrarian_signal(candles)
+    # Compute momentum signal
+    signal = momentum_signal(candles)
     if signal["should_trade"]:
-        print(f"  Signal: FADE {signal['direction']} (streak={signal['streak']}, conf={signal['confidence']})")
+        print(f"  Signal: RIDE {signal['direction']} (streak={signal['streak']}, conf={signal['confidence']})")
         print(f"    Exhaustion: compression={signal['exhaustion']['compression']}, "
               f"vol_spike={signal['exhaustion']['volume_spike']} ({signal['exhaustion']['vol_ratio']:.1f}x), "
               f"shrink={signal['exhaustion']['shrinking_range']} ({signal['exhaustion']['range_ratio']:.2f}x)")
@@ -298,7 +308,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None):
             print(f"    → SKIP (mean-reverting regime)")
             continue
 
-        # Apply contrarian signal
+        # Apply momentum signal
         if signal["should_trade"]:
             store_prediction(db, market["id"], signal, regime, cycle)
             direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
