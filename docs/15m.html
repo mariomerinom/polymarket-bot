@@ -589,15 +589,15 @@ tr:hover {
         </div>
         <div class="status-item">
             <span class="status-label">Last Cycle</span>
-            <span class="status-value">2026-03-25 22:23 UTC</span>
+            <span class="status-value">2026-03-25 23:01 UTC</span>
         </div>
         <div class="status-item">
             <span class="status-label">Markets</span>
-            <span class="status-value">0 / 6 resolved</span>
+            <span class="status-value">2 / 9 resolved</span>
         </div>
         <div class="status-item">
             <span class="status-label">Next Market</span>
-            <span class="status-value" id="countdown" data-next-market="2026-03-25T22:30:00Z">--</span>
+            <span class="status-value" id="countdown" data-next-market="2026-03-25T23:15:00Z">--</span>
         </div>
         <div class="status-item">
             <span class="status-label">Evolutions</span>
@@ -610,48 +610,176 @@ tr:hover {
         <div style="color:#8b949e;font-size:13px;margin-top:4px">Inverted contrarian: ride the streak. V3 contrarian lost at 37% WR / -$962. Validating momentum before going live.</div>
     </div>
 
-    <div class="pipeline-banner" style="background:rgba(63,185,80,0.08);border-color:#238636">
+    <div class="pipeline-banner" style="background:rgba(244,67,54,0.08);border-color:#da3633">
         <div class="pipeline-main">
-            <div class="pipeline-fraction" style="color:#3fb950">
-                <span class="pipeline-big">1</span><span class="pipeline-slash">/1</span>
+            <div class="pipeline-fraction" style="color:#f44336">
+                <span class="pipeline-big">0</span><span class="pipeline-slash">/1</span>
             </div>
             <div class="pipeline-labels">
-                <span class="pipeline-status" style="color:#3fb950">HEALTHY</span>
-                <span class="pipeline-desc">cycles on time (100%)</span>
+                <span class="pipeline-status" style="color:#f44336">DOWN</span>
+                <span class="pipeline-desc">cycles on time (0%)</span>
             </div>
         </div>
         <div class="pipeline-meta">
-            <div class="pipeline-detail">Avg gap: 0min &middot; 1 total &middot; 0 missed</div>
-            <div class='pipeline-ago'>Last cycle: 1m ago</div>
+            <div class="pipeline-detail">Avg gap: 38min &middot; 2 total &middot; 1 missed</div>
+            <div class='pipeline-ago'>Last cycle: 0m ago</div>
         </div>
     </div>
 
     <div class="live-banner"><div class="live-card">
             <div class="live-label">BTC Price</div>
-            <div class="live-value">$71,000</div>
-            <div class="live-detail" style="color:#3fb950">+0.005% &middot; NEUTRAL</div>
+            <div class="live-value">$71,360</div>
+            <div class="live-detail" style="color:#3fb950">+0.242% &middot; UP</div>
+        </div><div class="live-card live-result" style="background:rgba(244,67,54,0.15);border-color:#da3633">
+            <div class="live-label">Last Result</div>
+            <div class="live-verdict" style="color:#f44336">&#10007; ALL MISS</div>
+            <div class="live-outcome">Resolved <span style="color:#3fb950;font-weight:700">UP &#9650;</span></div>
+            <div class="live-detail">Bitcoin Up or Down - March 25, 6:15PM-6:...</div>
+            <div class="result-chips"><span class="result-chip" style="background:rgba(244,67,54,0.15);border:1px solid #da3633;color:#da3633">&#10007; momentum_rule 40%</span> </div>
         </div><div class="live-card">
             <div class="live-label">Current Prediction</div>
-            <div class="live-value" style="color:#58a6ff">Mkt 40%</div>
-            <div class="live-detail">Bitcoin Up or Down - March 25, 6:15PM-6:30PM ...</div>
-            <div class="live-sub">momentum_rule:40%(skip)</div>
+            <div class="live-value" style="color:#58a6ff">Mkt 46%</div>
+            <div class="live-detail">Bitcoin Up or Down - March 25, 7:00PM-7:15PM ...</div>
+            <div class="live-sub">momentum_rule:46%(skip)</div>
         </div></div>
 
     <h2>Performance</h2>
-        <p class="empty">No resolved markets yet. Waiting for first results...</p>
+        <div class="perf-grid"><div class="perf-card">
+                <div class="perf-agent" style="color:#3fb950">momentum_rule</div>
+                <div class="perf-record">0W - 1L</div>
+                <div class="perf-accuracy" style="color:#f44336">0.0%</div>
+                <div class="perf-vs" style="color:#f44336">-50.0pp vs coin flip</div>
+                <div class="perf-streak"><span class="streak streak-l">L1</span></div>
+            </div><div class="perf-card perf-ensemble">
+            <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
+            <div class="perf-record">0W - 1L</div>
+            <div class="perf-accuracy" style="color:#f44336">0.0%</div>
+            <div class="perf-vs" style="color:#f44336">-50.0pp vs coin flip</div>
+            <div class="perf-streak"><span class="streak streak-l">L1</span></div>
+        </div></div>
 
-    
+    <h2>Simulated P&amp;L</h2>
+        <p class="section-desc">Binary options: wins are variable (depends on entry price), losses are fixed ($75 or $200). Bets are discrete and sequential.</p>
+        <div class="consolidated-pnl">
+            <div class="consolidated-label">TOTAL PORTFOLIO</div>
+            <div class="consolidated-return" style="color:#3fb950">+$0</div>
+            <div class="consolidated-detail">0 discrete bets &middot; +0% ROI (cumulative) &middot; <span style="color:#3fb950;font-weight:700">+0% ROI/bet</span></div>
+            <div class="pnl-asymmetry">
+                <div class="pnl-asym-row">
+                    <span class="pnl-asym-label" style="color:#3fb950">0W</span>
+                    <span class="pnl-asym-bar-wrap"><span class="pnl-asym-bar" style="background:#3fb950;width:5%"></span></span>
+                    <span class="pnl-asym-val" style="color:#3fb950">+$0</span>
+                    <span class="pnl-asym-avg">avg +$0/win</span>
+                </div>
+                <div class="pnl-asym-row">
+                    <span class="pnl-asym-label" style="color:#f44336">0L</span>
+                    <span class="pnl-asym-bar-wrap"><span class="pnl-asym-bar" style="background:#f44336;width:5%"></span></span>
+                    <span class="pnl-asym-val" style="color:#f44336">$0</span>
+                    <span class="pnl-asym-avg">fixed $0/loss</span>
+                </div>
+            </div>
+            <div class="consolidated-detail" style="margin-top:8px;font-size:0.75rem;color:#8b949e">
+                Max drawdown: <span style="color:#f44336">$0</span>
+                &middot; Cumulative risked: $0 (sequential, not simultaneous)
+            </div>
+        </div>
+        
+        <div class="perf-grid"><div class="perf-card">
+                <div class="perf-agent" style="color:#3fb950">momentum_rule</div>
+                <div class="perf-accuracy" style="color:#3fb950">+$0</div>
+                <div class="perf-record">0W-0L (0% WR)</div>
+                <div class="perf-vs" style="color:#3fb950">+$0 won (avg +$0)</div>
+                <div class="perf-vs" style="color:#f44336">$0 lost (fixed $0)</div>
+                <div class="perf-vs" style="color:#8b949e">Max DD: $0 &middot; +0% ROI</div>
+            </div><div class="perf-card perf-ensemble">
+            <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
+            <div class="perf-accuracy" style="color:#3fb950">+$0</div>
+            <div class="perf-record">0 bets &middot; +0% ROI</div>
+            <div class="perf-vs">from $0 cumulative (1 skipped)</div>
+        </div></div>
+        <div class="chart-container" style="margin-top:16px">
+            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Per-Bet Waterfall</h3>
+            <p class="empty">No bet data for waterfall chart.</p>
+        </div>
+        <div class="chart-container" style="margin-top:16px">
+            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Win/Loss Distribution</h3>
+            <p class="empty">Need more bets for distribution chart.</p>
+        </div>
+        <div class="chart-container" style="margin-top:16px">
+            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Cumulative P&amp;L</h3>
+            <p class="empty">Not enough data for P&L chart.</p>
+        </div>
 
-    
+    <h2>Conviction Scoreboard</h2>
+            <p class="section-desc">Conviction measures agreement across 5 independent signal layers. Higher conviction = bigger bet. Only bet when conviction &ge; 2.</p>
+            <div class="table-wrap"><table>
+                <thead><tr>
+                    <th>Tier</th><th>Markets</th><th>Accuracy</th><th>W</th><th>L</th><th>Bet Size</th><th>P&amp;L</th><th>ROI</th>
+                </tr></thead>
+                <tbody><tr>
+                    <td style="color:#8b949e;font-weight:700">NO BET (0-1)</td>
+                    <td>1</td>
+                    <td style="color:#f44336">0.0%</td>
+                    <td>0</td>
+                    <td>1</td>
+                    <td>$0</td>
+                    <td style="color:#3fb950">—</td>
+                    <td>—</td>
+                </tr>
+                <tr style="border-top:2px solid #30363d">
+                    <td style="font-weight:700;color:#f0883e">TOTAL (bets only)</td>
+                    <td></td><td></td><td></td><td></td>
+                    <td></td>
+                    <td style="color:#3fb950;font-weight:700">$+0</td>
+                    <td style="font-weight:700">+0%</td>
+                </tr></tbody>
+            </table></div>
 
     <h2>Rolling Accuracy (last 10 predictions)</h2>
     <div class="chart-container"><p class="empty">Not enough data for time series (need 10+ resolved predictions per agent).</p></div>
 
-    
+    <h2>Win/Loss &amp; Hit Rate</h2>
+        <div class="table-wrap"><table>
+            <thead><tr>
+                <th>Agent</th><th>Record</th><th>Accuracy</th><th>Last 10</th>
+                <th>Streak</th><th>Best W</th><th>Worst L</th>
+            </tr></thead>
+            <tbody><tr>
+                <td class="agent-name" style="color:#3fb950">momentum_rule</td>
+                <td>0-1</td>
+                <td style="color:#f44336">0.0%</td>
+                <td style="color:#f44336">0.0%</td>
+                <td><span class="streak streak-l">L1</span></td>
+                <td><span class="streak streak-w">W0</span></td>
+                <td><span class="streak streak-l">L1</span></td>
+            </tr></tbody>
+        </table></div>
 
-    
+    <h2>Agent vs Market vs Coin Flip</h2>
+        <div class="bar-chart"><div class="bar-group">
+                <div class="bar-label" style="color:#3fb950">momentum_rule</div>
+                <div class="bar-row">
+                    <span class="bar-tag">Agent</span>
+                    <div class="bar-track"><div class="bar-fill" style="width:0.0%;background:#f44336">0.0%</div></div>
+                </div>
+                <div class="bar-row">
+                    <span class="bar-tag">Market</span>
+                    <div class="bar-track"><div class="bar-fill" style="width:0.0%;background:#58a6ff">0.0%</div></div>
+                </div>
+                <div class="bar-row">
+                    <span class="bar-tag">Coin Flip</span>
+                    <div class="bar-track"><div class="bar-fill" style="width:50%;background:#484f58">50.0%</div></div>
+                </div>
+            </div></div>
 
-    
+    <h2>Confidence Calibration</h2>
+        <p class="section-desc">When an agent says "high confidence", are they right more often?</p>
+        <div class="table-wrap"><table>
+            <thead><tr>
+                <th>Agent</th><th>Low</th><th>Medium</th><th>High</th>
+            </tr></thead>
+            <tbody><tr><td class="agent-name" style="color:#3fb950">momentum_rule</td><td style="color:#484f58">-- (0)</td><td style="color:#484f58">-- (0)</td><td style="color:#484f58">-- (0)</td></tr></tbody>
+        </table></div>
 
     <h2>Recent Predictions</h2>
     <div class="table-wrap">
@@ -668,12 +796,21 @@ tr:hover {
         </tr></thead>
         <tbody><tr>
                 <td class="agent-name">momentum_rule</td>
+                <td title="Bitcoin Up or Down - March 25, 7:00PM-7:15PM ET">Bitcoin Up or Down - March 25, 7:00PM-7:15PM ET</td>
+                <td>46.5%</td>
+                <td>46.5%</td>
+                <td>+3.5%</td>
+                <td>skip</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+                <td>C2</td>
+            </tr><tr>
+                <td class="agent-name">momentum_rule</td>
                 <td title="Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET">Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET</td>
                 <td>40.5%</td>
                 <td>40.5%</td>
                 <td>+9.5%</td>
                 <td>skip</td>
-                <td><span class="badge badge-pending">Pending</span></td>
+                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-yes">UP</span></td>
                 <td>C1</td>
             </tr></tbody>
     </table>
@@ -688,7 +825,12 @@ tr:hover {
             <th>Resolved Markets</th>
             <th>vs Market</th>
         </tr></thead>
-        <tbody><tr><td colspan="4" class="empty">No resolved markets yet.</td></tr></tbody>
+        <tbody><tr>
+                <td class="agent-name">momentum_rule</td>
+                <td style="color:#ff9800;font-weight:600">0.3540</td>
+                <td>1</td>
+                <td style="color:#f44336">+0.0000 (LOSING TO market)</td>
+            </tr></tbody>
     </table>
     </div>
 
@@ -704,20 +846,6 @@ tr:hover {
             <th>Status</th>
         </tr></thead>
         <tbody><tr>
-                <td title="Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET">Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET</td>
-                <td>crypto</td>
-                <td>40.5%</td>
-                <td>$24,799</td>
-                <td>2026-03-25</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-            </tr><tr>
-                <td title="Bitcoin Up or Down - March 25, 6:30PM-6:45PM ET">Bitcoin Up or Down - March 25, 6:30PM-6:45PM ET</td>
-                <td>crypto</td>
-                <td>51.5%</td>
-                <td>$480</td>
-                <td>2026-03-25</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-            </tr><tr>
                 <td title="Bitcoin Up or Down - March 25, 6:45PM-7:00PM ET">Bitcoin Up or Down - March 25, 6:45PM-7:00PM ET</td>
                 <td>crypto</td>
                 <td>50.5%</td>
@@ -727,24 +855,59 @@ tr:hover {
             </tr><tr>
                 <td title="Bitcoin Up or Down - March 25, 7:00PM-7:15PM ET">Bitcoin Up or Down - March 25, 7:00PM-7:15PM ET</td>
                 <td>crypto</td>
-                <td>50.5%</td>
-                <td>$22</td>
+                <td>46.5%</td>
+                <td>$685</td>
                 <td>2026-03-25</td>
                 <td><span class="badge badge-pending">Pending</span></td>
             </tr><tr>
                 <td title="Bitcoin Up or Down - March 25, 7:15PM-7:30PM ET">Bitcoin Up or Down - March 25, 7:15PM-7:30PM ET</td>
                 <td>crypto</td>
                 <td>50.5%</td>
-                <td>$44</td>
+                <td>$88</td>
                 <td>2026-03-25</td>
                 <td><span class="badge badge-pending">Pending</span></td>
             </tr><tr>
                 <td title="Bitcoin Up or Down - March 25, 7:30PM-7:45PM ET">Bitcoin Up or Down - March 25, 7:30PM-7:45PM ET</td>
                 <td>crypto</td>
                 <td>49.5%</td>
-                <td>$20</td>
+                <td>$40</td>
                 <td>2026-03-25</td>
                 <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 25, 7:45PM-8:00PM ET">Bitcoin Up or Down - March 25, 7:45PM-8:00PM ET</td>
+                <td>crypto</td>
+                <td>49.5%</td>
+                <td>$20</td>
+                <td>2026-03-26</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 25, 8:00PM-8:15PM ET">Bitcoin Up or Down - March 25, 8:00PM-8:15PM ET</td>
+                <td>crypto</td>
+                <td>50.5%</td>
+                <td>$462</td>
+                <td>2026-03-26</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 25, 8:15PM-8:30PM ET">Bitcoin Up or Down - March 25, 8:15PM-8:30PM ET</td>
+                <td>crypto</td>
+                <td>50.5%</td>
+                <td>$6</td>
+                <td>2026-03-26</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET">Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET</td>
+                <td>crypto</td>
+                <td>40.5%</td>
+                <td>$24,799</td>
+                <td>2026-03-25</td>
+                <td><span class="badge badge-yes">UP</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 25, 6:30PM-6:45PM ET">Bitcoin Up or Down - March 25, 6:30PM-6:45PM ET</td>
+                <td>crypto</td>
+                <td>51.5%</td>
+                <td>$480</td>
+                <td>2026-03-25</td>
+                <td><span class="badge badge-yes">UP</span></td>
             </tr></tbody>
     </table>
     </div>
