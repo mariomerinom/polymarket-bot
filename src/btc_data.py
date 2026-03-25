@@ -18,33 +18,36 @@ COINBASE_CANDLES = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
 
 def fetch_btc_candles(interval="5m", limit=12):
     """
-    Fetch recent BTC 5-minute candles.
+    Fetch recent BTC candles at the given interval.
     Primary: Kraken. Fallback: Coinbase.
     Returns a dict with candles, summary stats, and derived signals.
+
+    interval: "5m" (default) or "15m"
     """
+    # Parse interval to minutes for API params
+    interval_minutes = int(interval.replace("m", ""))
     try:
-        return _fetch_kraken(limit)
+        return _fetch_kraken(limit, interval_minutes=interval_minutes)
     except Exception as e:
         print(f"  Kraken API failed ({e}), trying Coinbase fallback...")
         try:
-            return _fetch_coinbase(limit)
+            return _fetch_coinbase(limit, interval_minutes=interval_minutes)
         except Exception as e2:
             print(f"  Coinbase also failed ({e2}), returning empty data")
             return None
 
 
-def _fetch_kraken(limit):
+def _fetch_kraken(limit, interval_minutes=5):
     """Fetch from Kraken public OHLC endpoint (no auth needed).
 
     Returns [time, open, high, low, close, vwap, volume, count] arrays.
     Kraken returns all candles since `since` timestamp — we compute
     the right start time to get approximately `limit` candles.
     """
-    # Request candles starting from (limit * 5 minutes) ago
-    since = int(time.time()) - (limit + 2) * 5 * 60
+    since = int(time.time()) - (limit + 2) * interval_minutes * 60
     resp = requests.get(KRAKEN_OHLC, params={
         "pair": "XBTUSD",
-        "interval": 5,
+        "interval": interval_minutes,
         "since": since,
     }, timeout=10)
     resp.raise_for_status()
@@ -102,17 +105,17 @@ def _fetch_kraken(limit):
     return _compute_summary(candles)
 
 
-def _fetch_coinbase(limit):
+def _fetch_coinbase(limit, interval_minutes=5):
     """Fallback: Coinbase Exchange API (no auth needed for market data).
 
     Returns [time, low, high, open, close, volume] arrays (note different order).
-    granularity=300 = 5-minute candles.
+    granularity in seconds (300 = 5-min, 900 = 15-min).
     """
     now = int(time.time())
-    start = now - (limit + 2) * 5 * 60
+    start = now - (limit + 2) * interval_minutes * 60
 
     resp = requests.get(COINBASE_CANDLES, params={
-        "granularity": 300,
+        "granularity": interval_minutes * 60,
         "start": start,
         "end": now,
     }, timeout=10)

@@ -1014,8 +1014,8 @@ def vs_market_color(vs):
     return "#4caf50" if vs < 0 else "#f44336"
 
 
-def build_html():
-    db = get_db()
+def build_html(db_path=None, subtitle="BTC 5-minute candle prediction"):
+    db = get_db(db_path)
     try:
         status = get_status(db)
         pipeline = get_pipeline_health(db)
@@ -2236,7 +2236,7 @@ tr:hover {{
 <body>
 <div class="container">
     <h1>Polymarket Autoresearch Bot</h1>
-    <p class="subtitle">BTC 5-minute candle prediction &mdash; autoresearch loop</p>
+    <p class="subtitle">{subtitle} &mdash; autoresearch loop</p>
 
     {status_html}
 

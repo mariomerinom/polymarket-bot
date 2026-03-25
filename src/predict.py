@@ -225,15 +225,17 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
     db.commit()
 
 
-def run_predictions(cycle=1, market_limit=5, btc_data=None):
+def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None):
     """
     Main prediction loop.
     Fetch candles → compute regime → apply momentum rule → store.
     No API calls. $0 cost.
+
+    db_path: optional override (default: data/predictions.db for 5-min)
     """
     from btc_data import fetch_btc_candles, format_for_prompt
 
-    db = sqlite3.connect(DB_PATH)
+    db = sqlite3.connect(db_path or DB_PATH)
     ensure_regime_column(db)
 
     # Ensure conviction_score column exists
