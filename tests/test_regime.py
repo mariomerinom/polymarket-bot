@@ -85,6 +85,30 @@ def test_regime_keys():
     assert required.issubset(result.keys())
 
 
+def test_relaxed_autocorr_threshold():
+    """Relaxing autocorr_threshold changes the mean-reverting classification."""
+    candles = _mean_reverting_candles()
+    autocorr_val = compute_regime_from_candles(candles)["autocorrelation"]
+
+    # At strict threshold (-0.15): should be mean-reverting (autocorr is very negative)
+    result_strict = compute_regime_from_candles(candles, autocorr_threshold=-0.15)
+    assert result_strict["is_mean_reverting"] is True
+
+    # At relaxed threshold below the actual autocorrelation: NOT mean-reverting
+    # Use a threshold more negative than the actual value
+    very_relaxed = autocorr_val - 0.5  # way below actual
+    result_relaxed = compute_regime_from_candles(candles, autocorr_threshold=very_relaxed)
+    assert result_relaxed["is_mean_reverting"] is False
+
+    # Both should compute the same autocorrelation value
+    assert result_strict["autocorrelation"] == result_relaxed["autocorrelation"]
+
+    # Trending candles should not be mean-reverting at any threshold
+    trending = _trending_candles()
+    result_trending = compute_regime_from_candles(trending, autocorr_threshold=-0.20)
+    assert result_trending["is_mean_reverting"] is False
+
+
 def test_autocorrelation_bounded():
     """Autocorrelation should be between -1 and 1."""
     for candles in [_trending_candles(), _mean_reverting_candles(), _low_vol_candles()]:

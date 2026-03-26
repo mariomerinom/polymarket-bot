@@ -76,8 +76,10 @@ def main():
     if has_unpredicted_market(db):
         db.close()
         try:
+            # 15m thresholds: streak ≥ 2 (30 min ≈ 5m streak ≥ 3), relaxed regime gate
             run_predictions(cycle=cycle, market_limit=1, btc_data=btc_data,
-                            db_path=str(DB_PATH_15M))
+                            db_path=str(DB_PATH_15M),
+                            min_streak=2, autocorr_threshold=-0.20)
         except Exception as e:
             print(f"  Prediction error: {e}")
         db = sqlite3.connect(DB_PATH_15M)

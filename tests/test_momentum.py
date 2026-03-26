@@ -133,6 +133,55 @@ def test_high_confidence_streak_5():
     assert result["confidence"] == "high"
 
 
+def test_streak_2_fires_with_min_streak_2():
+    """Streak=2 + exhaustion fires when min_streak=2 (15m mode)."""
+    candles = []
+    price = 100.0
+    # 8 mixed candles
+    for _ in range(8):
+        candles.append({"open": price, "high": price + 1, "low": price - 1,
+                        "close": price + 0.3, "volume": 10})
+        price += 0.3
+    # 2 UP candles with shrinking ranges (compression)
+    for rng in [2.0, 0.8]:
+        o = price
+        c = o + 0.3
+        candles.append({"open": o, "high": o + rng/2, "low": o - rng/2,
+                        "close": c, "volume": 10})
+        price = c
+
+    result = momentum_signal(candles, min_streak=2)
+    assert result["should_trade"] is True
+    assert result["estimate"] == 0.62
+    assert result["direction"] == "UP"
+
+
+def test_streak_2_skips_with_default_min_streak():
+    """Streak=2 does NOT fire with default min_streak=3 (5m mode)."""
+    candles = []
+    price = 100.0
+    for _ in range(8):
+        candles.append({"open": price, "high": price + 1, "low": price - 1,
+                        "close": price + 0.3, "volume": 10})
+        price += 0.3
+    # Only 2 DOWN candles with shrinking ranges
+    for rng in [2.0, 0.8]:
+        o = price
+        c = o - 0.3
+        candles.append({"open": o, "high": o + rng/2, "low": o - rng/2,
+                        "close": c, "volume": 10})
+        price = c
+
+    # Default min_streak=3 → should NOT fire
+    result = momentum_signal(candles)
+    assert result["should_trade"] is False
+    assert "streak_too_short" in result["reason"]
+
+    # min_streak=2 → SHOULD fire
+    result2 = momentum_signal(candles, min_streak=2)
+    assert result2["should_trade"] is True
+
+
 def test_estimate_always_in_range():
     """Estimate must always be between 0 and 1."""
     test_cases = [
