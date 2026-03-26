@@ -102,6 +102,29 @@ def test_15m_write_does_not_touch_5m_db():
         assert count == 0, "15m write contaminated 5m database"
 
 
+def test_15m_uses_relaxed_thresholds():
+    """ci_run_15m passes min_streak=2 and autocorr_threshold=-0.20."""
+    import inspect
+    # Read ci_run_15m source to verify it passes the right thresholds
+    ci_run_15m_path = os.path.join(os.path.dirname(__file__), "..", "src", "ci_run_15m.py")
+    with open(ci_run_15m_path) as f:
+        source = f.read()
+    assert "min_streak=2" in source, "15m must use min_streak=2"
+    assert "autocorr_threshold=-0.20" in source, "15m must use autocorr_threshold=-0.20"
+
+
+def test_run_predictions_accepts_threshold_params():
+    """run_predictions accepts min_streak and autocorr_threshold parameters."""
+    from predict import run_predictions
+    import inspect
+    sig = inspect.signature(run_predictions)
+    assert "min_streak" in sig.parameters
+    assert "autocorr_threshold" in sig.parameters
+    # Verify defaults preserve 5m behavior
+    assert sig.parameters["min_streak"].default == 3
+    assert sig.parameters["autocorr_threshold"].default == -0.15
+
+
 def test_5m_workflow_does_not_commit_15m_files():
     """5m CI workflow does not touch 15m files."""
     workflow = os.path.join(os.path.dirname(__file__), "..",

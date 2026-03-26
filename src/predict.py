@@ -20,10 +20,12 @@ from pathlib import Path
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 
 
-def compute_regime_from_candles(candles):
+def compute_regime_from_candles(candles, autocorr_threshold=-0.15):
     """
     Compute regime indicators from candle list.
     Returns dict with autocorrelation, volatility, and label.
+
+    autocorr_threshold: below this → mean-reverting (default -0.15 for 5m, -0.20 for 15m)
     """
     closes = [c["close"] for c in candles]
 
@@ -59,7 +61,7 @@ def compute_regime_from_candles(candles):
 
     if autocorr > 0.15:
         trend_label = "TRENDING"
-    elif autocorr < -0.15:
+    elif autocorr < autocorr_threshold:
         trend_label = "MEAN_REVERTING"
     else:
         trend_label = "NEUTRAL"
@@ -68,14 +70,14 @@ def compute_regime_from_candles(candles):
         "autocorrelation": round(autocorr, 4),
         "volatility": round(volatility, 4),
         "label": f"{vol_label} / {trend_label}",
-        "is_mean_reverting": autocorr < -0.15,
+        "is_mean_reverting": autocorr < autocorr_threshold,
     }
 
 
-def momentum_signal(candles):
+def momentum_signal(candles, min_streak=3):
     """
     Momentum signal: ride BTC streaks when exhaustion confirms continuation.
-    1. streak >= 3 same direction
+    1. streak >= min_streak same direction (default 3 for 5m, 2 for 15m)
     2. At least one exhaustion signal (compression, volume spike, or shrinking range)
     3. RIDE the streak (bet WITH it, not against it)
 
@@ -99,7 +101,7 @@ def momentum_signal(candles):
 
     signed_streak = streak if last_dir == "UP" else -streak
 
-    if abs(signed_streak) < 3:
+    if abs(signed_streak) < min_streak:
         return {
             "estimate": 0.5, "should_trade": False,
             "reason": f"streak_too_short ({signed_streak})",
@@ -135,7 +137,7 @@ def momentum_signal(candles):
         }
 
     # Ride the streak (momentum — inverted from V3 contrarian which lost at 37% WR)
-    if signed_streak >= 3:
+    if signed_streak >= min_streak:
         estimate = 0.62  # streak UP → predict UP (ride it)
         direction = "UP"
     else:
@@ -225,13 +227,16 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
     db.commit()
 
 
-def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None):
+def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
+                    min_streak=3, autocorr_threshold=-0.15):
     """
     Main prediction loop.
     Fetch candles → compute regime → apply momentum rule → store.
     No API calls. $0 cost.
 
     db_path: optional override (default: data/predictions.db for 5-min)
+    min_streak: minimum consecutive candles for signal (3 for 5m, 2 for 15m)
+    autocorr_threshold: below this → mean-reverting skip (-0.15 for 5m, -0.20 for 15m)
     """
     from btc_data import fetch_btc_candles, format_for_prompt
 
@@ -258,7 +263,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None):
         return
 
     # Compute regime
-    regime = compute_regime_from_candles(candles)
+    regime = compute_regime_from_candles(candles, autocorr_threshold=autocorr_threshold)
     print(f"  Regime: {regime['label']} (autocorr: {regime['autocorrelation']:+.4f})")
 
     # Check regime gate
@@ -266,7 +271,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None):
         print(f"  SKIP: Mean-reverting regime detected — no trades")
 
     # Compute momentum signal
-    signal = momentum_signal(candles)
+    signal = momentum_signal(candles, min_streak=min_streak)
     if signal["should_trade"]:
         print(f"  Signal: RIDE {signal['direction']} (streak={signal['streak']}, conf={signal['confidence']})")
         print(f"    Exhaustion: compression={signal['exhaustion']['compression']}, "
