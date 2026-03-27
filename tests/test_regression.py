@@ -118,6 +118,25 @@ def test_ci_workflow_no_deleted_paths():
                 f"{yml_file} references deleted path '{d}'"
 
 
+# ── Incident 4: Extreme price bets — bad risk/reward ─────────────────────
+
+def test_price_gate_prevents_extreme_bets():
+    """predict.py must gate bets at extreme market prices.
+    Incident 4: 15m bet at price 0.005 risked $75 to win $0.38.
+    At price >0.85 or <0.15, breakeven WR exceeds 85% — our 66% signal can't work.
+    """
+    predict_path = os.path.join(ROOT, "src", "predict.py")
+    content = open(predict_path).read()
+
+    # The price gate must exist in run_predictions
+    assert "price_gate" in content, \
+        "predict.py must have a price gate for extreme market prices"
+    assert "0.85" in content, \
+        "predict.py must gate prices above 0.85"
+    assert "0.15" in content, \
+        "predict.py must gate prices below 0.15"
+
+
 def test_no_evolve_imports():
     """No production code should import from deleted evolve.py.
     Incident 3: evolve.py was deleted but run_cycle.py imported it.

@@ -4,6 +4,27 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## Incident 4: Extreme Price Bets — Bad Risk/Reward
+**Date:** March 27, 2026 | **Duration:** Ongoing until fix | **Severity:** Capital risk
+
+**Symptom:** 15m bot bet #7: market price 0.005 (99.5% NO). Risked $75 to win $0.38 if correct. Breakeven WR at that price: 99.5%. Our signal hits ~66%. Mathematically guaranteed loss.
+
+**Root cause:** No gate on market price in `run_predictions()`. The momentum signal and regime filter only look at BTC candle data, not the Polymarket price itself. Markets priced >0.85 or <0.15 have already priced in the outcome — our 66% WR signal can't overcome the breakeven requirement at those extremes.
+
+**Data:**
+- At price 0.95: win = $3.95, loss = -$75. Need 95% WR to break even.
+- At price 0.50: win = $75, loss = -$75. Need 50% WR to break even.
+- At price 0.30: win = $175, loss = -$75. Need 30% WR to break even.
+- Sweet spot for our 66% signal: prices between 0.15–0.85.
+
+**Fix:** Added price gate in `run_predictions()`: skip markets where `price_yes > 0.85 or price_yes < 0.15`. Stores as conviction=0 (no bet). Follows same pattern as regime gate.
+
+**Lesson:** Binary option risk/reward depends entirely on entry price. Even a high-accuracy signal is mathematically guaranteed to lose at extreme prices. Gate on price before applying any signal logic.
+
+**Regression test:** `test_price_gate_prevents_extreme_bets()`
+
+---
+
 ## Incident 3: CI Failing After Evolution Cleanup
 **Date:** March 19–20, 2026 | **Duration:** ~12 hours | **Severity:** CI down
 

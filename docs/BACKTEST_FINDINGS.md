@@ -316,6 +316,43 @@ before any capital is risked.
 
 ---
 
+## Mean-Reversion Strategy Assessment (March 27, 2026)
+
+**Question:** Can we trade in mean-reverting regimes instead of skipping them?
+
+**Data:** 334 skip observations in mean-reverting regimes (5m pipeline):
+
+| Regime | Market Lean | n | Went UP | UP% |
+|--------|------------|---|---------|-----|
+| HIGH_VOL / MR | market_says_DOWN | 78 | 32 | 41.0% |
+| HIGH_VOL / MR | market_says_UP | 117 | 67 | 57.3% |
+| MEDIUM_VOL / MR | market_says_DOWN | 67 | 29 | 43.3% |
+| MEDIUM_VOL / MR | market_says_UP | 72 | 46 | 63.9% |
+
+**Finding:** The market is already pricing mean-reversion correctly. When the market says UP in a mean-reverting regime, it goes UP 57-64% of the time. There is no independent signal beyond what the market price provides.
+
+**Decision:** Continue skipping mean-reverting regimes. No tradeable edge found. The 58% overall "accuracy" on skips in these regimes is an artifact — skips anchor estimate to market price, mechanically matching outcomes on skewed markets.
+
+**What would change this:** If we found a signal that disagrees with the market price AND is correct more often than the market, we'd have an edge. Current data shows the market is right. Revisit if regime dynamics change or with larger sample sizes.
+
+## Market Price Gate (March 27, 2026)
+
+**Finding:** Bets at extreme market prices (>0.85 or <0.15) have terrible risk/reward:
+
+| Price | Win Payout | Loss | Breakeven WR | Our WR | Verdict |
+|-------|-----------|------|-------------|--------|---------|
+| 0.95 | $3.95 | -$75 | 95.0% | 66% | **Guaranteed loss** |
+| 0.85 | $13.24 | -$75 | 85.0% | 66% | **Guaranteed loss** |
+| 0.70 | $32.14 | -$75 | 70.0% | 66% | Marginal |
+| 0.50 | $75.00 | -$75 | 50.0% | 66% | **Sweet spot** |
+| 0.30 | $175.00 | -$75 | 30.0% | 66% | **Sweet spot** |
+| 0.15 | $425.00 | -$75 | 15.0% | 66% | **Sweet spot** |
+| 0.05 | $1,425.00 | -$75 | 5.0% | 66% | Great payout but market already decided |
+
+**Decision:** Gate at 0.15–0.85. Below 0.15 the market is nearly decided (NO side is consensus). Above 0.85 the market is nearly decided (YES side is consensus). In both cases, our momentum signal can't overcome the breakeven requirement.
+
+---
+
 ## Cumulative Spend
 
 | Item | Cost |
