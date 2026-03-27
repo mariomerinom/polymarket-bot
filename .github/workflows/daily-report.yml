@@ -1,0 +1,51 @@
+name: Daily Report
+
+on:
+  schedule:
+    - cron: '0 12 * * *'  # 12:00 UTC = 06:00 CST
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date to analyze (YYYY-MM-DD). Default: yesterday'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  daily-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate daily report
+        working-directory: src
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            python daily_report.py --date "${{ github.event.inputs.date }}" --summary ../summary.md
+          else
+            python daily_report.py --summary ../summary.md
+          fi
+
+      - name: Post to job summary
+        run: cat summary.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/daily/
+          git diff --cached --quiet || git commit -m "Daily report $(date -u +%Y-%m-%d)"
+          git pull --rebase
+          git push
