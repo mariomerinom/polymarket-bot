@@ -351,6 +351,41 @@ before any capital is risked.
 
 **Decision:** Gate at 0.15–0.85. Below 0.15 the market is nearly decided (NO side is consensus). Above 0.85 the market is nearly decided (YES side is consensus). In both cases, our momentum signal can't overcome the breakeven requirement.
 
+## Tiered Bet Sizing (March 27, 2026)
+
+**Data:** 169 resolved bets from 5m paper trading (March 22-27, 2026).
+
+### Direction asymmetry
+
+| Direction | Bets | WR | P&L | ROI |
+|-----------|------|-----|-----|-----|
+| RIDE UP | 87 | **71.3%** | +$2,242 | +34% |
+| RIDE DOWN | 82 | 61.0% | +$953 | +16% |
+
+RIDE UP is 10pp higher WR and 2.3× the P&L.
+
+### Best zone: RIDE UP + price 20-70%
+
+| Zone | Bets | WR | P&L | ROI |
+|------|------|-----|-----|-----|
+| UP + 20-30% | 2 | 100% | +$463 | +309% |
+| UP + 30-50% | 33 | 63.6% | +$902 | +36% |
+| UP + 50-70% | 38 | 73.7% | +$949 | +33% |
+| **Combined** | **73** | **70%** | **+$2,314** | **+42%** |
+
+### Decision: Tiered conviction scoring
+
+| Condition | Conviction | Bet Size | Rationale |
+|-----------|-----------|----------|-----------|
+| RIDE UP, price 20-70% | 4 (high) | $200 | 71% WR, best zone |
+| RIDE DOWN, any price | 3 (medium) | $75 | 61% WR, decent but not as strong |
+| RIDE UP, price outside 20-70% | 3 (medium) | $75 | Good WR but worse risk/reward |
+| No signal / low confidence | 0 (skip) | $0 | No edge detected |
+
+**Expected impact:** At $200 on the 73 RIDE UP bets in the sweet spot, P&L would have been ~+$6,171 vs +$2,314 at flat $75. ROI stays ~42% but on 2.67× the capital.
+
+**Risk:** Small sample (73 bets). Could be regime-specific or time-period specific. Paper trading continues — if RIDE UP WR drops below 60% over next 200 bets, revert to flat $75.
+
 ---
 
 ## Cumulative Spend
