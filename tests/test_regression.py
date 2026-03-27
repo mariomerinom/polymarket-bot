@@ -137,6 +137,50 @@ def test_price_gate_prevents_extreme_bets():
         "predict.py must gate prices below 0.15"
 
 
+def test_tiered_conviction_ride_up_sweet_spot():
+    """RIDE UP + price 20-70% gets conviction 4 ($200). Others get 3 ($75).
+    Based on 169-bet analysis: RIDE UP at 71% WR, +$2,314 P&L in this zone.
+    """
+    from predict import store_prediction
+    import sqlite3
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test.db")
+        db = sqlite3.connect(db_path)
+        db.execute("""CREATE TABLE predictions (
+            market_id TEXT, agent TEXT, estimate REAL, edge REAL,
+            confidence TEXT, reasoning TEXT, predicted_at TEXT,
+            cycle INTEGER, conviction_score INTEGER, regime TEXT
+        )""")
+        db.commit()
+
+        regime = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.0,
+                  "volatility": 0.1, "is_mean_reverting": False}
+
+        # RIDE UP at price 0.45 → conviction 4
+        up_signal = {"estimate": 0.62, "should_trade": True,
+                     "confidence": "medium", "direction": "UP"}
+        store_prediction(db, "m1", up_signal, regime, 1, mkt_price=0.45)
+
+        # RIDE DOWN at price 0.45 → conviction 3
+        down_signal = {"estimate": 0.38, "should_trade": True,
+                       "confidence": "medium", "direction": "DOWN"}
+        store_prediction(db, "m2", down_signal, regime, 1, mkt_price=0.45)
+
+        # RIDE UP at price 0.80 (outside sweet spot) → conviction 3
+        store_prediction(db, "m3", up_signal, regime, 1, mkt_price=0.80)
+
+        rows = db.execute(
+            "SELECT market_id, conviction_score FROM predictions ORDER BY market_id"
+        ).fetchall()
+        db.close()
+
+        assert rows[0] == ("m1", 4), f"RIDE UP in sweet spot should be conv=4, got {rows[0]}"
+        assert rows[1] == ("m2", 3), f"RIDE DOWN should be conv=3, got {rows[1]}"
+        assert rows[2] == ("m3", 3), f"RIDE UP outside sweet spot should be conv=3, got {rows[2]}"
+
+
 def test_no_evolve_imports():
     """No production code should import from deleted evolve.py.
     Incident 3: evolve.py was deleted but run_cycle.py imported it.

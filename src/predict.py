@@ -180,7 +180,7 @@ def ensure_regime_column(db):
         pass  # already exists
 
 
-def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
+def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mkt_price=None):
     """Store a prediction in the database."""
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
@@ -189,9 +189,21 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
     edge = abs(estimate - 0.5)
     confidence = signal.get("confidence", "low")
 
-    # PAPER TRADING — full conviction scoring, simulated P&L only
+    # PAPER TRADING — tiered conviction scoring, simulated P&L only
+    # Conviction tiers (dashboard maps to bet sizes):
+    #   0 = skip ($0)    2 = low ($0)    3 = medium ($75)    4 = high ($200)
+    #
+    # Tiered sizing based on 169-bet analysis (March 2026):
+    #   RIDE UP + price 20-70%: 71% WR, +$2,314 P&L → conviction 4 ($200)
+    #   All other bets in sweet spot: 61% WR → conviction 3 ($75)
+    #   No signal or low confidence: conviction 0 ($0)
     if signal["should_trade"] and confidence in ("medium", "high"):
-        conviction = 3
+        direction = signal.get("direction", "")
+        # RIDE UP in sweet spot → high conviction ($200 bet)
+        if direction == "UP" and mkt_price is not None and 0.20 <= mkt_price <= 0.70:
+            conviction = 4
+        else:
+            conviction = 3
     elif signal["should_trade"]:
         conviction = 2
     else:
@@ -202,6 +214,8 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None):
         "regime": regime,
         "observation_mode": True,
         "would_have_bet": signal.get("should_trade", False) and confidence in ("medium", "high"),
+        "conviction_tier": conviction,
+        "mkt_price": mkt_price,
     })
 
     # Store as "momentum_rule" agent
@@ -330,9 +344,10 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
         # Apply momentum signal
         if signal["should_trade"]:
-            store_prediction(db, market["id"], signal, regime, cycle)
+            store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price)
             direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
-            print(f"    → {direction} @ {signal['estimate']:.0%} ({signal['confidence']})")
+            conv_label = "HIGH $200" if direction == "UP" and 0.20 <= mkt_price <= 0.70 else "MED $75"
+            print(f"    → {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, {conv_label})")
         else:
             # No signal — store as NO_BET
             no_signal = {
