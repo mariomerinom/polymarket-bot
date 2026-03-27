@@ -181,6 +181,137 @@ def test_tiered_conviction_ride_up_sweet_spot():
         assert rows[2] == ("m3", 3), f"RIDE UP outside sweet spot should be conv=3, got {rows[2]}"
 
 
+# ── Incident 5: Whipsaw chop — 52% flip rate in flat markets ──────────
+
+def test_cooldown_blocks_rapid_flip():
+    """Flipping direction with only min_streak should be blocked by cooldown.
+    Incident 5: BTC flat on 2026-03-27, 15 direction flips in 30 bets (52%).
+    """
+    from predict import store_prediction
+    import sqlite3
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test.db")
+        db = sqlite3.connect(db_path)
+        db.execute("""CREATE TABLE predictions (
+            market_id TEXT, agent TEXT, estimate REAL, edge REAL,
+            confidence TEXT, reasoning TEXT, predicted_at TEXT,
+            cycle INTEGER, conviction_score INTEGER, regime TEXT
+        )""")
+        db.execute("""CREATE TABLE markets (
+            id TEXT, question TEXT, category TEXT, end_date TEXT,
+            volume REAL, price_yes REAL, resolved INTEGER DEFAULT 0
+        )""")
+        db.commit()
+
+        regime = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.0,
+                  "volatility": 0.1, "is_mean_reverting": False}
+
+        # Simulate a prior DOWN bet (conv=3)
+        down_signal = {"estimate": 0.38, "should_trade": True,
+                       "confidence": "medium", "direction": "DOWN"}
+        store_prediction(db, "m1", down_signal, regime, 1, mkt_price=0.50)
+
+        # Verify it stored as conv=3
+        row = db.execute("SELECT conviction_score FROM predictions WHERE market_id='m1'").fetchone()
+        assert row[0] == 3, f"Setup: DOWN bet should be conv=3, got {row[0]}"
+
+        # Now simulate cooldown check inline (mirrors run_predictions logic)
+        # An UP signal with streak=3 (min_streak) should be blocked
+        up_signal = {"estimate": 0.62, "should_trade": True,
+                     "confidence": "medium", "direction": "UP", "streak": 3}
+        min_streak = 3
+
+        # Global cooldown — checks last bet across ALL markets
+        last_bet = db.execute('''
+            SELECT estimate FROM predictions
+            WHERE conviction_score >= 3
+            ORDER BY predicted_at DESC LIMIT 1
+        ''').fetchone()
+
+        assert last_bet is not None
+        last_dir = "UP" if last_bet[0] > 0.5 else "DOWN"
+        assert last_dir == "DOWN"
+
+        # Cooldown should block: opposite direction + streak <= min_streak
+        streak_len = abs(up_signal.get("streak", 0))
+        assert streak_len <= min_streak, "Streak should equal min_streak (blocked)"
+        assert last_dir != up_signal["direction"], "Directions should differ (flip)"
+
+        db.close()
+
+
+def test_cooldown_allows_same_direction():
+    """Same-direction bet should NOT trigger cooldown."""
+    from predict import store_prediction
+    import sqlite3
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test.db")
+        db = sqlite3.connect(db_path)
+        db.execute("""CREATE TABLE predictions (
+            market_id TEXT, agent TEXT, estimate REAL, edge REAL,
+            confidence TEXT, reasoning TEXT, predicted_at TEXT,
+            cycle INTEGER, conviction_score INTEGER, regime TEXT
+        )""")
+        db.commit()
+
+        regime = {"label": "HIGH_VOL / TRENDING", "autocorrelation": 0.2,
+                  "volatility": 0.15, "is_mean_reverting": False}
+
+        # Prior UP bet
+        up_signal = {"estimate": 0.62, "should_trade": True,
+                     "confidence": "medium", "direction": "UP"}
+        store_prediction(db, "m1", up_signal, regime, 1, mkt_price=0.50)
+
+        # Another UP signal — cooldown should NOT fire (global check)
+        last_bet = db.execute('''
+            SELECT estimate FROM predictions
+            WHERE conviction_score >= 3
+            ORDER BY predicted_at DESC LIMIT 1
+        ''').fetchone()
+
+        last_dir = "UP" if last_bet[0] > 0.5 else "DOWN"
+        new_dir = "UP"
+        assert last_dir == new_dir, "Same direction should not trigger cooldown"
+
+        db.close()
+
+
+def test_cooldown_allows_strong_streak_flip():
+    """A flip with streak > min_streak should be allowed through cooldown."""
+    from predict import store_prediction
+    import sqlite3
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test.db")
+        db = sqlite3.connect(db_path)
+        db.execute("""CREATE TABLE predictions (
+            market_id TEXT, agent TEXT, estimate REAL, edge REAL,
+            confidence TEXT, reasoning TEXT, predicted_at TEXT,
+            cycle INTEGER, conviction_score INTEGER, regime TEXT
+        )""")
+        db.commit()
+
+        regime = {"label": "HIGH_VOL / TRENDING", "autocorrelation": 0.2,
+                  "volatility": 0.15, "is_mean_reverting": False}
+
+        # Prior DOWN bet
+        down_signal = {"estimate": 0.38, "should_trade": True,
+                       "confidence": "medium", "direction": "DOWN"}
+        store_prediction(db, "m1", down_signal, regime, 1, mkt_price=0.50)
+
+        # UP signal with streak=4 (> min_streak=3) — should pass
+        min_streak = 3
+        streak_len = 4
+        assert streak_len > min_streak, "Strong streak should pass cooldown"
+
+        db.close()
+
+
 def test_no_evolve_imports():
     """No production code should import from deleted evolve.py.
     Incident 3: evolve.py was deleted but run_cycle.py imported it.

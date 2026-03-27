@@ -342,6 +342,28 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
             print(f"    → SKIP (mean-reverting regime)")
             continue
 
+        # Cooldown gate: if last bet (any market) was opposite direction, require stronger streak
+        # Each cycle bets on a different market, so track globally not per-market
+        if signal["should_trade"] and signal.get("direction"):
+            last_bet = db.execute('''
+                SELECT estimate FROM predictions
+                WHERE conviction_score >= 3
+                ORDER BY predicted_at DESC LIMIT 1
+            ''').fetchone()
+
+            if last_bet:
+                last_dir = "UP" if last_bet[0] > 0.5 else "DOWN"
+                if last_dir != signal["direction"]:
+                    streak_len = abs(signal.get("streak", 0))
+                    if streak_len <= min_streak:
+                        signal = {
+                            "estimate": signal["estimate"],
+                            "should_trade": False,
+                            "confidence": "skip",
+                            "reason": f"cooldown_flip ({last_dir}→{signal['direction']}, streak={streak_len})",
+                        }
+                        print(f"    → SKIP (cooldown: flip from {last_dir}, streak only {streak_len})")
+
         # Apply momentum signal
         if signal["should_trade"]:
             store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price)
