@@ -303,6 +303,19 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
         mkt_price = market['price_yes']
         print(f"  Mkt price: {mkt_price:.0%}")
 
+        # Price gate: skip extreme prices (terrible risk/reward even when correct)
+        # At price 0.95, need 95% WR to break even. Our signal hits ~66%. Math can't work.
+        if mkt_price > 0.85 or mkt_price < 0.15:
+            skip_signal = {
+                "estimate": mkt_price,
+                "should_trade": False,
+                "confidence": "skip",
+                "reason": f"price_gate_extreme ({mkt_price:.0%})",
+            }
+            store_prediction(db, market["id"], skip_signal, regime, cycle)
+            print(f"    → SKIP (price gate: {mkt_price:.0%})")
+            continue
+
         # Apply regime gate: if mean-reverting, store as NO_BET (estimate=market price)
         if regime["is_mean_reverting"]:
             skip_signal = {
