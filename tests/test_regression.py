@@ -155,21 +155,23 @@ def test_tiered_conviction_ride_up_sweet_spot():
         )""")
         db.commit()
 
-        regime = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.0,
-                  "volatility": 0.1, "is_mean_reverting": False}
+        regime_neutral = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.0,
+                          "volatility": 0.1, "is_mean_reverting": False}
+        regime_trending = {"label": "HIGH_VOL / TRENDING", "autocorrelation": 0.2,
+                           "volatility": 0.15, "is_mean_reverting": False}
 
-        # RIDE UP at price 0.45 → conviction 4
+        # RIDE UP at price 0.45 in NEUTRAL → conviction 4
         up_signal = {"estimate": 0.62, "should_trade": True,
                      "confidence": "medium", "direction": "UP"}
-        store_prediction(db, "m1", up_signal, regime, 1, mkt_price=0.45)
+        store_prediction(db, "m1", up_signal, regime_neutral, 1, mkt_price=0.45)
 
-        # RIDE DOWN at price 0.45 → conviction 3
+        # RIDE DOWN at price 0.45 in TRENDING → conviction 3
         down_signal = {"estimate": 0.38, "should_trade": True,
                        "confidence": "medium", "direction": "DOWN"}
-        store_prediction(db, "m2", down_signal, regime, 1, mkt_price=0.45)
+        store_prediction(db, "m2", down_signal, regime_trending, 1, mkt_price=0.45)
 
         # RIDE UP at price 0.80 (outside sweet spot) → conviction 3
-        store_prediction(db, "m3", up_signal, regime, 1, mkt_price=0.80)
+        store_prediction(db, "m3", up_signal, regime_neutral, 1, mkt_price=0.80)
 
         rows = db.execute(
             "SELECT market_id, conviction_score FROM predictions ORDER BY market_id"
@@ -177,7 +179,7 @@ def test_tiered_conviction_ride_up_sweet_spot():
         db.close()
 
         assert rows[0] == ("m1", 4), f"RIDE UP in sweet spot should be conv=4, got {rows[0]}"
-        assert rows[1] == ("m2", 3), f"RIDE DOWN should be conv=3, got {rows[1]}"
+        assert rows[1] == ("m2", 3), f"RIDE DOWN in TRENDING should be conv=3, got {rows[1]}"
         assert rows[2] == ("m3", 3), f"RIDE UP outside sweet spot should be conv=3, got {rows[2]}"
 
 
@@ -205,10 +207,11 @@ def test_cooldown_blocks_rapid_flip():
         )""")
         db.commit()
 
-        regime = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.0,
-                  "volatility": 0.1, "is_mean_reverting": False}
+        regime = {"label": "HIGH_VOL / TRENDING", "autocorrelation": 0.2,
+                  "volatility": 0.15, "is_mean_reverting": False}
 
-        # Simulate a prior DOWN bet (conv=3)
+        # Simulate a prior DOWN bet (conv=3) — must use TRENDING regime
+        # (DOWN+NEUTRAL is now demoted to conv=2)
         down_signal = {"estimate": 0.38, "should_trade": True,
                        "confidence": "medium", "direction": "DOWN"}
         store_prediction(db, "m1", down_signal, regime, 1, mkt_price=0.50)
@@ -310,6 +313,80 @@ def test_cooldown_allows_strong_streak_flip():
         assert streak_len > min_streak, "Strong streak should pass cooldown"
 
         db.close()
+
+
+# ── Signal quality: Direction × Regime filter (March 28, 2026) ─────────
+
+def test_down_neutral_demoted_to_no_bet():
+    """DOWN + NEUTRAL regime → conviction 2 (tracked, not bet).
+    Data: DOWN+MEDIUM_VOL/NEUTRAL had 52% WR on 25 bets — coin flip.
+    """
+    from predict import store_prediction
+    import sqlite3
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test.db")
+        db = sqlite3.connect(db_path)
+        db.execute("""CREATE TABLE predictions (
+            market_id TEXT, agent TEXT, estimate REAL, edge REAL,
+            confidence TEXT, reasoning TEXT, predicted_at TEXT,
+            cycle INTEGER, conviction_score INTEGER, regime TEXT
+        )""")
+        db.commit()
+
+        regime = {"label": "MEDIUM_VOL / NEUTRAL", "autocorrelation": 0.0,
+                  "volatility": 0.08, "is_mean_reverting": False}
+        down_signal = {"estimate": 0.38, "should_trade": True,
+                       "confidence": "medium", "direction": "DOWN"}
+        store_prediction(db, "m1", down_signal, regime, 1, mkt_price=0.50)
+
+        row = db.execute("SELECT conviction_score FROM predictions WHERE market_id='m1'").fetchone()
+        db.close()
+        assert row[0] == 2, f"DOWN+NEUTRAL should be conv=2 (no bet), got {row[0]}"
+
+
+def test_up_neutral_still_bets():
+    """UP + NEUTRAL regime still gets conviction 3 or 4.
+    Data: UP+MEDIUM_VOL/NEUTRAL had 86.7% WR on 45 bets — strongest combo.
+    """
+    from predict import store_prediction
+    import sqlite3
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test.db")
+        db = sqlite3.connect(db_path)
+        db.execute("""CREATE TABLE predictions (
+            market_id TEXT, agent TEXT, estimate REAL, edge REAL,
+            confidence TEXT, reasoning TEXT, predicted_at TEXT,
+            cycle INTEGER, conviction_score INTEGER, regime TEXT
+        )""")
+        db.commit()
+
+        regime = {"label": "MEDIUM_VOL / NEUTRAL", "autocorrelation": 0.0,
+                  "volatility": 0.08, "is_mean_reverting": False}
+        up_signal = {"estimate": 0.62, "should_trade": True,
+                     "confidence": "medium", "direction": "UP"}
+
+        # In sweet spot → conv 4
+        store_prediction(db, "m1", up_signal, regime, 1, mkt_price=0.50)
+        # Outside sweet spot → conv 3
+        store_prediction(db, "m2", up_signal, regime, 1, mkt_price=0.80)
+
+        rows = db.execute(
+            "SELECT market_id, conviction_score FROM predictions ORDER BY market_id"
+        ).fetchall()
+        db.close()
+        assert rows[0] == ("m1", 4), f"UP+NEUTRAL in sweet spot should be conv=4, got {rows[0]}"
+        assert rows[1] == ("m2", 3), f"UP+NEUTRAL outside sweet spot should be conv=3, got {rows[1]}"
+
+
+def test_dead_hour_gate_exists():
+    """DEAD_HOURS_UTC constant exists and contains the known dead zones."""
+    from predict import DEAD_HOURS_UTC
+    assert 3 in DEAD_HOURS_UTC, "UTC 3 (9pm CST, 41.7% WR) should be a dead hour"
+    assert 21 in DEAD_HOURS_UTC, "UTC 21 (3pm CST, 37.5% WR) should be a dead hour"
 
 
 def test_no_evolve_imports():

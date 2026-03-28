@@ -398,3 +398,43 @@ RIDE UP is 10pp higher WR and 2.3× the P&L.
 | Stage 4 regime backtest (3,512 markets) | $0 |
 | Daily LLM observation (V2.1, ~3 days) | ~$4.50 |
 | **Total** | **~$24.50** |
+
+---
+
+## Direction × Regime Analysis (March 28, 2026)
+
+**Dataset:** 193 resolved 5m bets (March 23–28, 2026)
+
+| Direction | Regime | Bets | WR | Verdict |
+|-----------|--------|------|----|---------|
+| UP | MEDIUM_VOL / NEUTRAL | 45 | 86.7% | Best combo in the data |
+| DOWN | HIGH_VOL / NEUTRAL | 34 | 67.6% | Solid |
+| DOWN | MEDIUM_VOL / TRENDING | 13 | 69.2% | Solid |
+| UP | MEDIUM_VOL / TRENDING | 16 | 62.5% | Decent |
+| UP | HIGH_VOL / TRENDING | 24 | 58.3% | Marginal |
+| DOWN | HIGH_VOL / TRENDING | 14 | 57.1% | Marginal |
+| **DOWN** | **MEDIUM_VOL / NEUTRAL** | **25** | **52.0%** | **Coin flip — filtered** |
+
+**Action taken:** DOWN + any NEUTRAL regime → conviction 2 (tracked, no bet). UP + NEUTRAL untouched.
+
+**Expected impact:** Removes 13% of bets that were breaking even. Remaining bets should show higher WR.
+
+---
+
+## Time-of-Day Analysis (March 28, 2026)
+
+**Dataset:** 193 resolved 5m bets (March 23–28, 2026)
+
+| UTC Hour | CST | Bets | WR | Status |
+|----------|-----|------|----|--------|
+| 0 | 6pm | 7 | 85.7% | Sweet spot |
+| 3 | 9pm | 12 | 41.7% | **Dead zone — filtered** |
+| 6 | 12am | 8 | 75.0% | Sweet spot |
+| 13 | 7am | 6 | 83.3% | Sweet spot |
+| 15 | 9am | 12 | 75.0% | Sweet spot |
+| 21 | 3pm | 8 | 37.5% | **Dead zone — filtered** |
+| 22 | 4pm | 8 | 75.0% | Sweet spot |
+
+**Action taken:** Skip predictions at UTC hours 3 and 21. Stored as `time_gate_dead_hour` skip.
+
+**Expected impact:** Removes ~10% of bets that were actively losing money (combined 40% WR on 20 bets).
