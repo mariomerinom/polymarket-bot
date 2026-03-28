@@ -21,3 +21,16 @@
 - **The strategy is MOMENTUM (ride streaks), not contrarian (fade).** V3 contrarian lost at 37% WR on live Polymarket. Inverting to momentum validated at 63% WR. Do NOT revert the signal direction. Streak UP + exhaustion → predict UP. Streak DOWN + exhaustion → predict DOWN.
 - **Paper trade first.** Every new signal must accumulate 200+ resolved predictions in paper trading before risking real capital.
 - **Conviction gates real money.** Only conviction >= 3 places bets. Conviction 0-2 = skip.
+
+## Project Health Check
+
+When asked "how are we doing?", "check the project", "what's the status", or similar:
+
+1. `git pull` — always first
+2. Read the latest file in `docs/daily/` — yesterday's WR, P&L, alerts
+3. `python3 src/optimization_tracker.py summary` — are active optimizations improving or regressing?
+4. Read `docs/decisions.md` — has anything moved to READY?
+5. Read `docs/ROADMAP.md` — what's the current phase, what's next?
+6. `python3 -m pytest tests/ -v` — are tests passing?
+
+Report findings concisely. Flag anything that needs a decision.
