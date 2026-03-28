@@ -22,6 +22,15 @@
 - **Paper trade first.** Every new signal must accumulate 200+ resolved predictions in paper trading before risking real capital.
 - **Conviction gates real money.** Only conviction >= 3 places bets. Conviction 0-2 = skip.
 
+## Validation Principles
+
+- **Every optimization gets a baseline.** Before shipping a change, snapshot the current WR, P&L, and bet count. You can't measure improvement without a before.
+- **Set revert criteria before shipping, not after.** Decide what "failure" looks like while you're still objective. Once you're watching the numbers, bias creeps in.
+- **Minimum sample size is 50 bets.** Anything less is noise. A 10-bet streak means nothing — wait for the data.
+- **Derived from ≠ validated by.** If you found the edge in the same dataset you'd use to confirm it, you haven't confirmed anything. Track forward performance separately.
+- **Track the counterfactual.** Store filtered predictions at conviction 2 (no bet) so you can always compare "what we did" vs "what we would have done."
+- **One change at a time.** If you ship two filters in the same commit, you can't attribute the result to either. Stagger when possible.
+
 ## Project Health Check
 
 When asked "how are we doing?", "check the project", "what's the status", or similar:
