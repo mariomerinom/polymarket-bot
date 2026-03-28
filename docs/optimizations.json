@@ -1,0 +1,56 @@
+{
+  "optimizations": [
+    {
+      "name": "direction_regime_filter",
+      "description": "DOWN + NEUTRAL regime \u2192 conv=2 (no bet). 52% WR on 25 bets was coin flip.",
+      "registered_at": "2026-03-28T22:27:28.501156+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < baseline_wr - 2",
+      "baseline": {
+        "bets": 202,
+        "wins": 134,
+        "wr": 66.3,
+        "pnl": 4964.57,
+        "wagered": 18525.0
+      },
+      "latest_check": "2026-03-28T22:28:20.354600+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "dead_hour_gate",
+      "description": "Skip UTC hours 3 and 21. Combined 40% WR on 20 bets.",
+      "registered_at": "2026-03-28T22:27:37.655415+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < baseline_wr - 2",
+      "baseline": {
+        "bets": 202,
+        "wins": 134,
+        "wr": 66.3,
+        "pnl": 4964.57,
+        "wagered": 18525.0
+      },
+      "latest_check": "2026-03-28T22:28:20.354600+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
+      "closed_at": null,
+      "close_reason": null
+    }
+  ]
+}

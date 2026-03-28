@@ -769,6 +769,14 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
     # Check decision triggers
     decision_alerts = check_decisions(db_5m, db_15m)
 
+    # Check optimization tracker
+    try:
+        from optimization_tracker import check_all as check_optimizations
+        optimization_alerts = check_optimizations()
+    except Exception:
+        optimization_alerts = []
+    decision_alerts.extend(optimization_alerts)
+
     # Generate markdown
     report = format_report(date_str, data_5m, data_15m, decision_alerts=decision_alerts)
 
