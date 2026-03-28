@@ -102,6 +102,38 @@ If live data does NOT confirm → the edge doesn't exist at this timeframe. Eval
 
 ---
 
+## Part 5.5: Continuous Optimization Validation (ACTIVE)
+
+**Goal:** Every optimization we ship gets automatically tracked, monitored, and flagged — no manual DB queries, no "did that change work?"
+
+### Level 1: Auto-monitor with alerts (ACTIVE)
+- Ship an optimization → register it with baseline stats and revert criteria
+- Daily report computes post-change performance for each active optimization
+- When sample size threshold is met, alert: "improved +6pp" or "REVERT CANDIDATE"
+- Human decides, Claude executes
+
+### Level 2: Auto-revert with PR (NEXT)
+- When an optimization crosses its revert threshold, CI automatically:
+  - Creates a rollback branch reverting the specific change
+  - Opens a PR with the before/after stats in the description
+  - Human merges or closes — the fix is already written and tested
+- Jump from Level 1 is small: add `git revert` + `gh pr create` to the alert path
+
+### Level 3: A/B split testing (DEFERRED)
+- Split predictions into control/treatment groups (50/50)
+- Same market, same cycle — one arm uses the new filter, one doesn't
+- After N bets per arm, compare and auto-promote or auto-kill
+- Requires schema changes (treatment group column) and dashboard changes
+- Only viable when bet volume supports splitting (100+ bets/day)
+
+### Implementation
+- `src/optimization_tracker.py` — register, monitor, compare optimizations
+- `docs/optimizations.json` — registry of all active/completed optimizations
+- Daily report integration — reads registry, computes deltas, fires alerts
+- Skill: `/validate-optimization` — registers new optimizations from any Claude session
+
+---
+
 ## Part 6: Live Paper Trading (DEFERRED)
 
 > Blocked until Part 5 validation criteria are met.
