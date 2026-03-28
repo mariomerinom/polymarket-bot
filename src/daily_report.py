@@ -303,8 +303,209 @@ def generate_alerts(summary, rolling):
     return alerts
 
 
-def format_report(date_str, data_5m, data_15m):
+# ── Decision alert system ─────────────────────────────────────────────
+# Each decision has an id matching docs/decisions.md, a check function,
+# and a human-readable description generator.
+
+def compute_decision_stats(db):
+    """Query aggregate stats needed by decision checks."""
+    stats = {
+        "conv4_bets": 0, "conv4_wins": 0, "conv4_wr": 0,
+        "conv3_bets": 0, "conv3_wins": 0, "conv3_wr": 0,
+        "bucket_50_70_bets": 0, "bucket_50_70_wins": 0, "bucket_50_70_wr": 0,
+        "bucket_15_30_bets": 0, "bucket_15_30_wins": 0, "bucket_15_30_wr": 0,
+        "up_bets": 0, "up_wins": 0, "up_wr": 0,
+        "down_bets": 0, "down_wins": 0, "down_wr": 0,
+        "total_bets": 0, "total_pnl": 0.0, "total_wagered": 0.0,
+        "days_active": 0,
+    }
+
+    try:
+        rows = db.execute("""
+            SELECT p.estimate, p.conviction_score, p.regime, p.predicted_at,
+                   m.outcome, m.price_yes, m.resolved
+            FROM predictions p
+            JOIN markets m ON p.market_id = m.id
+            WHERE m.resolved = 1 AND p.conviction_score >= 3
+        """).fetchall()
+    except sqlite3.OperationalError:
+        return stats
+
+    for r in rows:
+        estimate, conv, regime, predicted_at, outcome, price_yes, resolved = r
+        correct = is_correct(estimate, outcome)
+        bet_size = CONVICTION_BETS.get(conv, 0)
+        direction = "UP" if estimate >= 0.5 else "DOWN"
+
+        stats["total_bets"] += 1
+        stats["total_wagered"] += bet_size
+
+        # P&L
+        if estimate >= 0.5 and 0 < price_yes < 1:
+            stats["total_pnl"] += bet_size * (1.0 / price_yes - 1.0) if outcome == 1 else -bet_size
+        elif estimate < 0.5:
+            price_no = 1.0 - price_yes
+            if 0 < price_no < 1:
+                stats["total_pnl"] += bet_size * (1.0 / price_no - 1.0) if outcome == 0 else -bet_size
+
+        # Conviction tiers
+        if conv == 4:
+            stats["conv4_bets"] += 1
+            if correct:
+                stats["conv4_wins"] += 1
+        elif conv == 3:
+            stats["conv3_bets"] += 1
+            if correct:
+                stats["conv3_wins"] += 1
+
+        # Price buckets
+        if 0.50 <= price_yes < 0.70:
+            stats["bucket_50_70_bets"] += 1
+            if correct:
+                stats["bucket_50_70_wins"] += 1
+        elif 0.15 <= price_yes < 0.30:
+            stats["bucket_15_30_bets"] += 1
+            if correct:
+                stats["bucket_15_30_wins"] += 1
+
+        # Direction
+        if direction == "UP":
+            stats["up_bets"] += 1
+            if correct:
+                stats["up_wins"] += 1
+        else:
+            stats["down_bets"] += 1
+            if correct:
+                stats["down_wins"] += 1
+
+    # Compute WR percentages
+    for key in ["conv4", "conv3", "bucket_50_70", "bucket_15_30", "up", "down"]:
+        bets = stats[f"{key}_bets"]
+        wins = stats[f"{key}_wins"]
+        stats[f"{key}_wr"] = round(wins / bets * 100, 1) if bets > 0 else 0
+
+    # Days active
+    try:
+        days_row = db.execute("""
+            SELECT COUNT(DISTINCT date(predicted_at)) FROM predictions
+            WHERE conviction_score >= 3
+        """).fetchone()
+        stats["days_active"] = days_row[0] if days_row else 0
+    except sqlite3.OperationalError:
+        pass
+
+    return stats
+
+
+DECISIONS = [
+    {
+        "id": 1,
+        "decision": "Demote conv=4 to flat $75 (5m)",
+        "check": lambda s: s["conv4_bets"] >= 50 and s["conv4_wr"] < 60,
+        "describe": lambda s: (
+            f"conv=4 WR is {s['conv4_wr']}% over {s['conv4_bets']} bets "
+            f"(threshold: <60% at 50+)"
+        ),
+    },
+    {
+        "id": 2,
+        "decision": "Tighten 0.50-0.70 price bucket",
+        "check": lambda s: s["bucket_50_70_bets"] >= 20 and s["bucket_50_70_wr"] < 55,
+        "describe": lambda s: (
+            f"0.50-0.70 WR is {s['bucket_50_70_wr']}% over {s['bucket_50_70_bets']} bets "
+            f"(threshold: <55% at 20+)"
+        ),
+    },
+    {
+        "id": 6,
+        "decision": "Explore 0.15-0.30 bucket expansion",
+        "check": lambda s: s["bucket_15_30_bets"] >= 20 and s["bucket_15_30_wr"] > 65,
+        "describe": lambda s: (
+            f"0.15-0.30 WR is {s['bucket_15_30_wr']}% over {s['bucket_15_30_bets']} bets "
+            f"(threshold: >65% at 20+)"
+        ),
+    },
+]
+
+# 15m-specific decisions (checked against 15m DB)
+DECISIONS_15M = [
+    {
+        "id": 4,
+        "decision": "Filter 15m RIDE UP signals",
+        "check": lambda s: s["up_bets"] >= 30 and s["up_wr"] < 55,
+        "describe": lambda s: (
+            f"15m UP WR is {s['up_wr']}% over {s['up_bets']} bets "
+            f"(threshold: <55% at 30+)"
+        ),
+    },
+    {
+        "id": 5,
+        "decision": "Sunset or retrain 15m pipeline",
+        "check": lambda s: (
+            s["days_active"] >= 14
+            and s["total_bets"] > 0
+            and (s["total_bets"] / max(s["days_active"], 1)) < 5
+            and s["total_wagered"] > 0
+            and (s["total_pnl"] / s["total_wagered"] * 100) < 5
+        ),
+        "describe": lambda s: (
+            f"15m avg {s['total_bets']/max(s['days_active'],1):.1f} bets/day over "
+            f"{s['days_active']} days, ROI {s['total_pnl']/max(s['total_wagered'],1)*100:.1f}% "
+            f"(threshold: <5 bets/day AND <5% ROI over 14+ days)"
+        ),
+    },
+    {
+        "id": 7,
+        "decision": "Demote conv=4 to flat $75 (15m)",
+        "check": lambda s: s["conv4_bets"] >= 20 and s["conv4_wr"] < 60,
+        "describe": lambda s: (
+            f"15m conv=4 WR is {s['conv4_wr']}% over {s['conv4_bets']} bets "
+            f"(threshold: <60% at 20+)"
+        ),
+    },
+]
+
+
+def check_decisions(db_5m_path, db_15m_path):
+    """Check all decision triggers against current data. Returns list of fired alerts."""
+    alerts = []
+
+    # 5m decisions
+    if Path(db_5m_path).exists():
+        db = sqlite3.connect(db_5m_path)
+        db.row_factory = sqlite3.Row
+        stats = compute_decision_stats(db)
+        db.close()
+        for d in DECISIONS:
+            try:
+                if d["check"](stats):
+                    alerts.append(
+                        f"\U0001f514 Decision #{d['id']} READY: {d['decision']} — {d['describe'](stats)}"
+                    )
+            except (KeyError, ZeroDivisionError):
+                pass
+
+    # 15m decisions
+    if Path(db_15m_path).exists():
+        db = sqlite3.connect(db_15m_path)
+        db.row_factory = sqlite3.Row
+        stats = compute_decision_stats(db)
+        db.close()
+        for d in DECISIONS_15M:
+            try:
+                if d["check"](stats):
+                    alerts.append(
+                        f"\U0001f514 Decision #{d['id']} READY: {d['decision']} — {d['describe'](stats)}"
+                    )
+            except (KeyError, ZeroDivisionError):
+                pass
+
+    return alerts
+
+
+def format_report(date_str, data_5m, data_15m, decision_alerts=None):
     """Format analysis data into markdown report."""
+    decision_alerts = decision_alerts or []
     lines = [
         f"# Daily Report — {date_str}",
         f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
@@ -401,6 +602,19 @@ def format_report(date_str, data_5m, data_15m):
                 lines.append(f"- {alert}")
             lines.append("")
 
+    # Decision alerts (cross-pipeline, appended at end)
+    if decision_alerts:
+        lines.extend([
+            "## Decision Alerts",
+            "",
+            "Tracked in [`docs/decisions.md`](../decisions.md). "
+            "These fire when data crosses predefined thresholds.",
+            "",
+        ])
+        for alert in decision_alerts:
+            lines.append(f"- {alert}")
+        lines.append("")
+
     lines.append("---")
     lines.append("*Generated by `src/daily_report.py`*")
     return "\n".join(lines)
@@ -471,8 +685,9 @@ def update_index(daily_dir, date_str):
     index_path.write_text("\n".join(lines))
 
 
-def generate_ci_summary(date_str, data_5m, data_15m):
+def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None):
     """Generate concise markdown for GitHub Actions Job Summary."""
+    decision_alerts = decision_alerts or []
     lines = [f"# Daily Report \u2014 {date_str}", ""]
 
     for label, data in [("5m", data_5m), ("15m", data_15m)]:
@@ -504,6 +719,13 @@ def generate_ci_summary(date_str, data_5m, data_15m):
             for alert in data["alerts"]:
                 lines.append(f"> {alert}")
             lines.append("")
+
+    # Decision alerts
+    if decision_alerts:
+        lines.extend(["## Decision Alerts", ""])
+        for alert in decision_alerts:
+            lines.append(f"> {alert}")
+        lines.append("")
 
     lines.append(
         f"[Full report](https://github.com/mariomerinom/polymarket-bot/blob/main/docs/daily/{date_str}.md)"
@@ -544,8 +766,11 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
         print(f"  15m: {s['total_predictions']} predictions, {s['resolved_bets']} resolved bets, "
               f"{s['wr']}% WR, ${s['pnl']:+.2f} P&L")
 
+    # Check decision triggers
+    decision_alerts = check_decisions(db_5m, db_15m)
+
     # Generate markdown
-    report = format_report(date_str, data_5m, data_15m)
+    report = format_report(date_str, data_5m, data_15m, decision_alerts=decision_alerts)
 
     # Write report file
     daily_dir.mkdir(parents=True, exist_ok=True)
@@ -558,7 +783,7 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
     print(f"  Index updated: {daily_dir / 'index.md'}")
 
     # Generate CI summary (for GitHub Actions Job Summary)
-    ci_summary = generate_ci_summary(date_str, data_5m, data_15m)
+    ci_summary = generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=decision_alerts)
     if summary_path:
         Path(summary_path).write_text(ci_summary)
         print(f"  CI summary: {summary_path}")
@@ -569,6 +794,12 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
             print(f"\n  {label} Alerts:")
             for alert in data["alerts"]:
                 print(f"    {alert}")
+
+    # Print decision alerts
+    if decision_alerts:
+        print(f"\n  Decision Alerts:")
+        for alert in decision_alerts:
+            print(f"    {alert}")
 
     return report_path
 
