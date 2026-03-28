@@ -17,6 +17,10 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Dead hours (UTC) — consistently below 50% WR on 5+ bets each.
+# 3 UTC = 9pm CST (41.7% WR, 12 bets), 21 UTC = 3pm CST (37.5% WR, 8 bets)
+DEAD_HOURS_UTC = {3, 21}
+
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 
 
@@ -199,8 +203,14 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mk
     #   No signal or low confidence: conviction 0 ($0)
     if signal["should_trade"] and confidence in ("medium", "high"):
         direction = signal.get("direction", "")
+        regime_label = regime.get("label", "") if regime else ""
+
+        # DOWN in NEUTRAL regimes has no edge (52% WR on 25 bets, Mar 2026)
+        # Still tracked in DB (conv=2) but no money risked
+        if direction == "DOWN" and "NEUTRAL" in regime_label:
+            conviction = 2
         # RIDE UP in sweet spot → high conviction ($200 bet)
-        if direction == "UP" and mkt_price is not None and 0.20 <= mkt_price <= 0.70:
+        elif direction == "UP" and mkt_price is not None and 0.20 <= mkt_price <= 0.70:
             conviction = 4
         else:
             conviction = 3
@@ -316,6 +326,19 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
         print(f"\n  Market: {market['question'][:60]}...")
         mkt_price = market['price_yes']
         print(f"  Mkt price: {mkt_price:.0%}")
+
+        # Time-of-day gate: skip hours with consistently negative WR
+        current_hour_utc = datetime.now(timezone.utc).hour
+        if current_hour_utc in DEAD_HOURS_UTC:
+            skip_signal = {
+                "estimate": mkt_price,
+                "should_trade": False,
+                "confidence": "skip",
+                "reason": f"time_gate_dead_hour (UTC {current_hour_utc})",
+            }
+            store_prediction(db, market["id"], skip_signal, regime, cycle)
+            print(f"    → SKIP (dead hour: UTC {current_hour_utc})")
+            continue
 
         # Price gate: skip extreme prices (terrible risk/reward even when correct)
         # At price 0.95, need 95% WR to break even. Our signal hits ~66%. Math can't work.

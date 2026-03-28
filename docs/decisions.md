@@ -17,6 +17,8 @@ Source: [Pipeline Recommendations Mar 25–27](daily/pipeline_recommendations_ma
 | 5 | Sunset or retrain 15m pipeline | 15m avg < 5 bets/day over 14+ days AND ROI < 5% | 15m | MONITORING | Only 12 bets in 3 days, $33 total P&L. Not contributing meaningfully |
 | 6 | Explore 0.15-0.30 bucket expansion | 0.15-0.30 WR > 65% at 20+ resolved bets | 5m | MONITORING | Small sample (5 bets, 80% WR). Edge looks real but volume minimal |
 | 7 | Demote conv=4 to flat $75 (15m) | conv=4 WR < 60% at 20+ resolved bets | 15m | MONITORING | Same inversion as 5m: conv=3 at 75% WR, conv=4 at 50% WR |
+| 8 | Filter DOWN in NEUTRAL regimes | Immediate — data shows 52% WR on 25 bets | 5m | ACTIONED | DOWN+NEUTRAL demoted to conv=2 (tracked, no money). UP+NEUTRAL untouched (86.7% WR) |
+| 9 | Time-of-day gate: skip dead hours | Immediate — 3 UTC (41.7%) and 21 UTC (37.5%) | 5m+15m | ACTIONED | DEAD_HOURS_UTC = {3, 21}. Predictions stored as skip with reason |
 
 ---
 
@@ -24,4 +26,5 @@ Source: [Pipeline Recommendations Mar 25–27](daily/pipeline_recommendations_ma
 
 | Date | Decision # | Action | Result |
 |------|-----------|--------|--------|
-| — | — | — | — |
+| 2026-03-28 | #8 | DOWN+NEUTRAL → conv=2 in store_prediction() | Filters ~13% of bets (25/193), saves ~$200 in coin-flip losses |
+| 2026-03-28 | #9 | DEAD_HOURS_UTC gate in run_predictions() | Filters ~10% of bets (20/193), saves ~$150 from 40% WR hours |
