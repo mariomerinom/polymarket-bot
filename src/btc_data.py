@@ -20,21 +20,38 @@ def fetch_btc_candles(interval="5m", limit=12):
     """
     Fetch recent BTC candles at the given interval.
     Primary: Kraken. Fallback: Coinbase.
-    Returns a dict with candles, summary stats, and derived signals.
+    Also fetches Coinbase in parallel for cross-exchange consensus.
+    Returns a dict with candles, summary stats, derived signals, and consensus.
 
     interval: "5m" (default) or "15m"
     """
     # Parse interval to minutes for API params
     interval_minutes = int(interval.replace("m", ""))
+
+    kraken_data = None
+    coinbase_data = None
+
+    # Fetch primary (Kraken)
     try:
-        return _fetch_kraken(limit, interval_minutes=interval_minutes)
+        kraken_data = _fetch_kraken(limit, interval_minutes=interval_minutes)
     except Exception as e:
-        print(f"  Kraken API failed ({e}), trying Coinbase fallback...")
-        try:
-            return _fetch_coinbase(limit, interval_minutes=interval_minutes)
-        except Exception as e2:
-            print(f"  Coinbase also failed ({e2}), returning empty data")
-            return None
+        print(f"  Kraken API failed ({e})")
+
+    # Fetch secondary (Coinbase) — always, for consensus
+    try:
+        coinbase_data = _fetch_coinbase(limit, interval_minutes=interval_minutes)
+    except Exception as e2:
+        print(f"  Coinbase API failed ({e2})")
+
+    # Use Kraken as primary, Coinbase as fallback
+    primary = kraken_data or coinbase_data
+    if primary is None:
+        return None
+
+    # Compute cross-exchange consensus
+    primary["consensus"] = _compute_consensus(kraken_data, coinbase_data)
+
+    return primary
 
 
 def _fetch_kraken(limit, interval_minutes=5):
@@ -162,6 +179,63 @@ def _fetch_coinbase(limit, interval_minutes=5):
         return None
 
     return _compute_summary(candles)
+
+
+def _compute_consensus(kraken_data, coinbase_data):
+    """
+    Compare Kraken and Coinbase candle data for cross-exchange consensus.
+
+    Returns dict with:
+    - sources: how many exchanges returned data (0, 1, or 2)
+    - streak_agree: both exchanges see the same streak direction
+    - streak_kraken / streak_coinbase: per-exchange streak details
+    - direction_agree: both see the same last-candle direction
+    - score: 0 (no data), 1 (one source only), 2 (both agree), -1 (both disagree)
+    """
+    result = {
+        "sources": 0,
+        "streak_agree": None,
+        "direction_agree": None,
+        "score": 0,
+        "streak_kraken": None,
+        "streak_coinbase": None,
+    }
+
+    if kraken_data:
+        result["sources"] += 1
+        result["streak_kraken"] = {
+            "direction": kraken_data["consecutive_dir_label"],
+            "length": kraken_data["consecutive_direction"],
+        }
+    if coinbase_data:
+        result["sources"] += 1
+        result["streak_coinbase"] = {
+            "direction": coinbase_data["consecutive_dir_label"],
+            "length": coinbase_data["consecutive_direction"],
+        }
+
+    if result["sources"] < 2:
+        result["score"] = 1 if result["sources"] == 1 else 0
+        return result
+
+    # Both sources available — compare
+    k_dir = kraken_data["consecutive_dir_label"]
+    c_dir = coinbase_data["consecutive_dir_label"]
+    k_streak = kraken_data["consecutive_direction"]
+    c_streak = coinbase_data["consecutive_direction"]
+
+    result["direction_agree"] = k_dir == c_dir
+    # Streak agreement: same direction AND both have streak >= 2
+    result["streak_agree"] = (k_dir == c_dir and k_streak >= 2 and c_streak >= 2)
+
+    if result["streak_agree"]:
+        result["score"] = 2  # Strong consensus
+    elif result["direction_agree"]:
+        result["score"] = 1  # Weak consensus (direction matches but streaks differ)
+    else:
+        result["score"] = -1  # Disagreement
+
+    return result
 
 
 def _compute_summary(candles):

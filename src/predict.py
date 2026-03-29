@@ -184,7 +184,9 @@ def ensure_regime_column(db):
         pass  # already exists
 
 
-def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mkt_price=None, loose_mode=False, sibling_context=None):
+def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
+                     mkt_price=None, loose_mode=False, sibling_context=None,
+                     consensus=None):
     """Store a prediction in the database."""
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
@@ -195,12 +197,16 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mk
 
     # PAPER TRADING — tiered conviction scoring, simulated P&L only
     # Conviction tiers (dashboard maps to bet sizes):
-    #   0 = skip ($0)    2 = low ($0)    3 = medium ($75)    4 = high ($200)
+    #   0 = skip ($0)    2 = low ($0)    3 = medium ($75)    4 = high ($200)    5 = max ($300)
     #
     # Tiered sizing based on 169-bet analysis (March 2026):
     #   RIDE UP + price 20-70%: 71% WR, +$2,314 P&L → conviction 4 ($200)
     #   All other bets in sweet spot: 61% WR → conviction 3 ($75)
     #   No signal or low confidence: conviction 0 ($0)
+    #
+    # Cross-exchange consensus (March 2026):
+    #   2/2 exchanges agree on streak → conviction bump (+1)
+    #   Disagreement → no bump (tracked for analysis)
     if signal["should_trade"] and confidence in ("medium", "high"):
         direction = signal.get("direction", "")
         regime_label = regime.get("label", "") if regime else ""
@@ -215,6 +221,12 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mk
             conviction = 4
         else:
             conviction = 3
+
+        # Cross-exchange consensus boost: both Kraken + Coinbase see the same streak
+        # Bump conviction by 1 (max 5) when score=2 (strong agreement)
+        consensus_score = consensus.get("score", 0) if consensus else 0
+        if consensus_score == 2 and conviction >= 3:
+            conviction = min(conviction + 1, 5)
     elif signal["should_trade"]:
         conviction = 2
     else:
@@ -230,6 +242,8 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mk
     }
     if sibling_context:
         reasoning_data["sibling_5m"] = sibling_context
+    if consensus:
+        reasoning_data["consensus"] = consensus
     reasoning = json.dumps(reasoning_data)
 
     # Store as "momentum_rule" agent
@@ -340,7 +354,19 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
     if btc_data:
         candles = btc_data["candles"]
+        consensus = btc_data.get("consensus")
         print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}%")
+        # Log consensus
+        if consensus and consensus.get("sources", 0) >= 2:
+            k = consensus.get("streak_kraken", {})
+            c = consensus.get("streak_coinbase", {})
+            score = consensus.get("score", 0)
+            label = {2: "STRONG", 1: "WEAK", -1: "DISAGREE"}.get(score, "?")
+            print(f"  Consensus: {label} (score={score}) | Kraken: {k.get('direction','?')}x{k.get('length',0)} | Coinbase: {c.get('direction','?')}x{c.get('length',0)}")
+        elif consensus:
+            print(f"  Consensus: single source only ({consensus.get('sources', 0)}/2)")
+        else:
+            print(f"  Consensus: unavailable")
     else:
         print("  WARNING: No BTC data available — skipping predictions")
         db.close()
@@ -459,9 +485,20 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
         # Apply momentum signal
         if signal["should_trade"]:
-            store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price, loose_mode=loose_mode, sibling_context=sibling_context)
+            store_prediction(db, market["id"], signal, regime, cycle,
+                             mkt_price=mkt_price, loose_mode=loose_mode,
+                             sibling_context=sibling_context, consensus=consensus)
             direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
-            conv_label = "HIGH $200" if direction == "UP" and 0.20 <= mkt_price <= 0.70 else "MED $75"
+            # Determine conviction label for logging
+            consensus_score = consensus.get("score", 0) if consensus else 0
+            if consensus_score == 2 and direction == "UP" and mkt_price and 0.20 <= mkt_price <= 0.70:
+                conv_label = "MAX $300 (consensus+sweet)"
+            elif consensus_score == 2:
+                conv_label = "HIGH $200 (consensus)" if direction != "UP" or not mkt_price or not (0.20 <= mkt_price <= 0.70) else "HIGH $200"
+            elif direction == "UP" and mkt_price and 0.20 <= mkt_price <= 0.70:
+                conv_label = "HIGH $200"
+            else:
+                conv_label = "MED $75"
             # Cross-timeframe confirmation log
             if sibling_context and sibling_context.get("bets", 0) > 0:
                 sib_dir = sibling_context.get("direction", "?")
