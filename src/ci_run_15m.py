@@ -77,9 +77,12 @@ def main():
         db.close()
         try:
             # 15m thresholds: streak ≥ 2 (30 min ≈ 5m streak ≥ 3), relaxed regime gate
+            # loose_mode=True: disable 5m-derived gates (dead hours, cooldown,
+            # DOWN+NEUTRAL filter) to gather data for 15m-specific optimization
             run_predictions(cycle=cycle, market_limit=1, btc_data=btc_data,
                             db_path=str(DB_PATH_15M),
-                            min_streak=2, autocorr_threshold=-0.20)
+                            min_streak=2, autocorr_threshold=-0.20,
+                            loose_mode=True)
         except Exception as e:
             print(f"  Prediction error: {e}")
         db = sqlite3.connect(DB_PATH_15M)

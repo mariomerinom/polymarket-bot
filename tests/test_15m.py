@@ -125,6 +125,31 @@ def test_run_predictions_accepts_threshold_params():
     assert sig.parameters["autocorr_threshold"].default == -0.15
 
 
+def test_15m_uses_loose_mode():
+    """ci_run_15m passes loose_mode=True to disable 5m-derived gates."""
+    ci_run_15m_path = os.path.join(os.path.dirname(__file__), "..", "src", "ci_run_15m.py")
+    with open(ci_run_15m_path) as f:
+        source = f.read()
+    assert "loose_mode=True" in source, "15m must use loose_mode=True"
+
+
+def test_loose_mode_default_false():
+    """run_predictions defaults loose_mode to False (5m behavior preserved)."""
+    from predict import run_predictions
+    import inspect
+    sig = inspect.signature(run_predictions)
+    assert "loose_mode" in sig.parameters
+    assert sig.parameters["loose_mode"].default is False, "loose_mode must default to False for 5m"
+
+
+def test_store_prediction_accepts_loose_mode():
+    """store_prediction accepts loose_mode parameter."""
+    from predict import store_prediction
+    import inspect
+    sig = inspect.signature(store_prediction)
+    assert "loose_mode" in sig.parameters
+
+
 def test_5m_workflow_does_not_commit_15m_files():
     """5m CI workflow does not touch 15m files."""
     workflow = os.path.join(os.path.dirname(__file__), "..",
