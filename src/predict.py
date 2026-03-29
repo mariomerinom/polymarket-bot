@@ -184,7 +184,7 @@ def ensure_regime_column(db):
         pass  # already exists
 
 
-def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mkt_price=None, loose_mode=False):
+def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mkt_price=None, loose_mode=False, sibling_context=None):
     """Store a prediction in the database."""
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
@@ -220,14 +220,17 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mk
     else:
         conviction = 0
 
-    reasoning = json.dumps({
+    reasoning_data = {
         "signal": signal,
         "regime": regime,
         "observation_mode": True,
         "would_have_bet": signal.get("should_trade", False) and confidence in ("medium", "high"),
         "conviction_tier": conviction,
         "mkt_price": mkt_price,
-    })
+    }
+    if sibling_context:
+        reasoning_data["sibling_5m"] = sibling_context
+    reasoning = json.dumps(reasoning_data)
 
     # Store as "momentum_rule" agent
     try:
@@ -250,6 +253,60 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mk
             reasoning, predicted_at, cycle, conviction,
         ))
     db.commit()
+
+
+def get_5m_context(lookback_minutes=60):
+    """
+    Query the 5m DB for recent signal activity.
+    Returns a summary the 15m pipeline can use for cross-timeframe awareness.
+    """
+    if not DB_PATH.exists():
+        return None
+
+    try:
+        db5 = sqlite3.connect(DB_PATH)
+        # Recent 5m bets (conv >= 3) in the lookback window
+        rows = db5.execute("""
+            SELECT estimate, conviction_score
+            FROM predictions
+            WHERE conviction_score >= 3
+              AND predicted_at >= datetime('now', ?)
+            ORDER BY predicted_at DESC
+        """, (f"-{lookback_minutes} minutes",)).fetchall()
+        db5.close()
+    except Exception:
+        return None
+
+    if not rows:
+        return {"bets": 0, "direction": None, "streak": 0, "message": "no recent 5m bets"}
+
+    # Count directions
+    up = sum(1 for r in rows if r[0] >= 0.5)
+    down = len(rows) - up
+
+    # Consecutive streak from most recent
+    streak_dir = "UP" if rows[0][0] >= 0.5 else "DOWN"
+    streak = 1
+    for r in rows[1:]:
+        d = "UP" if r[0] >= 0.5 else "DOWN"
+        if d == streak_dir:
+            streak += 1
+        else:
+            break
+
+    majority = "UP" if up > down else ("DOWN" if down > up else "SPLIT")
+
+    return {
+        "bets": len(rows),
+        "up": up,
+        "down": down,
+        "majority": majority,
+        "streak_direction": streak_dir,
+        "streak_length": streak,
+        "direction": streak_dir if streak >= 2 else majority,
+        "message": f"5m: {len(rows)} bets in last {lookback_minutes}min, "
+                   f"{up}UP/{down}DN, streak={streak_dir}×{streak}",
+    }
 
 
 def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
@@ -296,6 +353,15 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
     # Check regime gate
     if regime["is_mean_reverting"]:
         print(f"  SKIP: Mean-reverting regime detected — no trades")
+
+    # Cross-timeframe context: 15m reads what 5m has been seeing
+    sibling_context = None
+    if loose_mode:
+        sibling_context = get_5m_context(lookback_minutes=60)
+        if sibling_context and sibling_context["bets"] > 0:
+            print(f"  5m sibling: {sibling_context['message']}")
+        else:
+            print(f"  5m sibling: no recent activity")
 
     # Compute momentum signal
     signal = momentum_signal(candles, min_streak=min_streak)
@@ -393,10 +459,17 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
         # Apply momentum signal
         if signal["should_trade"]:
-            store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price, loose_mode=loose_mode)
+            store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price, loose_mode=loose_mode, sibling_context=sibling_context)
             direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
             conv_label = "HIGH $200" if direction == "UP" and 0.20 <= mkt_price <= 0.70 else "MED $75"
-            print(f"    → {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, {conv_label})")
+            # Cross-timeframe confirmation log
+            if sibling_context and sibling_context.get("bets", 0) > 0:
+                sib_dir = sibling_context.get("direction", "?")
+                agrees = sib_dir == direction
+                tag = "✓ 5m AGREES" if agrees else "✗ 5m DISAGREES"
+                print(f"    → {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, {conv_label}) [{tag}: {sibling_context['message']}]")
+            else:
+                print(f"    → {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, {conv_label})")
         else:
             # No signal — store as NO_BET
             no_signal = {
@@ -405,7 +478,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
                 "confidence": "skip",
                 "reason": signal.get("reason", "no_signal"),
             }
-            store_prediction(db, market["id"], no_signal, regime, cycle)
+            store_prediction(db, market["id"], no_signal, regime, cycle, sibling_context=sibling_context)
             print(f"    → SKIP ({signal.get('reason', 'no_signal')})")
 
     db.close()
