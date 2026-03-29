@@ -102,27 +102,30 @@ def test_15m_write_does_not_touch_5m_db():
         assert count == 0, "15m write contaminated 5m database"
 
 
-def test_15m_uses_relaxed_thresholds():
-    """ci_run_15m passes min_streak=2 and autocorr_threshold=-0.20."""
-    import inspect
-    # Read ci_run_15m source to verify it passes the right thresholds
+def test_15m_uses_hurst_regime():
+    """ci_run_15m uses Hurst exponent for regime detection."""
     ci_run_15m_path = os.path.join(os.path.dirname(__file__), "..", "src", "ci_run_15m.py")
     with open(ci_run_15m_path) as f:
         source = f.read()
     assert "min_streak=2" in source, "15m must use min_streak=2"
-    assert "autocorr_threshold=-0.20" in source, "15m must use autocorr_threshold=-0.20"
+    assert 'regime_method="hurst"' in source, "15m must use Hurst regime detection"
+    assert "hurst_threshold=0.4" in source, "15m must use hurst_threshold=0.4"
 
 
 def test_run_predictions_accepts_threshold_params():
-    """run_predictions accepts min_streak and autocorr_threshold parameters."""
+    """run_predictions accepts min_streak, autocorr_threshold, and regime params."""
     from predict import run_predictions
     import inspect
     sig = inspect.signature(run_predictions)
     assert "min_streak" in sig.parameters
     assert "autocorr_threshold" in sig.parameters
+    assert "regime_method" in sig.parameters
+    assert "hurst_threshold" in sig.parameters
     # Verify defaults preserve 5m behavior
     assert sig.parameters["min_streak"].default == 3
     assert sig.parameters["autocorr_threshold"].default == -0.15
+    assert sig.parameters["regime_method"].default == "autocorr"
+    assert sig.parameters["hurst_threshold"].default == 0.4
 
 
 def test_15m_uses_loose_mode():
@@ -148,6 +151,54 @@ def test_store_prediction_accepts_loose_mode():
     import inspect
     sig = inspect.signature(store_prediction)
     assert "loose_mode" in sig.parameters
+
+
+def test_hurst_regime_trending():
+    """Trending candles produce H > 0.5 (not mean-reverting)."""
+    from predict import compute_regime_from_candles
+    # Consistent upward movement
+    candles = [{"close": 100 + i * 10, "open": 100 + i * 10 - 5,
+                "high": 100 + i * 10 + 2, "low": 100 + i * 10 - 7,
+                "volume": 1.0} for i in range(20)]
+    regime = compute_regime_from_candles(candles, regime_method="hurst", hurst_threshold=0.4)
+    assert "hurst" in regime
+    assert regime["hurst"] > 0.4, f"Trending candles should have H > 0.4, got {regime['hurst']}"
+    assert not regime["is_mean_reverting"]
+
+
+def test_hurst_regime_mean_reverting():
+    """Alternating candles produce low H (mean-reverting)."""
+    from predict import compute_regime_from_candles
+    # Alternating up/down
+    candles = [{"close": 100 + ((-1)**i) * 5, "open": 100,
+                "high": 106, "low": 94,
+                "volume": 1.0} for i in range(20)]
+    regime = compute_regime_from_candles(candles, regime_method="hurst", hurst_threshold=0.4)
+    assert "hurst" in regime
+    assert regime["is_mean_reverting"], f"Alternating candles should be mean-reverting, H={regime['hurst']}"
+
+
+def test_hurst_regime_returns_all_keys():
+    """Hurst regime dict has all required keys for downstream compatibility."""
+    from predict import compute_regime_from_candles
+    candles = [{"close": 100 + i, "open": 99 + i,
+                "high": 101 + i, "low": 98 + i,
+                "volume": 1.0} for i in range(20)]
+    regime = compute_regime_from_candles(candles, regime_method="hurst")
+    required_keys = {"autocorrelation", "volatility", "hurst", "label", "is_mean_reverting"}
+    assert required_keys.issubset(set(regime.keys())), f"Missing keys: {required_keys - set(regime.keys())}"
+
+
+def test_autocorr_regime_unchanged():
+    """Default autocorr method still works and returns hurst as bonus."""
+    from predict import compute_regime_from_candles
+    candles = [{"close": 100 + i, "open": 99 + i,
+                "high": 101 + i, "low": 98 + i,
+                "volume": 1.0} for i in range(20)]
+    regime = compute_regime_from_candles(candles)  # default = autocorr
+    assert "autocorrelation" in regime
+    assert "hurst" in regime  # always computed now
+    assert "is_mean_reverting" in regime
 
 
 def test_5m_workflow_does_not_commit_15m_files():
