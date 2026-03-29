@@ -185,10 +185,88 @@ Explore whether BTC momentum is a leading indicator for SOL/ETH (like the 5m-to-
 
 ---
 
+## Rule: BTC 5m Pipeline Is Frozen
+
+New assets get **new files**. BTC files don't get touched.
+
+| BTC file | Status | Reason |
+|----------|--------|--------|
+| `src/ci_run.py` | FROZEN | BTC 5m entry point. No changes. |
+| `src/ci_run_15m.py` | FROZEN | BTC 15m entry point. No changes. |
+| `.github/workflows/predict-and-score.yml` | FROZEN | BTC 5m CI. No changes. |
+| `.github/workflows/predict-15m.yml` | FROZEN | BTC 15m CI. No changes. |
+| `data/predictions.db` | FROZEN | BTC 5m data. Other pipelines never write here. |
+| `data/predictions_15m.db` | FROZEN | BTC 15m data. Same. |
+| `src/btc_data.py` | SHIM | Becomes thin wrapper calling `candle_data.py` with `asset="BTC"`. All existing callers see identical behavior. |
+
+---
+
+## Known Breakage Points
+
+### Critical (silent failures — wrong results, no error)
+
+| # | What breaks | Where | Why it's silent |
+|---|-------------|-------|-----------------|
+| 1 | `get_5m_context()` queries wrong asset's DB | `predict.py` line 272 — hardcoded `DB_PATH` | SOL 15m would get BTC 5m sibling context. No error, just wrong data. |
+| 2 | CI `git add` misses new DBs | `predict-15m.yml` line 46 — explicit file list | New predictions run, score, then get wiped on next pull. |
+| 3 | Optimization tracker blind to new assets | `optimization_tracker.py` lines 29-30 — hardcoded 2 DBs | SOL/ETH optimizations register but never get monitored. |
+
+### High (errors or wrong output)
+
+| # | What breaks | Where | Fix |
+|---|-------------|-------|-----|
+| 4 | Daily report ignores new assets | `daily_report.py` lines 18-19 — hardcoded DB_5M, DB_15M | Loop over `ASSETS` config instead of 2 constants |
+| 5 | Scoring never resolves new assets | `score.py` line 16 — hardcoded DB_PATH | Parameterize or call from asset-aware CI runner |
+| 6 | Dashboard shows BTC price on SOL/ETH pages | `dashboard.py` line 190 — `from btc_data import fetch_btc_candles` | Pass asset to dashboard generation |
+| 7 | 7 import sites for `btc_data` | `predict.py`, `ci_run.py`, `ci_run_15m.py`, `dashboard.py`, `backtest.py`, `v3/data_fetch.py`, `tests/test_btc_data.py` | Backward-compat shim handles all of these |
+
+### Medium (wrong but survivable, or deferred)
+
+| # | What breaks | Where | Notes |
+|---|-------------|-------|-------|
+| 8 | Conviction gates are BTC-calibrated | `predict.py` lines 214-230 | DOWN+NEUTRAL, price sweet spot, dead hours. SOL/ETH start in `loose_mode=True` so gates don't fire. |
+| 9 | Decision tracker has no asset dimension | `docs/decisions.md` | "Demote conv=4" — for which asset? Needs asset column. |
+| 10 | Test suite assumes BTC-only | `test_15m.py`, `test_btc_data.py`, `test_smoke.py` | Tests still pass (BTC path unchanged), but don't validate multi-asset. |
+| 11 | Backtest hardcoded to Bitcoin | `backtest_native.py` — filters Gamma API for "Bitcoin" | Needs parameterization to backtest SOL/ETH. |
+
+---
+
+## Pre-Flight Checklist
+
+### Before Phase 0 (refactor)
+- [ ] Snapshot BTC baseline: WR, P&L, bet count, date
+- [ ] Run `pytest tests/ -v` — record passing count
+- [ ] Run `python3 src/ci_run.py` locally — confirm it fetches, predicts, scores, dashboards
+
+### After Phase 0, before merging
+- [ ] All existing tests pass (unchanged)
+- [ ] `python3 src/ci_run.py` produces identical output to pre-refactor
+- [ ] `python3 -c "from btc_data import fetch_btc_candles"` — shim works
+- [ ] `python3 -c "from candle_data import fetch_candles"` — new module works
+- [ ] `python3 -c "from asset_config import ASSETS; print(ASSETS['BTC'])"` — config loads
+- [ ] BTC CI workflow file is **unchanged** (diff shows zero changes)
+- [ ] `data/predictions.db` is **unchanged** (no schema migration)
+
+### After Phase 1 (SOL deploy), within 24 hours
+- [ ] SOL 5m pipeline commits to `data/predictions_sol_5m.db` (check GitHub)
+- [ ] SOL predictions appear in SOL dashboard
+- [ ] BTC WR has not dropped >3pp vs baseline snapshot
+- [ ] Daily report includes SOL section
+- [ ] Optimization tracker shows `sol_5m_paper_trade` registration
+
+### Revert triggers (escalating)
+- [ ] **Immediate (same day):** Any BTC CI workflow failure → revert Phase 0 shim, restore original `btc_data.py`
+- [ ] **24-hour check:** Compare first 10 post-deploy BTC bets against baseline. If WR < 50% (5+ losses in 10), pause SOL pipeline and investigate. Cost exposure: ~$750 max.
+- [ ] **3-day check:** At 30+ post-deploy bets, if BTC WR is >5pp below baseline snapshot → revert all Phase 0 changes. Cost exposure: ~$2,250 max.
+- [ ] **Standing rule:** If any new asset's CI run causes a BTC workflow failure or DB corruption → kill new asset pipeline immediately, BTC pipeline always takes priority.
+
+---
+
 ## Risks & Mitigations
 
 | Risk | Mitigation |
 |------|-----------|
+| **BTC 5m pipeline regresses** | Frozen files rule. Shim pattern. Pre/post snapshot comparison. Revert triggers above. |
 | SOL/ETH momentum doesn't exist | `loose_mode=True` paper trading. 200+ predictions before tuning. Revert if WR < 50% at 100 bets. |
 | BTC thresholds wrong for altcoins | Start with no gates (loose_mode), let data reveal asset-specific patterns. |
 | CI resource limits (6 pipelines) | Each workflow has its own concurrency group. ~1,152 dispatches/day total (within GitHub limits). |
