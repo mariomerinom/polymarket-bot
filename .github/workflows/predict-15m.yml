@@ -45,7 +45,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/predictions_15m.db docs/15m.html
           git diff --cached --quiet || git commit -m "Auto: 15m cycle update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git stash --include-untracked || true
           git pull --rebase
+          git stash pop || true
           git push
 
       - name: Schedule next cycle in 15 minutes
