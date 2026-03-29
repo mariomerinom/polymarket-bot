@@ -30,7 +30,7 @@ DB_5M = Path(__file__).parent.parent / "data" / "predictions.db"
 DB_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
 
 # Conviction tier → bet size (must match dashboard.py and daily_report.py)
-CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 200}
+CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
 
 
 def load_optimizations():

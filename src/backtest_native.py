@@ -34,7 +34,7 @@ GAMMA_API = "https://gamma-api.polymarket.com"
 DB_PATH = Path(__file__).parent.parent / "data" / "backtest.db"
 
 # Conviction tier → bet size (must match live pipeline)
-CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 200}
+CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
 
 # Regex to capture time range in market titles
 TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2}[AP]M)\s*-\s*(\d{1,2}:\d{2}[AP]M)")

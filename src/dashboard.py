@@ -341,7 +341,7 @@ def compute_pnl(resolved, unit_bet=100):
     - Wins are variable: profit = bet × (1/price - 1)
     - Losses are fixed: always exactly -bet_size
     """
-    CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 200}
+    CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
 
     agents = defaultdict(lambda: {
         "total_pnl": 0.0,
@@ -424,7 +424,7 @@ def compute_pnl(resolved, unit_bet=100):
 
 def compute_ensemble_pnl(resolved, unit_bet=100):
     """Ensemble P&L using conviction-tier bet sizing. Only bets on MEDIUM+ conviction."""
-    CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 200}
+    CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
     WEIGHTS = {"momentum_rule": 1.0, "contrarian_rule": 1.0, "contrarian": 0.55, "volume_wick": 0.45}
 
     market_data = defaultdict(lambda: {"agents": [], "outcome": None, "price_yes": None, "conviction": 0})

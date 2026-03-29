@@ -20,7 +20,7 @@ DB_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
 DAILY_DIR = Path(__file__).parent.parent / "docs" / "daily"
 
 # Conviction tier → bet size (must match dashboard.py)
-CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 200}
+CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
 
 
 def is_correct(estimate, outcome):
