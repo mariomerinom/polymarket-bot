@@ -186,7 +186,7 @@ def ensure_regime_column(db):
 
 def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
                      mkt_price=None, loose_mode=False, sibling_context=None,
-                     consensus=None):
+                     consensus=None, liquidity=None):
     """Store a prediction in the database."""
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
@@ -244,6 +244,8 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         reasoning_data["sibling_5m"] = sibling_context
     if consensus:
         reasoning_data["consensus"] = consensus
+    if liquidity:
+        reasoning_data["liquidity"] = liquidity
     reasoning = json.dumps(reasoning_data)
 
     # Store as "momentum_rule" agent
@@ -267,6 +269,33 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
             reasoning, predicted_at, cycle, conviction,
         ))
     db.commit()
+
+
+def _get_clob_tokens(market_id):
+    """
+    Look up CLOB token IDs for a Polymarket market.
+    Queries Gamma API by condition ID. Returns {"yes": ..., "no": ...} or None.
+    """
+    try:
+        import requests
+        resp = requests.get(
+            f"https://gamma-api.polymarket.com/markets/{market_id}",
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        raw_clob = data.get("clobTokenIds", "[]")
+        if isinstance(raw_clob, str):
+            import json as _json
+            clob_ids = _json.loads(raw_clob)
+        else:
+            clob_ids = raw_clob
+        if len(clob_ids) >= 2:
+            return {"yes": clob_ids[0], "no": clob_ids[1]}
+    except Exception:
+        pass
+    return None
 
 
 def get_5m_context(lookback_minutes=60):
@@ -485,9 +514,24 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
         # Apply momentum signal
         if signal["should_trade"]:
+            # Phase 6a: Query CLOB order book depth (read-only, never blocks)
+            liquidity = None
+            try:
+                from clob_depth import get_liquidity_summary, format_liquidity_log
+                clob_tokens = _get_clob_tokens(market["id"])
+                if clob_tokens:
+                    direction_for_clob = "UP" if signal["estimate"] > 0.5 else "DOWN"
+                    liquidity = get_liquidity_summary(
+                        clob_tokens["yes"], clob_tokens["no"], direction_for_clob
+                    )
+                    print(f"    {format_liquidity_log(liquidity)}")
+            except Exception as e:
+                print(f"    [CLOB] skipped: {e}")
+
             store_prediction(db, market["id"], signal, regime, cycle,
                              mkt_price=mkt_price, loose_mode=loose_mode,
-                             sibling_context=sibling_context, consensus=consensus)
+                             sibling_context=sibling_context, consensus=consensus,
+                             liquidity=liquidity)
             direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
             # Determine conviction label for logging
             consensus_score = consensus.get("score", 0) if consensus else 0
