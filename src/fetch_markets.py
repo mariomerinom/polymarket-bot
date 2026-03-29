@@ -209,6 +209,13 @@ def _fetch_btc_markets(window_check):
 
                 volume = float(market.get("volume", 0) or 0)
 
+                # Extract CLOB token IDs for order book queries
+                raw_clob = market.get("clobTokenIds", "[]")
+                if isinstance(raw_clob, str):
+                    clob_ids = json.loads(raw_clob)
+                else:
+                    clob_ids = raw_clob
+
                 markets.append({
                     "id": market["id"],
                     "question": market.get("question", title),
@@ -217,6 +224,8 @@ def _fetch_btc_markets(window_check):
                     "volume": volume,
                     "price_yes": price_up,       # "Up" price
                     "price_no": price_down,      # "Down" price
+                    "clob_token_yes": clob_ids[0] if len(clob_ids) > 0 else None,
+                    "clob_token_no": clob_ids[1] if len(clob_ids) > 1 else None,
                 })
             except (ValueError, KeyError, IndexError, json.JSONDecodeError):
                 continue
