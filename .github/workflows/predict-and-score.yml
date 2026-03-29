@@ -45,7 +45,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/ docs/
           git diff --cached --quiet || git commit -m "Auto: cycle update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git stash --include-untracked || true
           git pull --rebase
+          git stash pop || true
           git push
 
       - name: Schedule next cycle in 5 minutes

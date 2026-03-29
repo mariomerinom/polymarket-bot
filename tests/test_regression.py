@@ -389,6 +389,21 @@ def test_dead_hour_gate_exists():
     assert 21 in DEAD_HOURS_UTC, "UTC 21 (3pm CST, 37.5% WR) should be a dead hour"
 
 
+def test_workflows_have_git_stash():
+    """CI workflows must stash before git pull --rebase to handle concurrent pushes.
+    Incident: 15m workflow failed 100% of runs on 2026-03-29 because 5m pipeline
+    pushed between 15m's commit and pull, leaving unstaged changes.
+    """
+    workflow_dir = os.path.join(ROOT, ".github", "workflows")
+    for fname in ["predict-15m.yml", "predict-and-score.yml"]:
+        fpath = os.path.join(workflow_dir, fname)
+        if not os.path.exists(fpath):
+            continue
+        content = open(fpath).read()
+        assert "git stash" in content, \
+            f"{fname} must use 'git stash' before 'git pull --rebase' to handle concurrent CI pushes"
+
+
 def test_no_evolve_imports():
     """No production code should import from deleted evolve.py.
     Incident 3: evolve.py was deleted but run_cycle.py imported it.
