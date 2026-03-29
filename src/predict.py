@@ -184,7 +184,7 @@ def ensure_regime_column(db):
         pass  # already exists
 
 
-def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mkt_price=None):
+def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mkt_price=None, loose_mode=False):
     """Store a prediction in the database."""
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
@@ -207,7 +207,8 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mk
 
         # DOWN in NEUTRAL regimes has no edge (52% WR on 25 bets, Mar 2026)
         # Still tracked in DB (conv=2) but no money risked
-        if direction == "DOWN" and "NEUTRAL" in regime_label:
+        # Derived from 5m data — disabled in loose_mode (15m)
+        if not loose_mode and direction == "DOWN" and "NEUTRAL" in regime_label:
             conviction = 2
         # RIDE UP in sweet spot → high conviction ($200 bet)
         elif direction == "UP" and mkt_price is not None and 0.20 <= mkt_price <= 0.70:
@@ -252,7 +253,7 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None, mk
 
 
 def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
-                    min_streak=3, autocorr_threshold=-0.15):
+                    min_streak=3, autocorr_threshold=-0.15, loose_mode=False):
     """
     Main prediction loop.
     Fetch candles → compute regime → apply momentum rule → store.
@@ -261,6 +262,8 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
     db_path: optional override (default: data/predictions.db for 5-min)
     min_streak: minimum consecutive candles for signal (3 for 5m, 2 for 15m)
     autocorr_threshold: below this → mean-reverting skip (-0.15 for 5m, -0.20 for 15m)
+    loose_mode: if True, disable 5m-derived gates (dead hours, cooldown, DOWN+NEUTRAL).
+                Used by 15m pipeline to gather data without 5m-specific filters.
     """
     from btc_data import fetch_btc_candles, format_for_prompt
 
@@ -328,8 +331,9 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
         print(f"  Mkt price: {mkt_price:.0%}")
 
         # Time-of-day gate: skip hours with consistently negative WR
+        # Derived from 5m data — disabled in loose_mode (15m)
         current_hour_utc = datetime.now(timezone.utc).hour
-        if current_hour_utc in DEAD_HOURS_UTC:
+        if not loose_mode and current_hour_utc in DEAD_HOURS_UTC:
             skip_signal = {
                 "estimate": mkt_price,
                 "should_trade": False,
@@ -366,8 +370,8 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
             continue
 
         # Cooldown gate: if last bet (any market) was opposite direction, require stronger streak
-        # Each cycle bets on a different market, so track globally not per-market
-        if signal["should_trade"] and signal.get("direction"):
+        # Derived from 5m chop analysis — disabled in loose_mode (15m)
+        if not loose_mode and signal["should_trade"] and signal.get("direction"):
             last_bet = db.execute('''
                 SELECT estimate FROM predictions
                 WHERE conviction_score >= 3
@@ -389,7 +393,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
         # Apply momentum signal
         if signal["should_trade"]:
-            store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price)
+            store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price, loose_mode=loose_mode)
             direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
             conv_label = "HIGH $200" if direction == "UP" and 0.20 <= mkt_price <= 0.70 else "MED $75"
             print(f"    → {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, {conv_label})")
