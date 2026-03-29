@@ -2,7 +2,7 @@
 
 **What this is:** A bot that bets on 5-minute and 15-minute "Bitcoin Up or Down" markets on [Polymarket](https://polymarket.com). It uses BTC price momentum to predict whether BTC will be higher or lower at the end of each window. No AI agents, no LLMs at runtime. Pure math from candlestick data. Cost: $0/day.
 
-**Current performance:** ~67% win rate on 215+ resolved bets, ~$6,000 cumulative P&L (paper trading, simulated bets).
+**Current performance:** 67.3% win rate on 217 resolved bets, ~$6,000 cumulative P&L (paper trading, simulated bets).
 
 ---
 
@@ -111,7 +111,7 @@ Every 5 minutes, GitHub Actions triggers the bot. The bot fetches 20 BTC candles
 - Runs every 5 min via `predict-and-score.yml`
 - `min_streak=3`, `autocorr_threshold=-0.15`
 - All gates active: price, dead hour, cooldown, DOWN+NEUTRAL filter
-- 215+ bets at 67% WR
+- 217 bets at 67.3% WR
 
 ### 15-Minute (Experimental)
 - Runs every 15 min via `predict-15m.yml`

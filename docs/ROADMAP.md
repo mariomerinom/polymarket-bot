@@ -166,3 +166,13 @@ Only worthwhile if Part 5/6 prove the edge is real.
 - `scripts/mac-mini-loop.sh` — continuous loop with git push
 - `scripts/com.polymarket.bot.plist` — launchd daemon
 - Keep GitHub Pages dashboard (push HTML from Mini)
+
+---
+
+## Part 8: Multi-Asset Expansion (NEXT)
+
+Expand from BTC-only to SOL, ETH, and beyond. Polymarket now lists 5m/15m "Up or Down" markets for 7+ crypto assets (SOL, ETH, XRP, DOGE, BNB, HYPE).
+
+**Approach:** Refactor BTC-specific code into asset-generic framework, deploy SOL and ETH in `loose_mode` paper trading, gather 200+ predictions per asset before tuning.
+
+See [docs/multi-asset-plan.md](multi-asset-plan.md) for the full implementation plan.
