@@ -77,6 +77,26 @@
       },
       "closed_at": null,
       "close_reason": null
+    },
+    {
+      "name": "cross_exchange_consensus",
+      "description": "Fetch both Kraken and Coinbase candles. When both see the same streak (score=2), bump conviction +1 (max 5, ). Addresses NEUTRAL regime by requiring cross-exchange agreement.",
+      "registered_at": "2026-03-29T14:29:55.355200+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < baseline_wr - 3",
+      "baseline": {
+        "bets": 215,
+        "wins": 145,
+        "wr": 67.4,
+        "pnl": 6074.3,
+        "wagered": 20750.0
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
     }
   ]
 }
