@@ -24,26 +24,31 @@ DEAD_HOURS_UTC = {3, 21}
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 
 
-def compute_regime_from_candles(candles, autocorr_threshold=-0.15):
+def compute_regime_from_candles(candles, autocorr_threshold=-0.15,
+                                regime_method="autocorr", hurst_threshold=0.4):
     """
     Compute regime indicators from candle list.
     Returns dict with autocorrelation, volatility, and label.
 
     autocorr_threshold: below this → mean-reverting (default -0.15 for 5m, -0.20 for 15m)
+    regime_method: "autocorr" (default/5m) or "hurst" (15m, validated +3% WR)
+    hurst_threshold: below this → mean-reverting when using hurst method (default 0.4)
     """
     closes = [c["close"] for c in candles]
 
-    # Volatility: stdev of 5-min returns
+    # Volatility: stdev of returns
     returns = [(closes[i] - closes[i-1]) / closes[i-1]
                for i in range(1, len(closes))]
 
     if len(returns) < 3:
-        return {"autocorrelation": 0.0, "volatility": 0.0, "label": "UNKNOWN"}
+        return {"autocorrelation": 0.0, "volatility": 0.0, "label": "UNKNOWN",
+                "is_mean_reverting": False, "hurst": 0.5}
 
     import statistics
+    import math
     volatility = statistics.stdev(returns) * 100  # as percentage
 
-    # Autocorrelation: lag-1
+    # Autocorrelation: lag-1 (always compute for logging)
     n = len(returns)
     mean_r = sum(returns) / n
     var = sum((r - mean_r) ** 2 for r in returns) / n
@@ -55,6 +60,19 @@ def compute_regime_from_candles(candles, autocorr_threshold=-0.15):
         ) / (n - 1)
         autocorr = cov / var
 
+    # Hurst exponent via R/S method (always compute for logging)
+    hurst = 0.5
+    if n >= 3 and var > 0:
+        Y = []
+        cumsum = 0
+        for r in returns:
+            cumsum += (r - mean_r)
+            Y.append(cumsum)
+        R = max(Y) - min(Y)
+        S = (sum((r - mean_r) ** 2 for r in returns) / n) ** 0.5
+        if R > 0 and S > 0:
+            hurst = math.log(R / S) / math.log(n)
+
     # Labels
     if volatility < 0.05:
         vol_label = "LOW_VOL"
@@ -63,27 +81,41 @@ def compute_regime_from_candles(candles, autocorr_threshold=-0.15):
     else:
         vol_label = "HIGH_VOL"
 
-    if autocorr > 0.15:
-        trend_label = "TRENDING"
-    elif autocorr < autocorr_threshold:
-        trend_label = "MEAN_REVERTING"
+    # Determine mean-reversion based on chosen method
+    if regime_method == "hurst":
+        is_mean_reverting = hurst < hurst_threshold
+        if hurst > 0.6:
+            trend_label = "TRENDING"
+        elif hurst < hurst_threshold:
+            trend_label = "MEAN_REVERTING"
+        else:
+            trend_label = "NEUTRAL"
     else:
-        trend_label = "NEUTRAL"
+        is_mean_reverting = autocorr < autocorr_threshold
+        if autocorr > 0.15:
+            trend_label = "TRENDING"
+        elif autocorr < autocorr_threshold:
+            trend_label = "MEAN_REVERTING"
+        else:
+            trend_label = "NEUTRAL"
 
     return {
         "autocorrelation": round(autocorr, 4),
         "volatility": round(volatility, 4),
+        "hurst": round(hurst, 4),
         "label": f"{vol_label} / {trend_label}",
-        "is_mean_reverting": autocorr < autocorr_threshold,
+        "is_mean_reverting": is_mean_reverting,
     }
 
 
-def momentum_signal(candles, min_streak=3):
+def momentum_signal(candles, min_streak=3, min_exhaustion=1):
     """
     Momentum signal: ride BTC streaks when exhaustion confirms continuation.
     1. streak >= min_streak same direction (default 3 for 5m, 2 for 15m)
-    2. At least one exhaustion signal (compression, volume spike, or shrinking range)
+    2. At least min_exhaustion signals (compression, volume spike, or shrinking range)
     3. RIDE the streak (bet WITH it, not against it)
+
+    min_exhaustion: 1 = any signal (default/5m), 2 = stricter (fewer but better trades)
 
     History: V3 "contrarian" faded streaks and lost at 37% WR on live Polymarket.
     Inverting to momentum (ride) validated at 63% WR. Do NOT revert to fade.
@@ -131,12 +163,13 @@ def momentum_signal(candles, min_streak=3):
     range_ratio = last_range / avg_range if avg_range > 0 else 1.0
     shrinking = range_ratio < 0.7
 
-    has_exhaustion = compression or volume_spike or shrinking
+    exhaustion_count = sum([compression, volume_spike, shrinking])
+    has_exhaustion = exhaustion_count >= min_exhaustion
 
     if not has_exhaustion:
         return {
             "estimate": 0.5, "should_trade": False,
-            "reason": f"no_exhaustion (streak={signed_streak})",
+            "reason": f"no_exhaustion (streak={signed_streak}, signals={exhaustion_count}/{min_exhaustion})",
             "streak": signed_streak,
         }
 
@@ -324,7 +357,9 @@ def get_5m_context(lookback_minutes=60):
 
 
 def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
-                    min_streak=3, autocorr_threshold=-0.15, loose_mode=False):
+                    min_streak=3, autocorr_threshold=-0.15, loose_mode=False,
+                    regime_method="autocorr", hurst_threshold=0.4,
+                    min_exhaustion=1):
     """
     Main prediction loop.
     Fetch candles → compute regime → apply momentum rule → store.
@@ -335,6 +370,8 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
     autocorr_threshold: below this → mean-reverting skip (-0.15 for 5m, -0.20 for 15m)
     loose_mode: if True, disable 5m-derived gates (dead hours, cooldown, DOWN+NEUTRAL).
                 Used by 15m pipeline to gather data without 5m-specific filters.
+    regime_method: "autocorr" (default/5m) or "hurst" (15m, validated +3% WR)
+    hurst_threshold: below this → mean-reverting when using hurst method (default 0.4)
     """
     from btc_data import fetch_btc_candles, format_for_prompt
 
@@ -373,8 +410,12 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
         return
 
     # Compute regime
-    regime = compute_regime_from_candles(candles, autocorr_threshold=autocorr_threshold)
-    print(f"  Regime: {regime['label']} (autocorr: {regime['autocorrelation']:+.4f})")
+    regime = compute_regime_from_candles(candles, autocorr_threshold=autocorr_threshold,
+                                        regime_method=regime_method, hurst_threshold=hurst_threshold)
+    if regime_method == "hurst":
+        print(f"  Regime: {regime['label']} (hurst: {regime['hurst']:.4f}, autocorr: {regime['autocorrelation']:+.4f})")
+    else:
+        print(f"  Regime: {regime['label']} (autocorr: {regime['autocorrelation']:+.4f}, hurst: {regime.get('hurst', 'N/A')})")
 
     # Check regime gate
     if regime["is_mean_reverting"]:
@@ -390,7 +431,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
             print(f"  5m sibling: no recent activity")
 
     # Compute momentum signal
-    signal = momentum_signal(candles, min_streak=min_streak)
+    signal = momentum_signal(candles, min_streak=min_streak, min_exhaustion=min_exhaustion)
     if signal["should_trade"]:
         print(f"  Signal: RIDE {signal['direction']} (streak={signal['streak']}, conf={signal['confidence']})")
         print(f"    Exhaustion: compression={signal['exhaustion']['compression']}, "
