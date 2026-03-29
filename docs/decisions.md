@@ -19,6 +19,10 @@ Source: [Pipeline Recommendations Mar 25–27](daily/pipeline_recommendations_ma
 | 7 | Demote conv=4 to flat $75 (15m) | conv=4 WR < 60% at 20+ resolved bets | 15m | MONITORING | Same inversion as 5m: conv=3 at 75% WR, conv=4 at 50% WR |
 | 8 | Filter DOWN in NEUTRAL regimes | Immediate — data shows 52% WR on 25 bets | 5m | ACTIONED | DOWN+NEUTRAL demoted to conv=2 (tracked, no money). UP+NEUTRAL untouched (86.7% WR) |
 | 9 | Time-of-day gate: skip dead hours | Immediate — 3 UTC (41.7%) and 21 UTC (37.5%) | 5m+15m | ACTIONED | DEAD_HOURS_UTC = {3, 21}. Predictions stored as skip with reason |
+| 10 | Review conv=5 ($300) sizing | After 20+ conv=5 bets: if WR < 65% or max drawdown > $900 | 5m | MONITORING | Peer review flagged $300 as aggressive. 5-loss streak = -$1,500. Consider capping at $200 until live execution data exists. Source: external review 2026-03-29 |
+| 11 | Add ATR/volatility filter | After 100+ regime-tagged bets: compare HIGH_VOL WR vs overall | 5m | MONITORING | Peer review: very high vol periods may amplify losses. Check if HIGH_VOL regime underperforms. |
+| 12 | Audit candle-to-resolution timing | Before Part 6 (live trading) | 5m | MONITORING | Peer review: timing drift between candle fetch and Polymarket resolution could hurt. Need to verify CI execution happens early enough in the 5-min window, not at the boundary. |
+| 13 | Surface Brier score in daily report | Next daily report iteration | 5m+15m | MONITORING | Peer review: WR alone hides calibration problems. Brier is computed (score.py) but not prominently surfaced in reports. |
 
 ---
 
@@ -28,3 +32,4 @@ Source: [Pipeline Recommendations Mar 25–27](daily/pipeline_recommendations_ma
 |------|-----------|--------|--------|
 | 2026-03-28 | #8 | DOWN+NEUTRAL → conv=2 in store_prediction() | Filters ~13% of bets (25/193), saves ~$200 in coin-flip losses |
 | 2026-03-28 | #9 | DEAD_HOURS_UTC gate in run_predictions() | Filters ~10% of bets (20/193), saves ~$150 from 40% WR hours |
+| 2026-03-29 | #10-13 | Registered 4 decisions from external peer review | Edge decay, sizing risk, timing audit, calibration surfacing |
