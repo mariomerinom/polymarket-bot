@@ -1,0 +1,513 @@
+"""
+trade.py — Order execution for Polymarket CLOB.
+
+Converts predictions with conviction >= 3 into limit orders.
+Two modes controlled by TRADING_ENABLED env var:
+  - False (default): Log what we WOULD trade, no orders placed. Paper stays.
+  - True: Place real limit orders via py-clob-client SDK.
+
+Production sizing: flat $25 per bet (medium grind phase).
+Conviction tiers gate WHICH bets fire, not HOW MUCH.
+
+Thin book constraint: never bet more than the CLOB can absorb at <= 2% slippage.
+"""
+
+import json
+import os
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
+
+# ── Configuration (env vars, overridable) ─────────────────────────────────────
+
+TRADING_ENABLED = os.getenv("TRADING_ENABLED", "false").lower() == "true"
+BET_SIZE = float(os.getenv("BET_SIZE", "25"))  # Flat $25 medium grind
+DAILY_LOSS_LIMIT = float(os.getenv("DAILY_LOSS_LIMIT", "300"))
+MIN_CONVICTION = int(os.getenv("MIN_CONVICTION", "3"))
+MAX_SLIPPAGE_PCT = float(os.getenv("MAX_SLIPPAGE_PCT", "2.0"))  # 2% max
+EDGE_THRESHOLD = float(os.getenv("EDGE_THRESHOLD", "0.05"))  # 5% min edge
+
+
+# ── Schema ────────────────────────────────────────────────────────────────────
+
+def ensure_orders_table(db):
+    """Create orders table if it doesn't exist."""
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market_id TEXT,
+            prediction_id INTEGER,
+            direction TEXT,
+            size REAL,
+            price_limit REAL,
+            price_filled REAL,
+            slippage_pct REAL,
+            status TEXT DEFAULT 'pending',
+            order_id TEXT,
+            mode TEXT,
+            reason TEXT,
+            placed_at TEXT,
+            filled_at TEXT,
+            settled_at TEXT,
+            pnl REAL,
+            cycle INTEGER,
+            FOREIGN KEY (market_id) REFERENCES markets(id),
+            FOREIGN KEY (prediction_id) REFERENCES predictions(id)
+        )
+    """)
+    db.commit()
+
+
+# ── Core ──────────────────────────────────────────────────────────────────────
+
+def should_trade(prediction_row, db):
+    """
+    Decide if a prediction should become a live order.
+
+    Args:
+        prediction_row: dict with keys from predictions table
+        db: sqlite3 connection (for daily loss check)
+
+    Returns:
+        (should_trade: bool, reason: str)
+    """
+    conv = prediction_row.get("conviction_score", 0)
+    if conv < MIN_CONVICTION:
+        return False, f"conviction_too_low ({conv})"
+
+    estimate = prediction_row.get("estimate", 0.5)
+    edge = abs(estimate - 0.5)
+    if edge < EDGE_THRESHOLD:
+        return False, f"edge_too_small ({edge:.3f})"
+
+    # Daily loss limit check
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    row = db.execute("""
+        SELECT COALESCE(SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END), 0)
+        FROM orders
+        WHERE placed_at LIKE ? AND status IN ('filled', 'settled')
+    """, (f"{today}%",)).fetchone()
+    daily_loss = abs(row[0]) if row else 0
+
+    if daily_loss >= DAILY_LOSS_LIMIT:
+        return False, f"daily_loss_limit (${daily_loss:.0f} >= ${DAILY_LOSS_LIMIT:.0f})"
+
+    return True, "ok"
+
+
+def compute_order(prediction_row, market_row, liquidity=None):
+    """
+    Compute order parameters from a prediction.
+
+    Returns:
+        dict with direction, side, token, size, price_limit
+        or None if the order can't be placed (e.g., book too thin)
+    """
+    estimate = prediction_row["estimate"]
+    direction = "UP" if estimate > 0.5 else "DOWN"
+
+    # We buy YES tokens for UP, NO tokens for DOWN
+    if direction == "UP":
+        side = "buy"
+        token = "yes"
+        # Limit price: we'll pay up to slightly above market
+        price_limit = min(estimate, market_row.get("price_yes", 0.5) + 0.02)
+    else:
+        side = "buy"
+        token = "no"
+        price_limit = min(1 - estimate, market_row.get("price_no", 0.5) + 0.02)
+
+    # Thin book constraint: cap size at what the book can absorb
+    size = BET_SIZE
+    if liquidity and not liquidity.get("error"):
+        max_book = liquidity.get("max_bet_2pct", float("inf"))
+        if max_book < size:
+            size = max(0, max_book * 0.9)  # 90% of max to leave margin
+            if size < 5:  # Not worth it below $5
+                return None, f"book_too_thin (max@2%=${max_book:.0f})"
+
+    return {
+        "direction": direction,
+        "side": side,
+        "token": token,
+        "size": round(size, 2),
+        "price_limit": round(price_limit, 4),
+    }, "ok"
+
+
+def place_order(db, market_id, prediction_id, order_params, cycle,
+                clob_token_id=None):
+    """
+    Place an order — either log-only (paper) or live via CLOB SDK.
+
+    Returns:
+        order dict with status
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    mode = "live" if TRADING_ENABLED else "paper"
+
+    order_record = {
+        "market_id": market_id,
+        "prediction_id": prediction_id,
+        "direction": order_params["direction"],
+        "size": order_params["size"],
+        "price_limit": order_params["price_limit"],
+        "status": "pending",
+        "order_id": None,
+        "mode": mode,
+        "reason": None,
+        "placed_at": now,
+        "cycle": cycle,
+    }
+
+    if not TRADING_ENABLED:
+        # Paper mode — log what we would have done
+        order_record["status"] = "paper"
+        order_record["reason"] = "trading_disabled"
+        _store_order(db, order_record)
+        return order_record
+
+    # Live mode — submit to Polymarket CLOB
+    if not clob_token_id:
+        order_record["status"] = "failed"
+        order_record["reason"] = "missing_clob_token_id"
+        _store_order(db, order_record)
+        return order_record
+
+    try:
+        result = _submit_clob_order(
+            token_id=clob_token_id,
+            side=order_params["side"],
+            size=order_params["size"],
+            price=order_params["price_limit"],
+        )
+        order_record["order_id"] = result.get("orderID") or result.get("order_id")
+        order_record["status"] = "submitted"
+        order_record["reason"] = json.dumps(result)
+    except Exception as e:
+        order_record["status"] = "failed"
+        order_record["reason"] = str(e)
+
+    _store_order(db, order_record)
+    return order_record
+
+
+def _store_order(db, order):
+    """Insert order record into the orders table."""
+    db.execute("""
+        INSERT INTO orders
+        (market_id, prediction_id, direction, size, price_limit, price_filled,
+         slippage_pct, status, order_id, mode, reason, placed_at, filled_at,
+         settled_at, pnl, cycle)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        order["market_id"], order["prediction_id"], order["direction"],
+        order["size"], order["price_limit"], order.get("price_filled"),
+        order.get("slippage_pct"), order["status"], order.get("order_id"),
+        order["mode"], order.get("reason"), order["placed_at"],
+        order.get("filled_at"), order.get("settled_at"), order.get("pnl"),
+        order["cycle"],
+    ))
+    db.commit()
+
+
+def _submit_clob_order(token_id, side, size, price):
+    """
+    Submit a limit order to Polymarket CLOB via py-clob-client.
+
+    Requires env vars:
+        POLYMARKET_PRIVATE_KEY — Polygon wallet private key
+        POLYMARKET_API_KEY — Polymarket API key
+        POLYMARKET_API_SECRET — Polymarket API secret
+        POLYMARKET_PASSPHRASE — Polymarket passphrase
+
+    Returns API response dict.
+    """
+    try:
+        from py_clob_client.client import ClobClient
+        from py_clob_client.clob_types import OrderArgs, OrderType
+    except ImportError:
+        raise RuntimeError(
+            "py-clob-client not installed. Run: pip install py-clob-client"
+        )
+
+    private_key = os.environ.get("POLYMARKET_PRIVATE_KEY")
+    if not private_key:
+        raise RuntimeError("POLYMARKET_PRIVATE_KEY env var not set")
+
+    api_key = os.environ.get("POLYMARKET_API_KEY")
+    api_secret = os.environ.get("POLYMARKET_API_SECRET")
+    passphrase = os.environ.get("POLYMARKET_PASSPHRASE")
+
+    # Polygon mainnet chain ID
+    chain_id = 137
+
+    client = ClobClient(
+        host="https://clob.polymarket.com",
+        key=api_key,
+        secret=api_secret,
+        passphrase=passphrase,
+        chain_id=chain_id,
+        funder=private_key,
+    )
+
+    # Build and sign order
+    order_args = OrderArgs(
+        price=price,
+        size=size / price if price > 0 else 0,  # Convert $ to shares
+        side=side.upper(),
+        token_id=token_id,
+    )
+
+    signed_order = client.create_and_post_order(order_args)
+    return signed_order
+
+
+# ── Settlement ────────────────────────────────────────────────────────────────
+
+def settle_orders(db):
+    """
+    Check submitted orders and update fill status.
+    Called each cycle to track what actually happened.
+
+    Returns number of orders settled.
+    """
+    if not TRADING_ENABLED:
+        return 0
+
+    cursor = db.execute("""
+        SELECT id, order_id FROM orders
+        WHERE status = 'submitted' AND order_id IS NOT NULL
+    """)
+    pending = cursor.fetchall()
+
+    if not pending:
+        return 0
+
+    settled = 0
+    try:
+        from py_clob_client.client import ClobClient
+
+        client = ClobClient(
+            host="https://clob.polymarket.com",
+            key=os.environ.get("POLYMARKET_API_KEY"),
+            secret=os.environ.get("POLYMARKET_API_SECRET"),
+            passphrase=os.environ.get("POLYMARKET_PASSPHRASE"),
+            chain_id=137,
+            funder=os.environ.get("POLYMARKET_PRIVATE_KEY"),
+        )
+
+        for row in pending:
+            order_db_id, order_id = row
+            try:
+                order_status = client.get_order(order_id)
+                status = order_status.get("status", "unknown")
+
+                if status in ("MATCHED", "FILLED"):
+                    fill_price = float(order_status.get("associate_trades", [{}])[0].get("price", 0))
+                    now = datetime.now(timezone.utc).isoformat()
+                    db.execute("""
+                        UPDATE orders SET status = 'filled', price_filled = ?,
+                        filled_at = ? WHERE id = ?
+                    """, (fill_price, now, order_db_id))
+                    settled += 1
+                elif status in ("CANCELLED", "EXPIRED"):
+                    db.execute("""
+                        UPDATE orders SET status = ? WHERE id = ?
+                    """, (status.lower(), order_db_id))
+                    settled += 1
+
+            except Exception as e:
+                print(f"  [TRADE] Order {order_id} status check failed: {e}")
+
+        db.commit()
+    except ImportError:
+        print("  [TRADE] py-clob-client not installed — can't check order status")
+
+    return settled
+
+
+def compute_order_pnl(db):
+    """
+    Compute P&L for filled orders whose markets have resolved.
+    Updates the pnl column in orders table.
+
+    Returns number of orders with newly computed P&L.
+    """
+    cursor = db.execute("""
+        SELECT o.id, o.direction, o.size, o.price_filled, m.outcome
+        FROM orders o
+        JOIN markets m ON o.market_id = m.id
+        WHERE o.status = 'filled' AND o.pnl IS NULL AND m.resolved = 1
+    """)
+    rows = cursor.fetchall()
+
+    updated = 0
+    for row in rows:
+        order_id, direction, size, price_filled, outcome = row
+
+        # Did we win?
+        if direction == "UP":
+            won = outcome == 1
+        else:
+            won = outcome == 0
+
+        if won:
+            # Payout is $1 per share. Profit = (1/price - 1) * size * (1 - fee)
+            price = price_filled or 0.5
+            pnl = size * (1.0 / price - 1) * 0.985  # 1.5% round-trip fee
+        else:
+            pnl = -size
+
+        now = datetime.now(timezone.utc).isoformat()
+        db.execute("""
+            UPDATE orders SET pnl = ?, settled_at = ?, status = 'settled'
+            WHERE id = ?
+        """, (round(pnl, 2), now, order_id))
+        updated += 1
+
+    if updated:
+        db.commit()
+    return updated
+
+
+# ── Execution hook (called from ci_run.py) ────────────────────────────────────
+
+def execute_trades(db, cycle):
+    """
+    Main entry point: scan recent predictions, place orders for qualifying ones.
+
+    Called after run_predictions() in the CI pipeline.
+    Paper mode: logs what would have been traded.
+    Live mode: submits CLOB limit orders.
+
+    Returns:
+        list of order dicts
+    """
+    ensure_orders_table(db)
+
+    # Find predictions from this cycle that qualify
+    cursor = db.execute("""
+        SELECT p.id, p.market_id, p.estimate, p.conviction_score, p.reasoning,
+               m.price_yes, m.price_no, m.end_date
+        FROM predictions p
+        JOIN markets m ON p.market_id = m.id
+        WHERE p.cycle = ? AND p.conviction_score >= ?
+        AND p.market_id NOT IN (
+            SELECT market_id FROM orders WHERE cycle = ?
+        )
+    """, (cycle, MIN_CONVICTION, cycle))
+
+    predictions = [dict(zip(
+        ["id", "market_id", "estimate", "conviction_score", "reasoning",
+         "price_yes", "price_no", "end_date"],
+        row
+    )) for row in cursor.fetchall()]
+
+    if not predictions:
+        return []
+
+    orders = []
+    mode_label = "LIVE" if TRADING_ENABLED else "PAPER"
+    print(f"\n  [{mode_label}] Processing {len(predictions)} qualifying prediction(s)...")
+
+    for pred in predictions:
+        # Check trade gates
+        ok, reason = should_trade(pred, db)
+        if not ok:
+            print(f"    [{mode_label}] SKIP {pred['market_id'][:12]}... — {reason}")
+            continue
+
+        # Extract liquidity from reasoning JSON (already computed during prediction)
+        liquidity = None
+        try:
+            reasoning = json.loads(pred.get("reasoning", "{}"))
+            liquidity = reasoning.get("liquidity")
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Compute order params
+        market_row = {"price_yes": pred["price_yes"], "price_no": pred["price_no"]}
+        order_params, order_reason = compute_order(pred, market_row, liquidity)
+
+        if order_params is None:
+            print(f"    [{mode_label}] SKIP {pred['market_id'][:12]}... — {order_reason}")
+            continue
+
+        # Get CLOB token ID for live orders
+        clob_token_id = None
+        if TRADING_ENABLED:
+            try:
+                from predict import _get_clob_tokens
+                tokens = _get_clob_tokens(pred["market_id"])
+                if tokens:
+                    clob_token_id = tokens[order_params["token"]]
+            except Exception:
+                pass
+
+        # Place order
+        order = place_order(
+            db, pred["market_id"], pred["id"], order_params, cycle,
+            clob_token_id=clob_token_id,
+        )
+
+        symbol = ">" if TRADING_ENABLED else "~"
+        print(f"    [{mode_label}] {symbol} {order_params['direction']} "
+              f"${order_params['size']:.0f} @ {order_params['price_limit']:.2f} "
+              f"— {order['status']}")
+        orders.append(order)
+
+    # Check order fills from previous cycles
+    if TRADING_ENABLED:
+        settled = settle_orders(db)
+        if settled:
+            print(f"    [{mode_label}] Settled {settled} order(s)")
+
+    # Compute P&L for resolved markets
+    pnl_updated = compute_order_pnl(db)
+    if pnl_updated:
+        print(f"    [{mode_label}] P&L computed for {pnl_updated} order(s)")
+
+    return orders
+
+
+# ── Kill switch ───────────────────────────────────────────────────────────────
+
+def is_kill_switched():
+    """Check if trading has been manually killed."""
+    kill_file = Path(__file__).parent.parent / "data" / "KILL_SWITCH"
+    if kill_file.exists():
+        return True
+    return os.getenv("KILL_SWITCH", "false").lower() == "true"
+
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+
+def get_trading_summary(db):
+    """Get a summary of today's trading activity."""
+    ensure_orders_table(db)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    row = db.execute("""
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN status IN ('filled', 'settled', 'paper') THEN 1 ELSE 0 END) as executed,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+            COALESCE(SUM(size), 0) as total_wagered,
+            COALESCE(SUM(pnl), 0) as total_pnl
+        FROM orders
+        WHERE placed_at LIKE ?
+    """, (f"{today}%",)).fetchone()
+
+    return {
+        "total_orders": row[0],
+        "executed": row[1],
+        "failed": row[2],
+        "total_wagered": row[3],
+        "total_pnl": row[4],
+        "mode": "LIVE" if TRADING_ENABLED else "PAPER",
+        "bet_size": BET_SIZE,
+        "daily_loss_limit": DAILY_LOSS_LIMIT,
+    }
