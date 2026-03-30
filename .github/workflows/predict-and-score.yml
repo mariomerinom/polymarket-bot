@@ -46,9 +46,13 @@ jobs:
           git add data/ docs/
           git diff --cached --quiet || git commit -m "Auto: cycle update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git stash --include-untracked || true
-          git pull --rebase
+          git pull --rebase -X theirs || {
+            echo "Rebase conflict — accepting remote and retrying"
+            git rebase --abort
+            git pull --no-rebase -X theirs
+          }
           git stash pop || true
-          git push
+          git push || echo "Push failed — next cycle will retry"
 
       - name: Schedule next cycle in 5 minutes
         if: success()

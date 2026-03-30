@@ -47,5 +47,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/daily/
           git diff --cached --quiet || git commit -m "Daily report $(date -u +%Y-%m-%d)"
-          git pull --rebase
-          git push
+          git pull --rebase -X theirs || {
+            echo "Rebase conflict — accepting remote and retrying"
+            git rebase --abort
+            git pull --no-rebase -X theirs
+          }
+          git push || echo "Push failed — next run will retry"
