@@ -1027,7 +1027,13 @@ def vs_market_color(vs):
     return "#4caf50" if vs < 0 else "#f44336"
 
 
-def build_html(db_path=None, subtitle="BTC 5-minute candle prediction"):
+def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_links=None):
+    # Default nav links — both dashboards are siblings in docs/
+    if nav_links is None:
+        nav_links = [
+            {"label": "BTC 5m", "href": "index.html"},
+            {"label": "ETH 5m", "href": "eth.html"},
+        ]
     db = get_db(db_path)
     try:
         status = get_status(db)
@@ -1734,6 +1740,27 @@ h1 {{
     font-size: 1.8rem;
     margin-bottom: 8px;
 }}
+.dash-nav {{
+    display: flex;
+    gap: 8px;
+    margin: 8px 0 4px 0;
+}}
+.dash-nav-link {{
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 6px;
+    background: #21262d;
+    color: #c9d1d9;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid #30363d;
+    transition: background 0.15s;
+}}
+.dash-nav-link:hover {{
+    background: #30363d;
+    color: #58a6ff;
+}}
 .subtitle {{
     color: #8b949e;
     margin-bottom: 28px;
@@ -2295,6 +2322,7 @@ tr:hover {{
 <body>
 <div class="container">
     <h1>Polymarket Autoresearch Bot</h1>
+    <nav class="dash-nav">{''.join(f'<a href="{l["href"]}" class="dash-nav-link">{l["label"]}</a>' for l in nav_links)}</nav>
     <p class="subtitle">{subtitle} &mdash; autoresearch loop</p>
 
     {status_html}

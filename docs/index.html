@@ -19,6 +19,27 @@ h1 {
     font-size: 1.8rem;
     margin-bottom: 8px;
 }
+.dash-nav {
+    display: flex;
+    gap: 8px;
+    margin: 8px 0 4px 0;
+}
+.dash-nav-link {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 6px;
+    background: #21262d;
+    color: #c9d1d9;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid #30363d;
+    transition: background 0.15s;
+}
+.dash-nav-link:hover {
+    background: #30363d;
+    color: #58a6ff;
+}
 .subtitle {
     color: #8b949e;
     margin-bottom: 28px;
@@ -580,12 +601,13 @@ tr:hover {
 <body>
 <div class="container">
     <h1>Polymarket Autoresearch Bot</h1>
+    <nav class="dash-nav"><a href="index.html" class="dash-nav-link">BTC 5m</a><a href="eth.html" class="dash-nav-link">ETH 5m</a></nav>
     <p class="subtitle">BTC 5-minute candle prediction &mdash; autoresearch loop</p>
 
     <div class="status-bar">
         <div class="status-item">
             <span class="status-label">Status</span>
-            <span class="status-value" style="color:#238636">Active</span>
+            <span class="status-value" style="color:#da3633">Stale</span>
         </div>
         <div class="status-item">
             <span class="status-label">Last Cycle</span>
@@ -597,7 +619,7 @@ tr:hover {
         </div>
         <div class="status-item">
             <span class="status-label">Next Market</span>
-            <span class="status-value" id="countdown" data-next-market="2026-03-30T12:50:00Z">--</span>
+            <span class="status-value" id="countdown" data-next-market="2026-03-30T13:05:00Z">--</span>
         </div>
         <div class="status-item">
             <span class="status-label">Evolutions</span>
@@ -622,14 +644,14 @@ tr:hover {
         </div>
         <div class="pipeline-meta">
             <div class="pipeline-detail">Avg gap: 6min &middot; 50 total &middot; 0 missed</div>
-            <div class='pipeline-ago'>Last cycle: 1m ago</div>
+            <div class='pipeline-ago'>Last cycle: 18m ago</div>
         </div>
     </div>
 
     <div class="live-banner"><div class="live-card">
             <div class="live-label">BTC Price</div>
-            <div class="live-value">$67,814</div>
-            <div class="live-detail" style="color:#f44336">-0.031% &middot; NEUTRAL</div>
+            <div class="live-value">$67,811</div>
+            <div class="live-detail" style="color:#f44336">-0.070% &middot; NEUTRAL</div>
         </div><div class="live-card live-result" style="background:rgba(63,185,80,0.15);border-color:#238636">
             <div class="live-label">Last Result</div>
             <div class="live-verdict" style="color:#3fb950">&#10003; ALL HIT</div>
@@ -640,7 +662,7 @@ tr:hover {
             <div class="live-label">Current Prediction</div>
             <div class="live-value" style="color:#58a6ff">Mkt 46%</div>
             <div class="live-detail">Bitcoin Up or Down - March 30, 8:40AM-8:45AM ...</div>
-            <div class="live-sub">momentum_rule:46%(skip)</div>
+            <div class="live-sub">momentum_rule:47%(skip)</div>
         </div></div>
 
     <h2>Performance</h2>
