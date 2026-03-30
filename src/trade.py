@@ -521,6 +521,15 @@ def execute_trades(db, cycle):
     if pnl_updated:
         print(f"    [{mode_label}] P&L computed for {pnl_updated} order(s)")
 
+    # Shadow indicators — compute and log (never blocks trades)
+    try:
+        from shadow_indicators import shadow_log_indicators
+        shadow = shadow_log_indicators(db, cycle)
+        if shadow:
+            print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
+    except Exception as e:
+        print(f"    [SHADOW] skipped: {e}")
+
     return orders
 
 
