@@ -23,6 +23,15 @@
 - **Paper trade first.** Every new signal must accumulate 200+ resolved predictions in paper trading before risking real capital.
 - **Conviction gates real money.** Only conviction >= 3 places bets. Conviction 0-2 = skip.
 
+## Production Sizing Philosophy
+
+Production sizing is a grind, not a gamble. The current paper-trading tiers ($75/$200/$300) revealed concentration risk: 16 bets at $219 avg carries more variance than 43 bets at $75. One bad day hurts 3x as much.
+
+- **Phase 1 — Flat grind.** Production launches with a single flat bet size (e.g., $25). Every bet is the same. Conviction tiers still gate *which* bets fire, but all bets are the same dollar amount. The edge compounds through volume, not through sizing luck.
+- **Phase 2 — Kelly on house money.** Once the bankroll has grown meaningfully from Phase 1 profits, introduce Kelly fractional sizing. Size bets proportional to measured edge. Only risk winnings — never the seed.
+- **Thin book constraint.** Polymarket 5-minute markets have low liquidity. Large bets move the line and eat the edge. Kelly must be capped by book depth (CLOB data), not just by bankroll math. The bet size ceiling is whatever the book can absorb at ≤2% slippage.
+- **Paper tiers stay as-is.** The current tiered system continues in paper trading to collect data on whether tier differentiation actually predicts performance. But production does NOT inherit paper sizing.
+
 ## Validation Principles
 
 - **Every optimization gets a baseline.** Before shipping a change, snapshot the current WR, P&L, and bet count. You can't measure improvement without a before.
