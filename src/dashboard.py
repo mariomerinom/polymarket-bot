@@ -132,8 +132,8 @@ def get_pipeline_health(db):
     }
 
 
-def get_live_context(db):
-    """Get last resolved market result, current open prediction, and BTC price."""
+def get_live_context(db, asset="BTC"):
+    """Get last resolved market result, current open prediction, and asset price."""
     # Last resolved market with per-agent predictions
     last_resolved_rows = db.execute("""
         SELECT m.question, m.outcome, m.price_yes, m.end_date,
@@ -182,26 +182,35 @@ def get_live_context(db):
         LIMIT 1
     """).fetchone()
 
-    # BTC price from btc_data module (try import, gracefully fail)
-    btc_price = None
-    btc_change = None
-    btc_trend = None
+    # Asset price (BTC or ETH — try import, gracefully fail)
+    asset_price = None
+    asset_change = None
+    asset_trend = None
     try:
-        from btc_data import fetch_btc_candles
-        data = fetch_btc_candles(limit=6)
+        if asset == "ETH":
+            from eth_data import fetch_eth_candles
+            data = fetch_eth_candles(limit=6)
+        else:
+            from btc_data import fetch_btc_candles
+            data = fetch_btc_candles(limit=6)
         if data:
-            btc_price = data["current_price"]
-            btc_change = data["1h_change_pct"]
-            btc_trend = data["trend"]
+            asset_price = data["current_price"]
+            asset_change = data["1h_change_pct"]
+            asset_trend = data["trend"]
     except Exception:
         pass
 
     return {
         "last_resolved": dict(last_resolved) if last_resolved else None,
         "current_pred": dict(current_pred) if current_pred else None,
-        "btc_price": btc_price,
-        "btc_change": btc_change,
-        "btc_trend": btc_trend,
+        "asset": asset,
+        "asset_price": asset_price,
+        "asset_change": asset_change,
+        "asset_trend": asset_trend,
+        # Backward compat aliases
+        "btc_price": asset_price,
+        "btc_change": asset_change,
+        "btc_trend": asset_trend,
     }
 
 
@@ -1028,17 +1037,21 @@ def vs_market_color(vs):
 
 
 def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_links=None):
+    # Detect asset from subtitle
+    asset = "ETH" if "ETH" in (subtitle or "").upper() else "BTC"
+
     # Default nav links — both dashboards are siblings in docs/
     if nav_links is None:
         nav_links = [
             {"label": "BTC 5m", "href": "index.html"},
+            {"label": "BTC 15m", "href": "15m.html"},
             {"label": "ETH 5m", "href": "eth.html"},
         ]
     db = get_db(db_path)
     try:
         status = get_status(db)
         pipeline = get_pipeline_health(db)
-        live_ctx = get_live_context(db)
+        live_ctx = get_live_context(db, asset=asset)
         resolved = get_resolved_predictions(db)
         agent_stats = compute_agent_stats(resolved)
         ensemble = compute_ensemble(resolved)
@@ -1088,10 +1101,16 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
         </div>
     </div>"""
 
-    # -- Observation Mode Banner --
-    observation_html = """<div style="background:rgba(88,166,255,0.12);border:1px solid #1f6feb;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">📋 PAPER TRADING — V4 MOMENTUM</div>
-        <div style="color:#8b949e;font-size:13px;margin-top:4px">Inverted contrarian: ride the streak. V3 contrarian lost at 37% WR / -$962. Validating momentum before going live.</div>
+    # -- Observation Mode Banner (asset-aware) --
+    if asset == "ETH":
+        obs_title = "PAPER TRADING — ETH CONTRARIAN"
+        obs_detail = "Fade streaks on exhaustion. Phase 2 validated contrarian at 54.4% WR on 1,601 markets. Collecting 200+ paper trades before going live."
+    else:
+        obs_title = "PAPER TRADING — V4 MOMENTUM"
+        obs_detail = "Inverted contrarian: ride the streak. V3 contrarian lost at 37% WR / -$962. Validating momentum before going live."
+    observation_html = f"""<div style="background:rgba(88,166,255,0.12);border:1px solid #1f6feb;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">{obs_title}</div>
+        <div style="color:#8b949e;font-size:13px;margin-top:4px">{obs_detail}</div>
     </div>"""
 
     # -- Pipeline Health Banner --
@@ -1147,16 +1166,17 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
     # -- Live Context Banner --
     live_parts = []
 
-    # BTC Price
-    if live_ctx["btc_price"]:
-        btc_chg = live_ctx["btc_change"] or 0
-        btc_color = "#3fb950" if btc_chg >= 0 else "#f44336"
-        btc_sign = "+" if btc_chg >= 0 else ""
-        btc_trend_label = (live_ctx["btc_trend"] or "").upper()
+    # Asset Price
+    if live_ctx["asset_price"]:
+        price_chg = live_ctx["asset_change"] or 0
+        price_color = "#3fb950" if price_chg >= 0 else "#f44336"
+        price_sign = "+" if price_chg >= 0 else ""
+        trend_label = (live_ctx["asset_trend"] or "").upper()
+        price_label = live_ctx.get("asset", asset)
         live_parts.append(f"""<div class="live-card">
-            <div class="live-label">BTC Price</div>
-            <div class="live-value">${live_ctx["btc_price"]:,.0f}</div>
-            <div class="live-detail" style="color:{btc_color}">{btc_sign}{btc_chg:.3f}% &middot; {btc_trend_label}</div>
+            <div class="live-label">{price_label} Price</div>
+            <div class="live-value">${live_ctx["asset_price"]:,.0f}</div>
+            <div class="live-detail" style="color:{price_color}">{price_sign}{price_chg:.3f}% &middot; {trend_label}</div>
         </div>""")
 
     # Last Resolved
