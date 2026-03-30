@@ -25,6 +25,8 @@ DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 TRADING_ENABLED = os.getenv("TRADING_ENABLED", "false").lower() == "true"
 BET_SIZE = float(os.getenv("BET_SIZE", "25"))  # Flat $25 medium grind
 DAILY_LOSS_LIMIT = float(os.getenv("DAILY_LOSS_LIMIT", "300"))
+CONSECUTIVE_LOSS_MAX = int(os.getenv("CONSECUTIVE_LOSS_MAX", "5"))  # Halt after 5 in a row
+MAX_DRAWDOWN_PCT = float(os.getenv("MAX_DRAWDOWN_PCT", "15"))  # 15% from peak equity
 MIN_CONVICTION = int(os.getenv("MIN_CONVICTION", "3"))
 MAX_SLIPPAGE_PCT = float(os.getenv("MAX_SLIPPAGE_PCT", "2.0"))  # 2% max
 EDGE_THRESHOLD = float(os.getenv("EDGE_THRESHOLD", "0.05"))  # 5% min edge
@@ -94,7 +96,57 @@ def should_trade(prediction_row, db):
     if daily_loss >= DAILY_LOSS_LIMIT:
         return False, f"daily_loss_limit (${daily_loss:.0f} >= ${DAILY_LOSS_LIMIT:.0f})"
 
+    # Consecutive loss breaker — halt after N losses in a row, reset on any win
+    consec = _check_consecutive_losses(db)
+    if consec >= CONSECUTIVE_LOSS_MAX:
+        return False, f"consecutive_loss_breaker ({consec} >= {CONSECUTIVE_LOSS_MAX})"
+
+    # Max drawdown breaker — halt if drawdown from peak exceeds threshold
+    dd_pct = _check_drawdown_pct(db)
+    if dd_pct >= MAX_DRAWDOWN_PCT:
+        return False, f"max_drawdown_breaker ({dd_pct:.1f}% >= {MAX_DRAWDOWN_PCT}%)"
+
     return True, "ok"
+
+
+def _check_consecutive_losses(db):
+    """Count current consecutive loss streak (most recent settled orders)."""
+    rows = db.execute("""
+        SELECT pnl FROM orders
+        WHERE status = 'settled' AND pnl IS NOT NULL
+        ORDER BY settled_at DESC LIMIT 50
+    """).fetchall()
+    streak = 0
+    for (pnl,) in rows:
+        if pnl < 0:
+            streak += 1
+        else:
+            break
+    return streak
+
+
+def _check_drawdown_pct(db):
+    """Compute current drawdown from peak cumulative P&L."""
+    rows = db.execute("""
+        SELECT pnl FROM orders
+        WHERE status = 'settled' AND pnl IS NOT NULL
+        ORDER BY settled_at ASC
+    """).fetchall()
+    if not rows:
+        return 0.0
+
+    cumulative = 0.0
+    peak = 0.0
+    for (pnl,) in rows:
+        cumulative += pnl
+        if cumulative > peak:
+            peak = cumulative
+
+    if peak <= 0:
+        return 0.0
+
+    drawdown = peak - cumulative
+    return (drawdown / peak) * 100
 
 
 def compute_order(prediction_row, market_row, liquidity=None):
@@ -500,6 +552,9 @@ def get_trading_summary(db):
         WHERE placed_at LIKE ?
     """, (f"{today}%",)).fetchone()
 
+    consec_losses = _check_consecutive_losses(db)
+    drawdown_pct = _check_drawdown_pct(db)
+
     return {
         "total_orders": row[0],
         "executed": row[1],
@@ -509,4 +564,12 @@ def get_trading_summary(db):
         "mode": "LIVE" if TRADING_ENABLED else "PAPER",
         "bet_size": BET_SIZE,
         "daily_loss_limit": DAILY_LOSS_LIMIT,
+        "consecutive_losses": consec_losses,
+        "consecutive_loss_max": CONSECUTIVE_LOSS_MAX,
+        "drawdown_pct": drawdown_pct,
+        "max_drawdown_pct": MAX_DRAWDOWN_PCT,
+        "breakers": {
+            "consecutive_loss": consec_losses >= CONSECUTIVE_LOSS_MAX,
+            "max_drawdown": drawdown_pct >= MAX_DRAWDOWN_PCT,
+        },
     }
