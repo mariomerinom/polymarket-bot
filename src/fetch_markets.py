@@ -267,6 +267,138 @@ def get_unresolved_markets(db, limit=5):
             for row in cursor.fetchall()]
 
 
+# ── ETH market discovery (PARALLEL PIPELINE — does NOT modify BTC functions above) ──
+
+DB_PATH_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
+
+
+def init_db_eth():
+    """Initialize the ETH 5-minute database (identical schema, separate file)."""
+    db = sqlite3.connect(DB_PATH_ETH)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS markets (
+            id TEXT PRIMARY KEY,
+            question TEXT,
+            category TEXT,
+            end_date TEXT,
+            volume REAL,
+            price_yes REAL,
+            price_no REAL,
+            fetched_at TEXT,
+            resolved INTEGER DEFAULT 0,
+            outcome INTEGER DEFAULT NULL
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market_id TEXT,
+            agent TEXT,
+            estimate REAL,
+            edge REAL,
+            confidence TEXT,
+            reasoning TEXT,
+            predicted_at TEXT,
+            cycle INTEGER,
+            conviction_score INTEGER,
+            regime TEXT,
+            FOREIGN KEY (market_id) REFERENCES markets(id)
+        )
+    """)
+    db.commit()
+    return db
+
+
+def fetch_active_markets_eth():
+    """Fetch upcoming, unresolved 'Ethereum Up or Down' 5-minute markets."""
+    return _fetch_eth_markets(window_check=_is_5min_window)
+
+
+def _fetch_eth_markets(window_check):
+    """Fetch Ethereum Up or Down markets with a given time window filter.
+
+    Identical logic to _fetch_btc_markets but searches for 'Ethereum' instead of 'Bitcoin'.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now + timedelta(hours=24)
+
+    params = {
+        "limit": 200,
+        "order": "endDate",
+        "ascending": "true",
+        "end_date_min": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+    resp = requests.get(f"{GAMMA_API}/events", params=params)
+    resp.raise_for_status()
+    events = resp.json()
+
+    markets = []
+    for event in events:
+        title = event.get("title", "")
+
+        # Must contain "Ethereum Up or Down" and match the time window
+        if "Ethereum Up or Down" not in title:
+            continue
+        if not window_check(title):
+            continue
+
+        for market in event.get("markets", []):
+            try:
+                end_date = market.get("endDate") or market.get("end_date_iso")
+                if not end_date:
+                    continue
+
+                end_dt = datetime.fromisoformat(
+                    end_date.replace("Z", "+00:00")
+                )
+
+                if market.get("resolved", False):
+                    continue
+
+                if end_dt <= now or end_dt > cutoff:
+                    continue
+
+                outcomes = market.get("outcomes", "[]")
+                if isinstance(outcomes, str):
+                    outcomes = json.loads(outcomes)
+                if outcomes != ["Up", "Down"]:
+                    continue
+
+                raw_prices = market.get("outcomePrices", '["0","0"]')
+                if isinstance(raw_prices, str):
+                    prices = json.loads(raw_prices)
+                else:
+                    prices = raw_prices
+                price_up = float(prices[0])
+                price_down = float(prices[1]) if len(prices) > 1 else round(1 - price_up, 4)
+
+                volume = float(market.get("volume", 0) or 0)
+
+                raw_clob = market.get("clobTokenIds", "[]")
+                if isinstance(raw_clob, str):
+                    clob_ids = json.loads(raw_clob)
+                else:
+                    clob_ids = raw_clob
+
+                markets.append({
+                    "id": market["id"],
+                    "question": market.get("question", title),
+                    "category": event.get("category", "crypto"),
+                    "end_date": end_date,
+                    "volume": volume,
+                    "price_yes": price_up,
+                    "price_no": price_down,
+                    "clob_token_yes": clob_ids[0] if len(clob_ids) > 0 else None,
+                    "clob_token_no": clob_ids[1] if len(clob_ids) > 1 else None,
+                })
+            except (ValueError, KeyError, IndexError, json.JSONDecodeError):
+                continue
+
+    markets.sort(key=lambda m: m["end_date"])
+    return markets
+
+
 if __name__ == "__main__":
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = init_db()
