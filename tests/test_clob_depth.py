@@ -167,3 +167,86 @@ def test_get_clob_tokens_function_exists():
     from predict import _get_clob_tokens
     # Don't actually call it (would hit API), just verify it exists
     assert callable(_get_clob_tokens)
+
+
+def test_analyze_liquidity_with_data():
+    """analyze_liquidity extracts liquidity stats from reasoning JSON."""
+    import json
+    from daily_report import analyze_liquidity
+
+    predictions = [
+        {
+            "reasoning": json.dumps({
+                "liquidity": {
+                    "token": "YES",
+                    "spread_pct": 1.5,
+                    "max_bet_2pct": 200,
+                    "max_bet_5pct": 800,
+                    "depth_levels": 30,
+                    "slippage_at_200": {"slippage_pct": 1.2},
+                }
+            }),
+            "conviction_score": 4,
+        },
+        {
+            "reasoning": json.dumps({
+                "liquidity": {
+                    "token": "NO",
+                    "spread_pct": 2.5,
+                    "max_bet_2pct": 100,
+                    "max_bet_5pct": 500,
+                    "depth_levels": 20,
+                    "slippage_at_200": {"slippage_pct": 3.0},
+                }
+            }),
+            "conviction_score": 3,
+        },
+    ]
+
+    result = analyze_liquidity(predictions)
+    assert result is not None
+    assert result["count"] == 2
+    assert result["avg_spread"] == 2.0
+    assert result["avg_max_bet_2pct"] == 150.0
+    assert result["avg_max_bet_5pct"] == 650.0
+    assert result["avg_depth_levels"] == 25.0
+    assert result["avg_slip_200"] == 2.1
+    assert "YES" in result["by_direction"]
+    assert "NO" in result["by_direction"]
+
+
+def test_analyze_liquidity_no_data():
+    """analyze_liquidity returns None when no liquidity data exists."""
+    from daily_report import analyze_liquidity
+
+    predictions = [
+        {"reasoning": '{"some_key": "value"}', "conviction_score": 3},
+        {"reasoning": None, "conviction_score": 3},
+    ]
+    result = analyze_liquidity(predictions)
+    assert result is None
+
+
+def test_analyze_liquidity_exceeded_count():
+    """analyze_liquidity counts bets that exceed the 2% slippage ceiling."""
+    import json
+    from daily_report import analyze_liquidity
+
+    predictions = [
+        {
+            "reasoning": json.dumps({
+                "liquidity": {
+                    "token": "YES",
+                    "spread_pct": 1.0,
+                    "max_bet_2pct": 50,  # conv=4 bets $200, exceeds $50 ceiling
+                    "max_bet_5pct": 300,
+                    "depth_levels": 10,
+                }
+            }),
+            "conviction_score": 4,
+        },
+    ]
+
+    result = analyze_liquidity(predictions)
+    assert result is not None
+    assert result["exceeded_2pct"] == 1

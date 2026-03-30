@@ -891,14 +891,27 @@ def get_agent_scorecard(db):
 
 
 def get_recent_predictions(db, limit=50):
-    rows = db.execute("""
-        SELECT p.agent, p.estimate, p.edge, p.confidence, p.predicted_at, p.cycle,
-               m.question, m.price_yes, m.resolved, m.outcome
-        FROM predictions p
-        JOIN markets m ON p.market_id = m.id
-        ORDER BY p.predicted_at DESC
-        LIMIT ?
-    """, (limit,)).fetchall()
+    try:
+        rows = db.execute("""
+            SELECT p.agent, p.estimate, p.edge, p.confidence, p.predicted_at, p.cycle,
+                   m.question, m.price_yes, m.resolved, m.outcome,
+                   p.conviction_score, p.reasoning
+            FROM predictions p
+            JOIN markets m ON p.market_id = m.id
+            ORDER BY p.predicted_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+    except sqlite3.OperationalError:
+        # Fallback for older schema without reasoning/conviction_score
+        rows = db.execute("""
+            SELECT p.agent, p.estimate, p.edge, p.confidence, p.predicted_at, p.cycle,
+                   m.question, m.price_yes, m.resolved, m.outcome,
+                   NULL as conviction_score, NULL as reasoning
+            FROM predictions p
+            JOIN markets m ON p.market_id = m.id
+            ORDER BY p.predicted_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
     return rows
 
 
@@ -1533,6 +1546,8 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction"):
 
     # -- Recent Predictions --
     prediction_rows = ""
+    liq_spreads = []
+    liq_max_bets = []
     if predictions:
         for row in predictions:
             if row["resolved"]:
@@ -1545,6 +1560,33 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction"):
             question = row["question"]
             if len(question) > 80:
                 question = question[:77] + "..."
+
+            # Extract liquidity data from reasoning JSON
+            spread_cell = "—"
+            max_bet_cell = "—"
+            reasoning_raw = row.get("reasoning") if hasattr(row, "get") else (row["reasoning"] if "reasoning" in row.keys() else None)
+            if reasoning_raw:
+                try:
+                    reasoning = json.loads(reasoning_raw) if isinstance(reasoning_raw, str) else reasoning_raw
+                    liq = reasoning.get("liquidity") if isinstance(reasoning, dict) else None
+                    if liq and "error" not in liq:
+                        sp = liq.get("spread_pct")
+                        mb = liq.get("max_bet_2pct")
+                        if sp is not None:
+                            liq_spreads.append(sp)
+                            if sp < 1.0:
+                                spread_color = "#3fb950"
+                            elif sp < 3.0:
+                                spread_color = "#d29922"
+                            else:
+                                spread_color = "#f44336"
+                            spread_cell = f'<span style="color:{spread_color}">{sp:.1f}%</span>'
+                        if mb is not None:
+                            liq_max_bets.append(mb)
+                            max_bet_cell = f"${mb:,.0f}"
+                except (json.JSONDecodeError, TypeError, KeyError):
+                    pass
+
             prediction_rows += f"""<tr>
                 <td class="agent-name">{row["agent"]}</td>
                 <td title="{row["question"]}">{question}</td>
@@ -1554,9 +1596,26 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction"):
                 <td>{row["confidence"]}</td>
                 <td>{outcome_str}</td>
                 <td>C{row["cycle"]}</td>
+                <td>{spread_cell}</td>
+                <td>{max_bet_cell}</td>
             </tr>"""
     else:
-        prediction_rows = '<tr><td colspan="8" class="empty">No predictions yet.</td></tr>'
+        prediction_rows = '<tr><td colspan="10" class="empty">No predictions yet.</td></tr>'
+
+    # -- Liquidity Summary Card --
+    liquidity_card_html = ""
+    if liq_spreads:
+        avg_spread = sum(liq_spreads) / len(liq_spreads)
+        avg_max_bet = sum(liq_max_bets) / len(liq_max_bets) if liq_max_bets else 0
+        spread_color = "#3fb950" if avg_spread < 1.0 else ("#d29922" if avg_spread < 3.0 else "#f44336")
+        liquidity_card_html = f"""<div class="consolidated-pnl" style="margin-bottom:16px">
+            <div class="consolidated-label">CLOB LIQUIDITY (last {len(liq_spreads)} predictions)</div>
+            <div class="consolidated-detail" style="font-size:1rem;margin-top:4px">
+                Avg spread: <span style="color:{spread_color};font-weight:700">{avg_spread:.1f}%</span>
+                &middot; Avg max bet @2%: <span style="font-weight:700">${avg_max_bet:,.0f}</span>
+                &middot; Liquidity ceiling: <span style="font-weight:700">${avg_max_bet:,.0f}</span>
+            </div>
+        </div>"""
 
     # -- Technical Metrics (Brier) --
     scorecard_rows = ""
@@ -2260,6 +2319,8 @@ tr:hover {{
 
     {calibration_html}
 
+    {liquidity_card_html}
+
     <h2>Recent Predictions</h2>
     <div class="table-wrap">
     <table>
@@ -2272,6 +2333,8 @@ tr:hover {{
             <th>Confidence</th>
             <th>Outcome</th>
             <th>Cycle</th>
+            <th>Spread %</th>
+            <th>Max Bet @2%</th>
         </tr></thead>
         <tbody>{prediction_rows}</tbody>
     </table>

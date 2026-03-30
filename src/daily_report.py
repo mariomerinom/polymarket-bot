@@ -238,6 +238,113 @@ def analyze_conviction_tiers(resolved):
     return dict(tiers)
 
 
+def analyze_liquidity(predictions):
+    """Analyze CLOB liquidity data from prediction reasoning JSON.
+
+    Extracts liquidity.* fields stored by Phase 6a and computes:
+    - Average spread %
+    - Average max_bet_2pct
+    - Distribution of spread ranges
+    - Spread by direction (UP vs DOWN)
+    """
+    spreads = []
+    max_bets_2pct = []
+    max_bets_5pct = []
+    depth_levels_list = []
+    by_direction = defaultdict(lambda: {"spreads": [], "max_bets": []})
+    slip_at_200 = []
+
+    for p in predictions:
+        reasoning_raw = p.get("reasoning")
+        if not reasoning_raw:
+            continue
+        try:
+            reasoning = json.loads(reasoning_raw) if isinstance(reasoning_raw, str) else reasoning_raw
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        liq = reasoning.get("liquidity")
+        if not liq or "error" in liq:
+            continue
+
+        spread_pct = liq.get("spread_pct")
+        max_bet = liq.get("max_bet_2pct")
+        max_bet_5 = liq.get("max_bet_5pct")
+        depth = liq.get("depth_levels")
+        token = liq.get("token", "?")
+
+        if spread_pct is not None:
+            spreads.append(spread_pct)
+            by_direction[token]["spreads"].append(spread_pct)
+        if max_bet is not None:
+            max_bets_2pct.append(max_bet)
+            by_direction[token]["max_bets"].append(max_bet)
+        if max_bet_5 is not None:
+            max_bets_5pct.append(max_bet_5)
+        if depth is not None:
+            depth_levels_list.append(depth)
+
+        s200 = liq.get("slippage_at_200", {})
+        if s200 and s200.get("slippage_pct") is not None:
+            slip_at_200.append(s200["slippage_pct"])
+
+    if not spreads:
+        return None  # No liquidity data yet — skip section entirely
+
+    avg_spread = sum(spreads) / len(spreads)
+    avg_max_bet = sum(max_bets_2pct) / len(max_bets_2pct) if max_bets_2pct else 0
+    avg_max_bet_5 = sum(max_bets_5pct) / len(max_bets_5pct) if max_bets_5pct else 0
+    avg_depth = sum(depth_levels_list) / len(depth_levels_list) if depth_levels_list else 0
+    avg_slip_200 = sum(slip_at_200) / len(slip_at_200) if slip_at_200 else 0
+
+    # Spread distribution
+    tight = sum(1 for s in spreads if s < 1.0)
+    medium = sum(1 for s in spreads if 1.0 <= s < 3.0)
+    wide = sum(1 for s in spreads if s >= 3.0)
+
+    # Check how many bets would have exceeded max_bet_2pct
+    exceeded_count = 0
+    for p in predictions:
+        conv = p.get("conviction_score") or 0
+        bet_size = CONVICTION_BETS.get(conv, 0)
+        if bet_size == 0:
+            continue
+        reasoning_raw = p.get("reasoning")
+        if not reasoning_raw:
+            continue
+        try:
+            reasoning = json.loads(reasoning_raw) if isinstance(reasoning_raw, str) else reasoning_raw
+        except (json.JSONDecodeError, TypeError):
+            continue
+        liq = reasoning.get("liquidity")
+        if liq and liq.get("max_bet_2pct") is not None:
+            if bet_size > liq["max_bet_2pct"]:
+                exceeded_count += 1
+
+    # Per-direction breakdown
+    direction_stats = {}
+    for token, data in by_direction.items():
+        direction_stats[token] = {
+            "count": len(data["spreads"]),
+            "avg_spread": round(sum(data["spreads"]) / len(data["spreads"]), 2) if data["spreads"] else 0,
+            "avg_max_bet": round(sum(data["max_bets"]) / len(data["max_bets"]), 2) if data["max_bets"] else 0,
+        }
+
+    return {
+        "count": len(spreads),
+        "avg_spread": round(avg_spread, 2),
+        "avg_max_bet_2pct": round(avg_max_bet, 2),
+        "avg_max_bet_5pct": round(avg_max_bet_5, 2),
+        "avg_depth_levels": round(avg_depth, 1),
+        "avg_slip_200": round(avg_slip_200, 2),
+        "spread_tight": tight,
+        "spread_medium": medium,
+        "spread_wide": wide,
+        "exceeded_2pct": exceeded_count,
+        "by_direction": direction_stats,
+    }
+
+
 def rolling_trend(db, date_str, window=7):
     """WR and P&L for each of the last N days."""
     target = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -578,6 +685,43 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None):
                 lines.append(f"| {tier} | {t['total']} | {t['wr']}% | ${t['pnl']:+.2f} | ${t['wagered']:.2f} |")
             lines.append("")
 
+        # Liquidity profile (Phase 6a)
+        if data.get("liquidity"):
+            liq = data["liquidity"]
+            lines.extend([
+                "### Liquidity Profile (CLOB)",
+                "",
+                f"*Based on {liq['count']} predictions with order book data.*",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Avg spread | {liq['avg_spread']:.2f}% |",
+                f"| Avg max bet @2% slippage | ${liq['avg_max_bet_2pct']:,.0f} |",
+                f"| Avg max bet @5% slippage | ${liq['avg_max_bet_5pct']:,.0f} |",
+                f"| Avg depth levels | {liq['avg_depth_levels']:.0f} |",
+                f"| Avg slippage at $200 | {liq['avg_slip_200']:.2f}% |",
+                f"| Bets exceeding 2% slippage ceiling | {liq['exceeded_2pct']} |",
+                "",
+                "**Spread distribution:**",
+                f"| Range | Count | % |",
+                f"|-------|-------|---|",
+                f"| Tight (<1%) | {liq['spread_tight']} | {liq['spread_tight']/liq['count']*100:.0f}% |",
+                f"| Medium (1-3%) | {liq['spread_medium']} | {liq['spread_medium']/liq['count']*100:.0f}% |",
+                f"| Wide (>3%) | {liq['spread_wide']} | {liq['spread_wide']/liq['count']*100:.0f}% |",
+                "",
+            ])
+            if liq["by_direction"]:
+                lines.extend([
+                    "**By token:**",
+                    "| Token | Count | Avg Spread | Avg Max Bet @2% |",
+                    "|-------|-------|------------|-----------------|",
+                ])
+                for token, stats in sorted(liq["by_direction"].items()):
+                    lines.append(
+                        f"| {token} | {stats['count']} | {stats['avg_spread']:.2f}% | ${stats['avg_max_bet']:,.0f} |"
+                    )
+                lines.append("")
+
         # Rolling 7-day trend
         if data["rolling"]:
             lines.extend([
@@ -640,6 +784,7 @@ def analyze_pipeline(db_path, date_str):
     directions = analyze_direction(resolved)
     price_buckets = analyze_price_buckets(resolved)
     conviction = analyze_conviction_tiers(resolved)
+    liquidity = analyze_liquidity(predictions)
     rolling = rolling_trend(db, date_str, window=7)
     alerts = generate_alerts(summary, rolling)
 
@@ -651,6 +796,7 @@ def analyze_pipeline(db_path, date_str):
         "directions": directions,
         "price_buckets": price_buckets,
         "conviction": conviction,
+        "liquidity": liquidity,
         "rolling": rolling,
         "alerts": alerts,
     }

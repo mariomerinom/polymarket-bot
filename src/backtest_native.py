@@ -99,9 +99,9 @@ def _parse_window(title):
         return None
 
 
-def fetch_resolved_markets(start_date, end_date, window="5m", db=None):
+def fetch_resolved_markets(start_date, end_date, window="5m", db=None, asset="Bitcoin"):
     """
-    Fetch resolved "Bitcoin Up or Down" markets from Gamma API.
+    Fetch resolved "Up or Down" markets from Gamma API.
     Paginates through all results in the date range.
     """
     target_seconds = 300 if window == "5m" else 900
@@ -137,7 +137,7 @@ def fetch_resolved_markets(start_date, end_date, window="5m", db=None):
         batch_count = 0
         for m in markets:
             question = m.get("question", "")
-            if "Bitcoin" not in question or "Up or Down" not in question:
+            if asset not in question or "Up or Down" not in question:
                 continue
 
             # Check window size
@@ -187,7 +187,7 @@ def fetch_resolved_markets(start_date, end_date, window="5m", db=None):
             batch_count += 1
 
         total_fetched += len(markets)
-        print(f"  Fetched {total_fetched} total, {len(all_markets)} BTC {window} markets so far...")
+        print(f"  Fetched {total_fetched} total, {len(all_markets)} {asset} {window} markets so far...")
 
         if len(markets) < limit:
             break
@@ -205,7 +205,7 @@ def fetch_resolved_markets(start_date, end_date, window="5m", db=None):
                   m["price_yes"], m["outcome"], m["window"]))
         db.commit()
 
-    print(f"  Total: {len(all_markets)} resolved BTC {window} markets")
+    print(f"  Total: {len(all_markets)} resolved {asset} {window} markets")
     return all_markets
 
 
@@ -572,6 +572,8 @@ if __name__ == "__main__":
     parser.add_argument("--fetch-only", action="store_true", help="Only fetch markets, don't replay")
     parser.add_argument("--replay-only", action="store_true", help="Only replay, don't fetch")
     parser.add_argument("--db", type=str, default=None, help="Override DB path")
+    parser.add_argument("--asset", type=str, default="Bitcoin",
+                        help="Asset name filter (default: Bitcoin). E.g. Solana, Ethereum")
     args = parser.parse_args()
 
     db_path = Path(args.db) if args.db else DB_PATH
@@ -594,7 +596,7 @@ if __name__ == "__main__":
 
     # Fetch
     if not args.replay_only:
-        fetch_resolved_markets(start_date, end_date, window=args.window, db=db)
+        fetch_resolved_markets(start_date, end_date, window=args.window, db=db, asset=args.asset)
 
     # Replay
     if not args.fetch_only:
