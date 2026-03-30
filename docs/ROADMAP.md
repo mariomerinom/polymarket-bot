@@ -69,7 +69,7 @@ See `docs/BACKTEST_FINDINGS.md` and `src/v3/model.py` for details.
 
 ---
 
-## Part 5: Zero-Cost Momentum Mode (ACTIVE)
+## Part 5: Zero-Cost Momentum Mode (DONE ✅)
 
 **Goal:** Replace $1.50/day LLM agents with $0/day momentum rule + regime filter.
 Keep the bot running, keep logging, keep the dashboard — stop paying for predictions.
@@ -86,19 +86,15 @@ Keep the bot running, keep logging, keep the dashboard — stop paying for predi
 3. Dashboard — P&L asymmetry visualization, regime breakdown
 4. No LLM dependencies (no ANTHROPIC_API_KEY needed)
 
-### Validation criteria (in progress)
+### Validation criteria (ALL MET — 2026-03-30)
 - [x] 500+ resolved predictions accumulated
-- [x] Bet win rate ≥ 52% → **63.3% on 60 bets**
+- [x] Bet win rate ≥ 52% → **67.4% on 227 bets**
 - [x] Mean-reverting regime correctly skipped
-- [ ] 200+ bets with sustained WR ≥ 55%
-- [ ] Positive ROI after simulated fees
+- [x] 200+ bets with sustained WR ≥ 55% → **227 bets at 67.4%**
+- [x] Positive ROI after simulated fees → **+$44K simulated P&L**
 
-### Success gate
-If live data confirms backtest patterns → proceed to Part 6 (paper trading with real orders).
-If live data does NOT confirm → the edge doesn't exist at this timeframe. Evaluate:
-- Different Polymarket categories (sports, politics, events)
-- Different timeframes (hourly, daily)
-- Or shut down
+### Success gate: PASSED
+All criteria met. Proceeding to Part 6.
 
 ---
 
@@ -134,27 +130,38 @@ If live data does NOT confirm → the edge doesn't exist at this timeframe. Eval
 
 ---
 
-## Part 6: Live Paper Trading (DEFERRED)
+## Part 6: Live Trading — Medium Grind (NEXT)
 
-> Blocked until Part 5 validation criteria are met.
+> Part 5 gate PASSED (227 bets, 67.4% WR). Moving to production.
+
+### Sizing philosophy: grind, not gamble
+
+Paper trading revealed concentration risk — tiered sizing ($75/$200/$300) produced 16 bets at $219 avg instead of 43 bets at $75. One bad day would hurt 3x as much. Production resets sizing to flat and earns its way up.
+
+| Phase | Bet size | Trigger to advance | Trigger to stop |
+|-------|----------|--------------------|-----------------|
+| **Medium grind** | $25 flat | Bankroll +$500 from grind profits | WR < 52% over 50 bets, or -$300 daily loss |
+| **Full grind** | $50 flat | Bankroll +$1,500 cumulative | WR < 52% over 50 bets, or -$500 daily loss |
+| **Kelly on house money** | Kelly fractional, CLOB-capped | Bankroll +$3,000 cumulative | Drawdown > 30% of peak bankroll |
+
+- **Conviction still gates which bets fire.** Only conv ≥ 3 places orders. But all bets are the same dollar amount within a phase.
+- **Thin book constraint.** Max bet is whatever the CLOB can absorb at ≤2% slippage, regardless of phase. `clob_depth.py` already measures this.
+- **Paper tiers keep running in parallel.** The current tiered system continues logging at conv 2 to collect counterfactual data.
 
 ### Prerequisites
-- Part 5 validation complete with positive results
-- Polygon wallet with USDC
-- `py-clob-client` SDK for CLOB order placement
+- [ ] Polygon wallet funded with USDC
+- [ ] `py-clob-client` SDK integrated
+- [ ] `src/trade.py` — signal → order conversion
+- [ ] Order fill tracking — log placed price vs fill price vs slippage
+- [ ] Daily loss limit circuit breaker (-$300 → pause 1 hour)
+- [ ] Kill switch — manual override to halt all trading
 
-### Plan
-- `src/trade.py` — rule signal → order conversion
-- Paper trading: log what we would have traded, track hypothetical P&L
-- Regime filter active: skip mean-reverting markets
-- Fixed $75 bet size (no Kelly until calibration proven)
-- Daily loss limit: -$300 (4 consecutive losses → stop for 1 hour)
-- Run 500 paper trades before any real capital
-
-### After paper trading validates
-- Micro-live: $5-10 bets for 200 trades
-- Scale: $25 → $50 → $75 based on continued performance
-- Full plan in `docs/DEPLOYMENT_PLAN.md`
+### Implementation plan
+1. **`src/trade.py`** — Takes a prediction + conviction → places a CLOB limit order at $25. Logs order ID, fill status, actual price. No market orders (slippage risk on thin book).
+2. **Order tracking table** — New `orders` table in DB: order_id, market_id, prediction_id, side, size, price_placed, price_filled, status, timestamp.
+3. **CI integration** — After `run_predictions()`, if conviction ≥ 3 and trading enabled, call `trade.py`. Separate flag (`TRADING_ENABLED=true`) so we can kill it without touching code.
+4. **Dashboard** — Add live P&L card showing real money: orders placed, filled, slippage, actual returns vs simulated.
+5. **Circuit breakers** — Daily loss limit. Max concurrent open positions. CLOB depth check before every order.
 
 ---
 
@@ -169,10 +176,23 @@ Only worthwhile if Part 5/6 prove the edge is real.
 
 ---
 
-## Part 8: Multi-Asset Expansion (NEXT)
+## Part 8: Multi-Asset Expansion (ACTIVE)
 
-Expand from BTC-only to SOL, ETH, and beyond. Polymarket now lists 5m/15m "Up or Down" markets for 7+ crypto assets (SOL, ETH, XRP, DOGE, BNB, HYPE).
+Expand from BTC-only to ETH, SOL, and beyond.
 
-**Approach:** Refactor BTC-specific code into asset-generic framework, deploy SOL and ETH in `loose_mode` paper trading, gather 200+ predictions per asset before tuning.
+### ETH 5m Contrarian (ACTIVE — paper trading)
+- Phase 1 outcome analysis + Phase 2 pattern mining validated **contrarian at 54.4% WR on 1,601 markets**
+- Parallel pipeline shipped: `predict_eth.py`, `ci_run_eth.py`, `predict-eth-5m.yml`
+- Separate DB (`predictions_eth.db`), separate dashboard (`docs/eth.html`)
+- All predictions at conviction 2 (paper). Collecting 200+ resolved before calibration.
+- Dashboard linked from nav bar: BTC 5m | BTC 15m | ETH 5m
 
-See [docs/multi-asset-plan.md](multi-asset-plan.md) for the full implementation plan.
+### BTC 15m (ACTIVE — paper trading)
+- Momentum signal with relaxed params (`min_streak=2`, `loose_mode=True`)
+- 12 resolved bets at 67% WR — small sample, still collecting.
+
+### SOL (DEFERRED)
+- Phase 2 showed contrarian_exhaust_s3 at 53.8% on 186 bets — weaker signal, smaller sample.
+- Not prioritized until ETH paper trading validates.
+
+See [docs/multi-asset-plan.md](multi-asset-plan.md) for the original plan.
