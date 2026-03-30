@@ -341,3 +341,59 @@ def test_all_decisions_have_unique_ids():
     """Every decision in DECISIONS and DECISIONS_15M has a unique id."""
     all_ids = [d["id"] for d in DECISIONS] + [d["id"] for d in DECISIONS_15M]
     assert len(all_ids) == len(set(all_ids)), f"Duplicate decision IDs: {all_ids}"
+
+
+def test_liquidity_section_in_report():
+    """Liquidity Profile section appears when predictions have liquidity data."""
+    import json
+    from daily_report import format_report
+
+    liq_data = {
+        "token": "YES", "spread_pct": 1.5, "max_bet_2pct": 200,
+        "max_bet_5pct": 800, "depth_levels": 30,
+        "slippage_at_200": {"slippage_pct": 1.2},
+    }
+    data = {
+        "summary": {"total_predictions": 5, "bets": 4, "skips": 1,
+                     "resolved_bets": 4, "wins": 3, "losses": 1,
+                     "wr": 75.0, "pnl": 100.0, "wagered": 400.0},
+        "regimes": {},
+        "directions": {},
+        "price_buckets": {},
+        "conviction": {},
+        "liquidity": {
+            "count": 3, "avg_spread": 1.5, "avg_max_bet_2pct": 200.0,
+            "avg_max_bet_5pct": 800.0, "avg_depth_levels": 30.0,
+            "avg_slip_200": 1.2, "spread_tight": 1, "spread_medium": 2,
+            "spread_wide": 0, "exceeded_2pct": 0,
+            "by_direction": {"YES": {"count": 3, "avg_spread": 1.5, "avg_max_bet": 200.0}},
+        },
+        "rolling": [],
+        "alerts": [],
+    }
+
+    report = format_report("2026-03-29", data, None)
+    assert "Liquidity Profile" in report
+    assert "max bet @2%" in report.lower() or "max@2%" in report.lower() or "max bet" in report.lower()
+    assert "Spread distribution" in report or "spread" in report.lower()
+
+
+def test_liquidity_section_absent_without_data():
+    """Liquidity Profile section is absent when no liquidity data exists."""
+    from daily_report import format_report
+
+    data = {
+        "summary": {"total_predictions": 5, "bets": 4, "skips": 1,
+                     "resolved_bets": 4, "wins": 3, "losses": 1,
+                     "wr": 75.0, "pnl": 100.0, "wagered": 400.0},
+        "regimes": {},
+        "directions": {},
+        "price_buckets": {},
+        "conviction": {},
+        "liquidity": None,
+        "rolling": [],
+        "alerts": [],
+    }
+
+    report = format_report("2026-03-29", data, None)
+    assert "Liquidity Profile" not in report
