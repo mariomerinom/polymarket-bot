@@ -22,12 +22,37 @@
 - **ETH strategy is CONTRARIAN (fade streaks).** Phase 2 pattern mining validated contrarian_s3_RF at 54.4% WR on 1,601 resolved markets. Momentum loses at 45.7% on ETH. Each asset's signal direction was independently validated. ETH pipeline is in `src/predict_eth.py` (paper trading, conviction=2).
 - **Paper trade first.** Every new signal must accumulate 200+ resolved predictions in paper trading before risking real capital.
 - **Conviction gates real money.** Only conviction >= 3 places bets. Conviction 0-2 = skip.
+- **Trade execution is in `src/trade.py`.** Two modes: `TRADING_ENABLED=false` (default, paper) logs what it would do; `TRADING_ENABLED=true` places real limit orders via `py-clob-client` SDK on Polygon. Flat $25 bet size. Kill switch via `KILL_SWITCH=true` env var or `data/KILL_SWITCH` file. Daily loss circuit breaker at $300 (env `DAILY_LOSS_LIMIT`). Thin book guard caps bets at 90% of CLOB max@2% slippage.
+
+## Multi-Pipeline Architecture
+
+Three independent pipelines run in parallel, each with its own workflow, database, and dashboard:
+
+| Pipeline | Workflow | DB | Dashboard | Signal | Status |
+|----------|----------|----|-----------|--------|--------|
+| BTC 5m | `predict-and-score.yml` | `predictions.db` | `docs/index.html` | Momentum | **Production** |
+| BTC 15m | `predict-15m.yml` | `predictions_15m.db` | `docs/15m.html` | Momentum | Paper |
+| ETH 5m | `predict-eth-5m.yml` | `predictions_eth.db` | `docs/eth.html` | Contrarian | Paper |
+
+All three dashboards are cross-linked via a nav bar on GitHub Pages.
+
+### Frozen Files Rule
+
+The BTC 5m pipeline is the money-maker. These files must have **ZERO lines changed** unless explicitly approved:
+
+`src/ci_run.py`, `src/btc_data.py`, `src/predict.py`, `src/score.py`, `src/clob_depth.py`, `.github/workflows/predict-and-score.yml`, `data/predictions.db`
+
+**Enforcement:** Run `git diff --name-only` before committing and verify none of these appear.
+
+### CI Conflict Resolution
+
+All workflows use `git pull --rebase -X theirs` with fallback to merge pull. CI-generated files (`optimizations.json`, dashboard HTML) are regenerated every cycle, so accepting the remote version on conflict is safe.
 
 ## Production Sizing Philosophy
 
 Production sizing is a grind, not a gamble. The current paper-trading tiers ($75/$200/$300) revealed concentration risk: 16 bets at $219 avg carries more variance than 43 bets at $75. One bad day hurts 3x as much.
 
-- **Phase 1 — Flat grind.** Production launches with a single flat bet size (e.g., $25). Every bet is the same. Conviction tiers still gate *which* bets fire, but all bets are the same dollar amount. The edge compounds through volume, not through sizing luck.
+- **Phase 1 — Flat grind (CURRENT).** Production uses flat $25 per bet (`src/trade.py`, `BET_SIZE=25`). Every bet is the same. Conviction tiers still gate *which* bets fire, but all bets are the same dollar amount. The edge compounds through volume, not through sizing luck.
 - **Phase 2 — Kelly on house money.** Once the bankroll has grown meaningfully from Phase 1 profits, introduce Kelly fractional sizing. Size bets proportional to measured edge. Only risk winnings — never the seed.
 - **Thin book constraint.** Polymarket 5-minute markets have low liquidity. Large bets move the line and eat the edge. Kelly must be capped by book depth (CLOB data), not just by bankroll math. The bet size ceiling is whatever the book can absorb at ≤2% slippage.
 - **Paper tiers stay as-is.** The current tiered system continues in paper trading to collect data on whether tier differentiation actually predicts performance. But production does NOT inherit paper sizing.
@@ -56,10 +81,12 @@ Apply to: commit messages (1 line each), phase summaries, decision gates, sessio
 When asked "how are we doing?", "check the project", "what's the status", or similar:
 
 1. `git pull` — always first
-2. Read the latest file in `docs/daily/` — yesterday's WR, P&L, alerts
+2. Read the latest file in `docs/daily/` — yesterday's WR, P&L, alerts, trade execution, circuit breaker status
 3. `python3 src/optimization_tracker.py summary` — are active optimizations improving or regressing?
 4. Read `docs/decisions.md` — has anything moved to READY?
 5. Read `docs/ROADMAP.md` — what's the current phase, what's next?
 6. `python3 -m pytest tests/ -v` — are tests passing?
+7. Check GitHub Actions — are all 3 pipelines (BTC 5m, BTC 15m, ETH 5m) running green?
+8. Check trade execution — is `TRADING_ENABLED`? Any kill switch or circuit breaker trips?
 
 Report findings concisely. Flag anything that needs a decision.
