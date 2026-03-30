@@ -23,6 +23,7 @@ Source: [Pipeline Recommendations Mar 25–27](daily/pipeline_recommendations_ma
 | 11 | Add ATR/volatility filter | After 100+ regime-tagged bets: compare HIGH_VOL WR vs overall | 5m | MONITORING | Peer review: very high vol periods may amplify losses. Check if HIGH_VOL regime underperforms. |
 | 12 | Audit candle-to-resolution timing | Before Part 6 (live trading) | 5m | MONITORING | Peer review: timing drift between candle fetch and Polymarket resolution could hurt. Need to verify CI execution happens early enough in the 5-min window, not at the boundary. |
 | 13 | Surface Brier score in daily report | Next daily report iteration | 5m+15m | MONITORING | Peer review: WR alone hides calibration problems. Brier is computed (score.py) but not prominently surfaced in reports. |
+| 14 | Production sizing: flat grind, not tiered | Before live trading launch | 5m+15m+ETH | READY | Concentration risk: last 50 bets avg $215 (35 at $200, 8 at $300) vs early $75 flat. Production launches with flat small bets (e.g. $25). Kelly only after bankroll builds from profits. Thin book caps max size via CLOB depth. Paper tiers stay for data collection. |
 
 ---
 
