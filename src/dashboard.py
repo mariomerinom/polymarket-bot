@@ -132,6 +132,67 @@ def get_pipeline_health(db):
     }
 
 
+def get_orders_summary(db):
+    """Get trading orders summary for the dashboard. Returns None if no orders table."""
+    try:
+        # Check if orders table exists
+        table_check = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='orders'"
+        ).fetchone()
+        if not table_check:
+            return None
+
+        # Today's orders
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today_row = db.execute("""
+            SELECT COUNT(*), COALESCE(SUM(size), 0), COALESCE(SUM(pnl), 0),
+                   SUM(CASE WHEN status='paper' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN status='filled' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN status='settled' THEN 1 ELSE 0 END)
+            FROM orders WHERE placed_at LIKE ?
+        """, (f"{today}%",)).fetchone()
+
+        # All-time stats
+        all_row = db.execute("""
+            SELECT COUNT(*), COALESCE(SUM(size), 0), COALESCE(SUM(pnl), 0),
+                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END)
+            FROM orders
+        """).fetchone()
+
+        # Recent orders (last 10)
+        recent = db.execute("""
+            SELECT direction, size, price_limit, status, mode, placed_at, pnl
+            FROM orders ORDER BY placed_at DESC LIMIT 10
+        """).fetchall()
+
+        # Mode
+        mode_row = db.execute("SELECT mode FROM orders ORDER BY placed_at DESC LIMIT 1").fetchone()
+        mode = mode_row[0].upper() if mode_row else "PAPER"
+
+        return {
+            "today_count": today_row[0],
+            "today_wagered": today_row[1],
+            "today_pnl": today_row[2],
+            "today_paper": today_row[3] or 0,
+            "today_filled": today_row[4] or 0,
+            "today_settled": today_row[5] or 0,
+            "all_count": all_row[0],
+            "all_wagered": all_row[1],
+            "all_pnl": all_row[2],
+            "all_wins": all_row[3] or 0,
+            "all_losses": all_row[4] or 0,
+            "recent": [dict(zip(
+                ["direction", "size", "price_limit", "status", "mode", "placed_at", "pnl"],
+                r
+            )) for r in recent],
+            "mode": mode,
+            "bet_size": 25,  # Current production bet size
+        }
+    except Exception:
+        return None
+
+
 def get_live_context(db, asset="BTC"):
     """Get last resolved market result, current open prediction, and asset price."""
     # Last resolved market with per-agent predictions
@@ -1064,6 +1125,7 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
         predictions = get_recent_predictions(db)
         markets = get_markets(db)
         evolution = load_evolution_log()
+        orders_data = get_orders_summary(db)
     finally:
         db.close()
 
@@ -1641,6 +1703,70 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
                 &middot; Avg max bet @2%: <span style="font-weight:700">${avg_max_bet:,.0f}</span>
                 &middot; Liquidity ceiling: <span style="font-weight:700">${avg_max_bet:,.0f}</span>
             </div>
+        </div>"""
+
+    # -- Orders Card --
+    orders_html = ""
+    if orders_data and orders_data["all_count"] > 0:
+        od = orders_data
+        mode_color = "#f44336" if od["mode"] == "LIVE" else "#58a6ff"
+        mode_icon = "&#9889;" if od["mode"] == "LIVE" else "&#128203;"
+        pnl_color = "#3fb950" if od["all_pnl"] >= 0 else "#f44336"
+
+        # Recent orders rows
+        order_rows = ""
+        for o in od["recent"]:
+            dir_color = "#3fb950" if o["direction"] == "UP" else "#f44336"
+            dir_arrow = "&#9650;" if o["direction"] == "UP" else "&#9660;"
+            status_colors = {
+                "paper": "#58a6ff", "submitted": "#d29922", "filled": "#3fb950",
+                "settled": "#8b949e", "failed": "#f44336", "cancelled": "#8b949e",
+            }
+            s_color = status_colors.get(o["status"], "#8b949e")
+            pnl_str = f"${o['pnl']:+.0f}" if o["pnl"] is not None else "—"
+            pnl_c = "#3fb950" if o.get("pnl") and o["pnl"] > 0 else ("#f44336" if o.get("pnl") and o["pnl"] < 0 else "#8b949e")
+            time_str = o["placed_at"][:16].replace("T", " ") if o["placed_at"] else "—"
+            order_rows += f"""<tr>
+                <td style="color:{dir_color};font-weight:700">{dir_arrow} {o["direction"]}</td>
+                <td>${o["size"]:.0f}</td>
+                <td>{o["price_limit"]:.2f}</td>
+                <td style="color:{s_color}">{o["status"]}</td>
+                <td style="color:{pnl_c}">{pnl_str}</td>
+                <td style="color:#8b949e;font-size:0.85em">{time_str}</td>
+            </tr>"""
+
+        orders_html = f"""
+        <h2>{mode_icon} Trade Execution</h2>
+        <div class="consolidated-pnl" style="margin-bottom:12px">
+            <div class="consolidated-label" style="font-size:1.1rem">
+                Mode: <span style="color:{mode_color};font-weight:700">{od["mode"]}</span>
+                &middot; Bet size: <span style="font-weight:700">${od.get("bet_size", 25):.0f}</span>
+            </div>
+            <div style="display:flex;gap:32px;margin-top:8px;flex-wrap:wrap">
+                <div>
+                    <span style="color:#8b949e">Today</span><br>
+                    <span style="font-weight:700;font-size:1.2rem">{od["today_count"]}</span> orders
+                    &middot; <span style="font-weight:700">${od["today_wagered"]:.0f}</span> wagered
+                </div>
+                <div>
+                    <span style="color:#8b949e">All Time</span><br>
+                    <span style="font-weight:700;font-size:1.2rem">{od["all_count"]}</span> orders
+                    &middot; <span style="font-weight:700">${od["all_wagered"]:.0f}</span> wagered
+                </div>
+                <div>
+                    <span style="color:#8b949e">P&amp;L</span><br>
+                    <span style="font-weight:700;font-size:1.2rem;color:{pnl_color}">${od["all_pnl"]:+,.0f}</span>
+                    ({od["all_wins"]}W / {od["all_losses"]}L)
+                </div>
+            </div>
+        </div>
+        <div class="table-wrap">
+        <table>
+            <thead><tr>
+                <th>Direction</th><th>Size</th><th>Price</th><th>Status</th><th>P&amp;L</th><th>Time</th>
+            </tr></thead>
+            <tbody>{order_rows}</tbody>
+        </table>
         </div>"""
 
     # -- Technical Metrics (Brier) --
@@ -2368,6 +2494,8 @@ tr:hover {{
     {calibration_html}
 
     {liquidity_card_html}
+
+    {orders_html}
 
     <h2>Recent Predictions</h2>
     <div class="table-wrap">
