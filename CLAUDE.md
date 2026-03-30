@@ -31,6 +31,16 @@
 - **Track the counterfactual.** Store filtered predictions at conviction 2 (no bet) so you can always compare "what we did" vs "what we would have done."
 - **One change at a time.** If you ship two filters in the same commit, you can't attribute the result to either. Stagger when possible.
 
+## Documentation Paradigm (Backward → Present → Future)
+
+Every commit, plan phase, and decision must answer three questions:
+
+1. **Backward — Does anything break?** What existing behavior depends on this change? Tests, pipelines, dashboards affected? Rollback plan?
+2. **Present — What is the plan?** What exactly is changing? Files touched? Expected output? Decision gate (GO/NO-GO criteria)?
+3. **Future — Where does this surface?** Where will this appear? (dashboard, daily report, docs) What downstream work does this enable/block? When do we revisit?
+
+Apply to: commit messages (1 line each), phase summaries, decision gates, session logs.
+
 ## Project Health Check
 
 When asked "how are we doing?", "check the project", "what's the status", or similar:
