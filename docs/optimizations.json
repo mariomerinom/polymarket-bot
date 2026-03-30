@@ -103,6 +103,66 @@
       },
       "closed_at": null,
       "close_reason": null
+    },
+    {
+      "name": "shadow_rsi_14_gate",
+      "description": "RSI(14) shadow logged alongside every prediction",
+      "registered_at": "2026-03-30T23:25:48.855196+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 200,
+      "revert_condition": "false",
+      "baseline": {
+        "bets": 233,
+        "wins": 157,
+        "wr": 67.4,
+        "pnl": 7645.47,
+        "wagered": 25650.0
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "shadow_obv_bucket_filter",
+      "description": "OBV slope shadow logged for 0.50-0.70 bucket",
+      "registered_at": "2026-03-30T23:25:48.922114+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 100,
+      "revert_condition": "false",
+      "baseline": {
+        "bets": 233,
+        "wins": 157,
+        "wr": 67.4,
+        "pnl": 7645.47,
+        "wagered": 25650.0
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "shadow_vwap_meanrev",
+      "description": "VWAP z-score paper predictions in MEAN_REVERTING regime",
+      "registered_at": "2026-03-30T23:25:48.986457+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < 45",
+      "baseline": {
+        "bets": 233,
+        "wins": 157,
+        "wr": 67.4,
+        "pnl": 7645.47,
+        "wagered": 25650.0
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
     }
   ]
 }
