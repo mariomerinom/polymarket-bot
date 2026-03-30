@@ -217,17 +217,16 @@ def _submit_clob_order(token_id, side, size, price):
     """
     Submit a limit order to Polymarket CLOB via py-clob-client.
 
-    Requires env vars:
-        POLYMARKET_PRIVATE_KEY — Polygon wallet private key
-        POLYMARKET_API_KEY — Polymarket API key
-        POLYMARKET_API_SECRET — Polymarket API secret
-        POLYMARKET_PASSPHRASE — Polymarket passphrase
+    Requires env var:
+        POLYMARKET_PRIVATE_KEY — Polygon wallet private key (hex, 0x prefix ok)
 
-    Returns API response dict.
+    The SDK derives API credentials from the private key via EIP-712 signing.
+    Returns API response dict: {"success": bool, "orderID": str, "status": str}
     """
     try:
         from py_clob_client.client import ClobClient
         from py_clob_client.clob_types import OrderArgs, OrderType
+        from py_clob_client.order_builder.constants import BUY, SELL
     except ImportError:
         raise RuntimeError(
             "py-clob-client not installed. Run: pip install py-clob-client"
@@ -237,32 +236,32 @@ def _submit_clob_order(token_id, side, size, price):
     if not private_key:
         raise RuntimeError("POLYMARKET_PRIVATE_KEY env var not set")
 
-    api_key = os.environ.get("POLYMARKET_API_KEY")
-    api_secret = os.environ.get("POLYMARKET_API_SECRET")
-    passphrase = os.environ.get("POLYMARKET_PASSPHRASE")
-
-    # Polygon mainnet chain ID
-    chain_id = 137
-
+    # Polygon mainnet, EOA wallet (signature_type=0)
     client = ClobClient(
-        host="https://clob.polymarket.com",
-        key=api_key,
-        secret=api_secret,
-        passphrase=passphrase,
-        chain_id=chain_id,
-        funder=private_key,
+        "https://clob.polymarket.com",
+        key=private_key,
+        chain_id=137,
+        signature_type=0,
     )
 
-    # Build and sign order
+    # Derive API credentials from private key (EIP-712 signing)
+    creds = client.create_or_derive_api_creds()
+    client.set_api_creds(creds)
+
+    # Convert dollars to shares: shares = dollars / price_per_share
+    shares = round(size / price, 2) if price > 0 else 0
+    clob_side = BUY if side.upper() == "BUY" else SELL
+
     order_args = OrderArgs(
-        price=price,
-        size=size / price if price > 0 else 0,  # Convert $ to shares
-        side=side.upper(),
         token_id=token_id,
+        price=round(price, 2),
+        size=shares,
+        side=clob_side,
     )
 
-    signed_order = client.create_and_post_order(order_args)
-    return signed_order
+    # GTC = Good-Til-Cancelled limit order
+    response = client.create_and_post_order(order_args, order_type=OrderType.GTC)
+    return response
 
 
 # ── Settlement ────────────────────────────────────────────────────────────────
@@ -291,13 +290,13 @@ def settle_orders(db):
         from py_clob_client.client import ClobClient
 
         client = ClobClient(
-            host="https://clob.polymarket.com",
-            key=os.environ.get("POLYMARKET_API_KEY"),
-            secret=os.environ.get("POLYMARKET_API_SECRET"),
-            passphrase=os.environ.get("POLYMARKET_PASSPHRASE"),
+            "https://clob.polymarket.com",
+            key=os.environ.get("POLYMARKET_PRIVATE_KEY"),
             chain_id=137,
-            funder=os.environ.get("POLYMARKET_PRIVATE_KEY"),
+            signature_type=0,
         )
+        creds = client.create_or_derive_api_creds()
+        client.set_api_creds(creds)
 
         for row in pending:
             order_db_id, order_id = row
