@@ -22,6 +22,13 @@ DAILY_DIR = Path(__file__).parent.parent / "docs" / "daily"
 # Conviction tier → bet size (must match dashboard.py)
 CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
 
+# Trade execution constants (safe import from trade.py)
+try:
+    from trade import DAILY_LOSS_LIMIT, BET_SIZE
+except ImportError:
+    DAILY_LOSS_LIMIT = 300
+    BET_SIZE = 25
+
 
 def is_correct(estimate, outcome):
     """Did the prediction call the direction right?"""
@@ -371,7 +378,82 @@ def rolling_trend(db, date_str, window=7):
     return days
 
 
-def generate_alerts(summary, rolling):
+def analyze_orders(db_path, date_str):
+    """Analyze trade execution orders for a specific date.
+
+    Returns None if the orders table doesn't exist or no orders were placed.
+    """
+    try:
+        db = sqlite3.connect(str(db_path))
+        db.row_factory = sqlite3.Row
+
+        # Check if orders table exists
+        table_check = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='orders'"
+        ).fetchone()
+        if not table_check:
+            db.close()
+            return None
+
+        # Day's orders
+        rows = db.execute("""
+            SELECT direction, size, status, mode, pnl
+            FROM orders
+            WHERE date(placed_at) = ?
+        """, (date_str,)).fetchall()
+
+        if not rows:
+            db.close()
+            return None
+
+        rows = [dict(r) for r in rows]
+        count = len(rows)
+        total_wagered = sum(r["size"] for r in rows if r["size"])
+        settled = [r for r in rows if r["pnl"] is not None]
+        total_pnl = sum(r["pnl"] for r in settled)
+        wins = sum(1 for r in settled if r["pnl"] > 0)
+        losses = sum(1 for r in settled if r["pnl"] < 0)
+
+        # Mode from most recent order
+        mode = rows[-1]["mode"].upper() if rows[-1].get("mode") else "PAPER"
+
+        # Circuit breaker: cumulative daily losses (same formula as trade.py)
+        daily_loss = abs(sum(r["pnl"] for r in settled if r["pnl"] and r["pnl"] < 0))
+        breaker_pct = (daily_loss / DAILY_LOSS_LIMIT * 100) if DAILY_LOSS_LIMIT > 0 else 0
+        breaker_tripped = daily_loss >= DAILY_LOSS_LIMIT
+
+        # Direction breakdown
+        by_direction = {}
+        for direction in ("UP", "DOWN"):
+            d_rows = [r for r in rows if r["direction"] == direction]
+            d_settled = [r for r in d_rows if r["pnl"] is not None]
+            if d_rows:
+                by_direction[direction] = {
+                    "count": len(d_rows),
+                    "pnl": sum(r["pnl"] for r in d_settled) if d_settled else 0,
+                }
+
+        db.close()
+
+        return {
+            "count": count,
+            "total_wagered": total_wagered,
+            "total_pnl": total_pnl,
+            "wins": wins,
+            "losses": losses,
+            "mode": mode,
+            "daily_loss": daily_loss,
+            "breaker_limit": DAILY_LOSS_LIMIT,
+            "breaker_pct": breaker_pct,
+            "breaker_tripped": breaker_tripped,
+            "by_direction": by_direction,
+            "bet_size": BET_SIZE,
+        }
+    except Exception:
+        return None
+
+
+def generate_alerts(summary, rolling, orders=None):
     """Flag concerning patterns."""
     alerts = []
 
@@ -406,6 +488,19 @@ def generate_alerts(summary, rolling):
     # No bets placed
     if summary["bets"] == 0:
         alerts.append("ℹ️ No bets placed today — all predictions skipped")
+
+    # Circuit breaker alerts (from trade execution)
+    if orders:
+        if orders["breaker_tripped"]:
+            alerts.append(
+                f"🚨 Circuit breaker TRIPPED — daily loss "
+                f"${orders['daily_loss']:.0f} >= ${orders['breaker_limit']:.0f} limit"
+            )
+        elif orders["breaker_pct"] >= 60:
+            alerts.append(
+                f"⚠️ Circuit breaker at {orders['breaker_pct']:.0f}% "
+                f"(${orders['daily_loss']:.0f} / ${orders['breaker_limit']:.0f})"
+            )
 
     return alerts
 
@@ -746,6 +841,42 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None):
                 lines.append(f"- {alert}")
             lines.append("")
 
+        # Trade Execution
+        orders = data.get("orders")
+        if orders and orders["count"] > 0:
+            breaker_status = (
+                "🚨 TRIPPED — trading halted for remainder of day"
+                if orders["breaker_tripped"]
+                else "✅ OK"
+            )
+            record = f"{orders['wins']}W / {orders['losses']}L" if (orders["wins"] + orders["losses"]) > 0 else "—"
+            lines.extend([
+                "### Trade Execution",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Mode | {orders['mode']} |",
+                f"| Orders placed | {orders['count']} |",
+                f"| Wagered | ${orders['total_wagered']:.2f} |",
+                f"| P&L (settled) | ${orders['total_pnl']:+.2f} |",
+                f"| Record | {record} |",
+                f"| Bet size | ${orders['bet_size']:.0f} |",
+                "",
+                f"**Circuit Breaker:** ${orders['daily_loss']:.0f} / ${orders['breaker_limit']:.0f} "
+                f"({orders['breaker_pct']:.0f}%) — {breaker_status}",
+                "",
+            ])
+
+            # Direction breakdown
+            if orders["by_direction"]:
+                lines.extend([
+                    "| Direction | Orders | P&L |",
+                    "|-----------|--------|-----|",
+                ])
+                for d, v in sorted(orders["by_direction"].items()):
+                    lines.append(f"| {d} | {v['count']} | ${v['pnl']:+.2f} |")
+                lines.append("")
+
     # Decision alerts (cross-pipeline, appended at end)
     if decision_alerts:
         lines.extend([
@@ -786,7 +917,8 @@ def analyze_pipeline(db_path, date_str):
     conviction = analyze_conviction_tiers(resolved)
     liquidity = analyze_liquidity(predictions)
     rolling = rolling_trend(db, date_str, window=7)
-    alerts = generate_alerts(summary, rolling)
+    orders = analyze_orders(db_path, date_str)
+    alerts = generate_alerts(summary, rolling, orders=orders)
 
     db.close()
 
@@ -798,6 +930,7 @@ def analyze_pipeline(db_path, date_str):
         "conviction": conviction,
         "liquidity": liquidity,
         "rolling": rolling,
+        "orders": orders,
         "alerts": alerts,
     }
 
@@ -858,6 +991,18 @@ def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None):
             lines.extend(["| Direction | Bets | WR | P&L |", "|---|---|---|---|"])
             for d, v in sorted(data["directions"].items()):
                 lines.append(f"| {d} | {v['total']} | {v['wr']}% | ${v['pnl']:+.2f} |")
+            lines.append("")
+
+        # Orders summary
+        orders = data.get("orders")
+        if orders and orders["count"] > 0:
+            breaker_tag = "🚨 TRIPPED" if orders["breaker_tripped"] else f"{orders['breaker_pct']:.0f}%"
+            lines.append(
+                f"**Orders:** {orders['count']} placed, "
+                f"${orders['total_wagered']:.0f} wagered, "
+                f"${orders['total_pnl']:+.0f} P&L, "
+                f"breaker {breaker_tag}"
+            )
             lines.append("")
 
         # Alerts

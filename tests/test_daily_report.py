@@ -15,8 +15,10 @@ from daily_report import (
     analyze_direction,
     analyze_price_buckets,
     analyze_conviction_tiers,
+    analyze_orders,
     generate_alerts,
     generate_report,
+    format_report,
     get_daily_predictions,
     get_daily_resolved,
     rolling_trend,
@@ -397,3 +399,128 @@ def test_liquidity_section_absent_without_data():
 
     report = format_report("2026-03-29", data, None)
     assert "Liquidity Profile" not in report
+
+
+# ── Trade execution / circuit breaker tests ──────────────────────────
+
+
+def _create_db_with_orders(tmpdir, date_str, orders):
+    """Create a test DB with orders table populated."""
+    markets = [{"id": "m1", "price_yes": 0.45, "resolved": 1, "outcome": 1}]
+    predictions = [
+        {"market_id": "m1", "estimate": 0.62,
+         "predicted_at": f"{date_str}T10:00:00", "conviction_score": 3},
+    ]
+    db_path = _create_test_db(tmpdir, predictions, markets)
+
+    db = sqlite3.connect(db_path)
+    db.execute("""CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        market_id TEXT, prediction_id INTEGER, direction TEXT,
+        size REAL, price_limit REAL, price_filled REAL, slippage_pct REAL,
+        status TEXT DEFAULT 'pending', order_id TEXT, mode TEXT,
+        reason TEXT, placed_at TEXT, filled_at TEXT, settled_at TEXT,
+        pnl REAL, cycle INTEGER
+    )""")
+    for o in orders:
+        db.execute("""
+            INSERT INTO orders (market_id, direction, size, price_limit, status,
+                                mode, placed_at, pnl)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (o.get("market_id", "m1"), o["direction"], o["size"],
+              o.get("price_limit", 0.45), o.get("status", "settled"),
+              o.get("mode", "paper"), o["placed_at"], o.get("pnl")))
+    db.commit()
+    db.close()
+    return db_path
+
+
+def test_orders_section_present_when_orders_exist():
+    """Trade Execution section appears when orders exist."""
+    date_str = "2026-03-28"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = _create_db_with_orders(tmpdir, date_str, [
+            {"direction": "UP", "size": 25, "placed_at": f"{date_str}T10:00:00", "pnl": 30.56},
+            {"direction": "DOWN", "size": 25, "placed_at": f"{date_str}T11:00:00", "pnl": -25.00},
+            {"direction": "UP", "size": 25, "placed_at": f"{date_str}T12:00:00", "pnl": 30.56},
+        ])
+        result = analyze_orders(db_path, date_str)
+        assert result is not None
+        assert result["count"] == 3
+        assert result["total_wagered"] == 75
+        assert result["wins"] == 2
+        assert result["losses"] == 1
+        assert result["breaker_tripped"] is False
+
+        # Verify it renders in the report
+        data = {
+            "summary": {"total_predictions": 3, "bets": 3, "skips": 0,
+                         "resolved_bets": 3, "wins": 2, "losses": 1,
+                         "wr": 66.7, "pnl": 36.12, "wagered": 75.0},
+            "regimes": {}, "directions": {}, "price_buckets": {},
+            "conviction": {}, "liquidity": None, "rolling": [],
+            "orders": result, "alerts": [],
+        }
+        report = format_report(date_str, data, None)
+        assert "Trade Execution" in report
+        assert "Circuit Breaker" in report
+        assert "OK" in report
+
+
+def test_orders_section_absent_when_no_table():
+    """Trade Execution section is absent when no orders table exists."""
+    date_str = "2026-03-28"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        markets = [{"id": "m1", "price_yes": 0.45, "resolved": 1, "outcome": 1}]
+        predictions = [
+            {"market_id": "m1", "estimate": 0.62,
+             "predicted_at": f"{date_str}T10:00:00", "conviction_score": 3},
+        ]
+        db_path = _create_test_db(tmpdir, predictions, markets)
+
+        result = analyze_orders(db_path, date_str)
+        assert result is None
+
+
+def test_circuit_breaker_alert_when_tripped():
+    """Circuit breaker alert fires when daily loss >= limit."""
+    date_str = "2026-03-28"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # 12 losses at $25 = $300 total loss → trips the $300 breaker
+        orders_list = [
+            {"direction": "UP", "size": 25, "placed_at": f"{date_str}T{10+i}:00:00", "pnl": -25.0}
+            for i in range(12)
+        ]
+        db_path = _create_db_with_orders(tmpdir, date_str, orders_list)
+        result = analyze_orders(db_path, date_str)
+
+        assert result is not None
+        assert result["breaker_tripped"] is True
+        assert result["daily_loss"] >= 300
+
+        # Verify alert fires
+        summary = {"resolved_bets": 12, "wr": 0, "pnl": -300, "bets": 12}
+        alerts = generate_alerts(summary, [], orders=result)
+        assert any("TRIPPED" in a for a in alerts), f"Expected breaker alert, got {alerts}"
+
+
+def test_circuit_breaker_warning_at_60pct():
+    """Circuit breaker warning fires when daily loss >= 60% of limit."""
+    date_str = "2026-03-28"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # 8 losses at $25 = $200 loss → 67% of $300 limit → warning
+        orders_list = [
+            {"direction": "UP", "size": 25, "placed_at": f"{date_str}T{10+i}:00:00", "pnl": -25.0}
+            for i in range(8)
+        ]
+        db_path = _create_db_with_orders(tmpdir, date_str, orders_list)
+        result = analyze_orders(db_path, date_str)
+
+        assert result is not None
+        assert result["breaker_tripped"] is False
+        assert result["breaker_pct"] >= 60
+
+        summary = {"resolved_bets": 8, "wr": 0, "pnl": -200, "bets": 8}
+        alerts = generate_alerts(summary, [], orders=result)
+        assert any("breaker" in a.lower() and "%" in a for a in alerts), f"Expected warning, got {alerts}"
+        assert not any("TRIPPED" in a for a in alerts), "Should be warning, not tripped"
