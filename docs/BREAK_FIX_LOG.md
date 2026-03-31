@@ -4,6 +4,18 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## Frozen File Change: Production Trading Env Vars
+**Date:** March 31, 2026 | **Approved by:** User | **Severity:** Planned
+
+**Files touched:**
+- `.github/workflows/predict-and-score.yml` — Added env vars (TRADING_ENABLED, POLYMARKET_PRIVATE_KEY, BET_SIZE, DAILY_LOSS_LIMIT, KILL_SWITCH) to the prediction cycle step. Required for live trading.
+
+**Rationale:** Cannot go live without passing secrets to the workflow. Using `vars.*` for non-sensitive config (visible in Actions UI), `secrets.*` for private key only.
+
+**Rollback:** Remove the `env:` block from the prediction cycle step. Trading falls back to paper mode (TRADING_ENABLED defaults to false).
+
+---
+
 ## Incident 5: Whipsaw Chop — 52% Flip Rate in Flat Market
 **Date:** March 27, 2026 | **Duration:** ~4 hours | **Severity:** Capital erosion
 

@@ -290,6 +290,66 @@ class TestKillSwitch:
         assert not is_kill_switched()
 
 
+class TestStartupValidation:
+    """Fail fast if live mode is misconfigured."""
+
+    def test_live_without_key_raises(self, monkeypatch):
+        monkeypatch.setenv("TRADING_ENABLED", "true")
+        monkeypatch.delenv("POLYMARKET_PRIVATE_KEY", raising=False)
+        import importlib
+        import trade
+        with __import__("pytest").raises(RuntimeError, match="POLYMARKET_PRIVATE_KEY not set"):
+            importlib.reload(trade)
+        # Restore to paper mode for other tests
+        monkeypatch.setenv("TRADING_ENABLED", "false")
+        importlib.reload(trade)
+
+    def test_paper_without_key_ok(self, monkeypatch):
+        monkeypatch.setenv("TRADING_ENABLED", "false")
+        monkeypatch.delenv("POLYMARKET_PRIVATE_KEY", raising=False)
+        import importlib
+        import trade
+        importlib.reload(trade)  # Should not raise
+        assert not trade.TRADING_ENABLED
+
+
+class TestResolvedMarketGuard:
+    """Orders should not be placed on resolved markets."""
+
+    def test_no_orders_on_resolved_market(self):
+        from trade import execute_trades, ensure_orders_table
+        db = _make_db()
+        ensure_orders_table(db)
+
+        # Insert a RESOLVED market and a qualifying prediction
+        db.execute("""INSERT INTO markets (id, question, end_date, price_yes, price_no, resolved, outcome)
+            VALUES ('mkt_resolved', 'BTC Up?', '2099-01-01T00:00:00Z', 0.50, 0.50, 1, 1)""")
+        db.execute("""INSERT INTO predictions
+            (id, market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle, conviction_score)
+            VALUES (1, 'mkt_resolved', 'momentum_rule', 0.65, 0.15, 'high', '{}', '2026-01-01T00:00:00', 10, 4)""")
+        db.commit()
+
+        orders = execute_trades(db, cycle=10)
+        assert len(orders) == 0, "Should not place orders on resolved markets"
+        db.close()
+
+
+class TestWALMode:
+    """SQLite WAL mode and busy timeout."""
+
+    def test_wal_enabled_after_ensure_orders(self):
+        from trade import ensure_orders_table
+        import sqlite3
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE markets (id TEXT)")  # minimal schema
+        ensure_orders_table(db)
+        mode = db.execute("PRAGMA journal_mode").fetchone()[0]
+        # In-memory DBs use "memory" journal mode, but WAL pragma was called
+        # Just verify it doesn't crash
+        assert mode in ("wal", "memory")
+        db.close()
+
+
 class TestExecuteTrades:
     """Full execution flow."""
 

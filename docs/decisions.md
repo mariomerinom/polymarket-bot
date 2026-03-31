@@ -26,6 +26,7 @@ Source: [Pipeline Recommendations Mar 25–27](daily/pipeline_recommendations_ma
 | 14 | Production sizing: flat grind, not tiered | Before live trading launch | 5m+15m+ETH | READY | Concentration risk: last 50 bets avg $215 (35 at $200, 8 at $300) vs early $75 flat. Production launches with flat small bets (e.g. $25). Kelly only after bankroll builds from profits. Thin book caps max size via CLOB depth. Paper tiers stay for data collection. |
 | 15 | ETH model: deploy adapted model | ETH shadow WR > 55% at 50+ shadow-logged predictions with RSI/OBV/VWAP | ETH | MONITORING | Spec: docs/daily/spec_eth_model_training.md. Option B (adaptation layer) first. Regime recalibration + correlation features + ETH conviction scorer. Do not deploy live ETH bets until shadow clears 50 bets > 55% WR. ETH sizing codified: $25/$50/$75 by conviction, capped at 50% of CLOB max@2%. |
 | 16 | Recalibrate ETH regime thresholds | ETH HIGH_VOL predictions > 80% of total for 7+ days | ETH | MONITORING | 93% of ETH predictions land in HIGH_VOL — BTC thresholds don't fit ETH's higher baseline vol. Proposed shift: LOW 0→1.2, MEDIUM 1.2→2.2, HIGH 2.2+. Blocked on: 50+ shadow predictions for before/after comparison. |
+| 17 | Validate paper-to-live degradation thesis | 50 live bets completed | 5m | MONITORING | Thesis: docs/daily/thesis_paper_to_live_degradation.md. Expected -5 to -9pp WR drop from paper. Revert if live WR < 55% at 50 bets or < 50% at 30 bets. |
 
 ---
 

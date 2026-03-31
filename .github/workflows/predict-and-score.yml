@@ -37,6 +37,12 @@ jobs:
 
       - name: Run prediction cycle
         working-directory: src
+        env:
+          TRADING_ENABLED: ${{ vars.TRADING_ENABLED }}
+          POLYMARKET_PRIVATE_KEY: ${{ secrets.POLYMARKET_PRIVATE_KEY }}
+          BET_SIZE: ${{ vars.BET_SIZE }}
+          DAILY_LOSS_LIMIT: ${{ vars.DAILY_LOSS_LIMIT }}
+          KILL_SWITCH: ${{ vars.KILL_SWITCH }}
         run: python ci_run.py
 
       - name: Commit changes
