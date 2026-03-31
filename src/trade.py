@@ -22,14 +22,19 @@ DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 
 # ── Configuration (env vars, overridable) ─────────────────────────────────────
 
-TRADING_ENABLED = os.getenv("TRADING_ENABLED", "false").lower() == "true"
-BET_SIZE = float(os.getenv("BET_SIZE", "25"))  # Flat $25 medium grind
-DAILY_LOSS_LIMIT = float(os.getenv("DAILY_LOSS_LIMIT", "300"))
-CONSECUTIVE_LOSS_MAX = int(os.getenv("CONSECUTIVE_LOSS_MAX", "5"))  # Halt after 5 in a row
-MAX_DRAWDOWN_PCT = float(os.getenv("MAX_DRAWDOWN_PCT", "15"))  # 15% from peak equity
-MIN_CONVICTION = int(os.getenv("MIN_CONVICTION", "3"))
-MAX_SLIPPAGE_PCT = float(os.getenv("MAX_SLIPPAGE_PCT", "2.0"))  # 2% max
-EDGE_THRESHOLD = float(os.getenv("EDGE_THRESHOLD", "0.05"))  # 5% min edge
+def _env(name, default):
+    """Get env var, treating empty string same as unset."""
+    val = os.getenv(name, "")
+    return val if val else default
+
+TRADING_ENABLED = _env("TRADING_ENABLED", "false").lower() == "true"
+BET_SIZE = float(_env("BET_SIZE", "25"))  # Flat $25 medium grind
+DAILY_LOSS_LIMIT = float(_env("DAILY_LOSS_LIMIT", "300"))
+CONSECUTIVE_LOSS_MAX = int(_env("CONSECUTIVE_LOSS_MAX", "5"))  # Halt after 5 in a row
+MAX_DRAWDOWN_PCT = float(_env("MAX_DRAWDOWN_PCT", "15"))  # 15% from peak equity
+MIN_CONVICTION = int(_env("MIN_CONVICTION", "3"))
+MAX_SLIPPAGE_PCT = float(_env("MAX_SLIPPAGE_PCT", "2.0"))  # 2% max
+EDGE_THRESHOLD = float(_env("EDGE_THRESHOLD", "0.05"))  # 5% min edge
 
 # ETH sizing — thinner book requires smaller bets
 # ETH avg spread: 3.98%, max bet @2% slippage: $149
@@ -39,7 +44,7 @@ ETH_MAX_BET_CEILING_PCT = 0.50  # Never exceed 50% of available liquidity @2%
 
 # ── Startup validation ───────────────────────────────────────────────────────
 
-if TRADING_ENABLED and not os.getenv("POLYMARKET_PRIVATE_KEY"):
+if TRADING_ENABLED and not _env("POLYMARKET_PRIVATE_KEY", ""):
     raise RuntimeError(
         "TRADING_ENABLED=true but POLYMARKET_PRIVATE_KEY not set. "
         "Set the env var or disable trading."
