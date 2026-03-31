@@ -219,6 +219,9 @@ def native_momentum_signal(outcomes, volumes, prices, min_streak=3):
     volumes: list of market volumes, aligned with outcomes
     prices: list of price_yes values, aligned with outcomes
 
+    Streak >= min_streak → ride the streak. Exhaustion gate removed 2026-03-31
+    (was a contrarian filter on a momentum strategy). See docs/daily/analysis_exhaustion_gate.md.
+
     Returns signal dict matching the live signal format.
     """
     if len(outcomes) < min_streak + 2:
@@ -241,35 +244,6 @@ def native_momentum_signal(outcomes, volumes, prices, min_streak=3):
         return {"should_trade": False, "reason": f"streak_too_short ({signed_streak})",
                 "estimate": 0.5, "direction": None, "streak": signed_streak}
 
-    # Native exhaustion signals (Polymarket data only)
-    exhaustion_types = []
-
-    # 1. Volume spike: last market volume > 1.8x average of recent markets
-    if len(volumes) >= 5:
-        avg_vol = sum(volumes[-5:]) / 5
-        if avg_vol > 0 and volumes[-1] / avg_vol > 1.8:
-            exhaustion_types.append("volume_spike")
-
-    # 2. Price compression: last 3 markets' price_yes converging toward 0.50
-    #    (market uncertainty increasing = exhaustion of the trend's conviction)
-    if len(prices) >= 3:
-        dist_from_50 = [abs(p - 0.5) for p in prices[-3:]]
-        if dist_from_50[0] > dist_from_50[1] > dist_from_50[2]:
-            exhaustion_types.append("price_compression")
-
-    # 3. Volume decline: last 3 markets show declining volume
-    #    (participation fading = trend losing steam, but may continue one more)
-    if len(volumes) >= 3:
-        if volumes[-3] > volumes[-2] > volumes[-1] and volumes[-1] > 0:
-            exhaustion_types.append("volume_decline")
-
-    has_exhaustion = len(exhaustion_types) > 0
-
-    if not has_exhaustion:
-        return {"should_trade": False, "reason": f"no_exhaustion (streak={signed_streak})",
-                "estimate": 0.5, "direction": None, "streak": signed_streak,
-                "exhaustion_types": []}
-
     # RIDE the streak (momentum)
     if signed_streak >= min_streak:
         estimate = 0.62
@@ -281,8 +255,6 @@ def native_momentum_signal(outcomes, volumes, prices, min_streak=3):
     confidence = "medium"
     if abs(signed_streak) >= 5:
         confidence = "high"
-    if len(exhaustion_types) >= 2:
-        confidence = "high"
 
     return {
         "should_trade": True,
@@ -290,7 +262,7 @@ def native_momentum_signal(outcomes, volumes, prices, min_streak=3):
         "direction": direction,
         "confidence": confidence,
         "streak": signed_streak,
-        "exhaustion_types": exhaustion_types,
+        "exhaustion_types": [],
         "reason": f"ride_streak_{direction}",
     }
 
@@ -538,19 +510,6 @@ def replay(db, window="5m", min_streak=3, autocorr_threshold=-0.15, lookback=20)
     for s in streak_rows:
         s_wr = s[2] / s[1] * 100 if s[1] > 0 else 0
         print(f"    streak={s[0]}: {s[1]} bets, {s_wr:.1f}% WR, ${s[3]:+,.2f} P&L")
-
-    # Breakdown by exhaustion type
-    print(f"\n  Exhaustion type breakdown:")
-    ex_rows = db.execute("""
-        SELECT exhaustion_type, COUNT(*), SUM(CASE WHEN correct=1 THEN 1 ELSE 0 END), SUM(pnl)
-        FROM backtest_results
-        WHERE conviction >= 3 AND exhaustion_type IS NOT NULL
-        GROUP BY exhaustion_type
-        ORDER BY COUNT(*) DESC
-    """).fetchall()
-    for e in ex_rows:
-        e_wr = e[2] / e[1] * 100 if e[1] > 0 else 0
-        print(f"    {e[0]}: {e[1]} bets, {e_wr:.1f}% WR, ${e[3]:+,.2f} P&L")
 
     return {
         "total": total, "bets": bets, "wins": wins, "wr": wr,
