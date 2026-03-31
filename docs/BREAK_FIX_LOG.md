@@ -4,6 +4,20 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## Frozen File Change: Remove Cooldown Flip Gate
+**Date:** March 31, 2026 | **Approved by:** User | **Severity:** Planned
+
+**Files touched:**
+- `src/predict.py` — Removed cooldown_flip gate (lines 493-513). Direction reversals at streak=min_streak are no longer suppressed.
+
+**Rationale:** On 2026-03-31, cooldown_flip blocked 3 trades that were all winners (100% counterfactual WR). The gate was added speculatively after Incident 5 but the regime gate (mean-reverting skip) already handles chop. Cooldown was net drag on live performance.
+
+**Tracking:** Daily report now includes "Filter Breakdown" section showing skip reasons and counterfactual WR. Revert if WR drops below 55% at 50+ bets post-change.
+
+**Rollback:** Re-add cooldown gate from git history (commit prior to this change).
+
+---
+
 ## Frozen File Change: Production Trading Env Vars
 **Date:** March 31, 2026 | **Approved by:** User | **Severity:** Planned
 
@@ -32,7 +46,7 @@ Production incidents and their root causes. Review before making changes.
 
 **Lesson:** A momentum signal in a range-bound market is a random number generator. The signal itself can't distinguish "genuine trend reversal" from "noise oscillation." Adding state (what did we bet last?) is cheap and filters the worst whipsaw cycles.
 
-**Regression tests:** `test_cooldown_blocks_rapid_flip()`, `test_cooldown_allows_same_direction()`, `test_cooldown_allows_strong_streak_flip()`
+**Regression tests:** ~~`test_cooldown_blocks_rapid_flip()`, `test_cooldown_allows_same_direction()`, `test_cooldown_allows_strong_streak_flip()`~~ Removed 2026-03-31 — cooldown gate removed after blocking 3/3 winning trades. Regime gate handles chop. See "Frozen File Change: Remove Cooldown Flip Gate" above.
 
 ---
 
