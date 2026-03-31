@@ -2,7 +2,7 @@
 daily_report.py — Daily morning analysis report.
 
 Generates a markdown report analyzing the previous day's predictions.
-Covers both 5m and 15m pipelines. Designed to run via GitHub Actions cron
+Covers all 3 pipelines (BTC 5m, BTC 15m, ETH 5m). Designed to run via GitHub Actions cron
 at 06:00 CST (12:00 UTC) daily, or on-demand.
 
 Output: docs/daily/YYYY-MM-DD.md
@@ -17,6 +17,7 @@ from pathlib import Path
 # Database paths
 DB_5M = Path(__file__).parent.parent / "data" / "predictions.db"
 DB_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
+DB_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 DAILY_DIR = Path(__file__).parent.parent / "docs" / "daily"
 
 # Conviction tier → bet size (must match dashboard.py)
@@ -705,7 +706,7 @@ def check_decisions(db_5m_path, db_15m_path):
     return alerts
 
 
-def format_report(date_str, data_5m, data_15m, decision_alerts=None):
+def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None):
     """Format analysis data into markdown report."""
     decision_alerts = decision_alerts or []
     lines = [
@@ -714,7 +715,12 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None):
         "",
     ]
 
-    for label, data in [("5-Minute Pipeline", data_5m), ("15-Minute Pipeline", data_15m)]:
+    pipelines = [
+        ("5-Minute Pipeline", data_5m),
+        ("15-Minute Pipeline", data_15m),
+        ("ETH 5-Minute Pipeline", data_eth),
+    ]
+    for label, data in pipelines:
         if data is None:
             continue
 
@@ -891,7 +897,7 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None):
         lines.append("")
 
     # Shadow indicators (experimental)
-    for label, data in [("5-Minute Pipeline", data_5m), ("15-Minute Pipeline", data_15m)]:
+    for label, data in pipelines:
         if data is None:
             continue
         shadow = data.get("shadow")
@@ -1098,12 +1104,12 @@ def update_index(daily_dir, date_str):
     index_path.write_text("\n".join(lines))
 
 
-def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None):
+def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None):
     """Generate concise markdown for GitHub Actions Job Summary."""
     decision_alerts = decision_alerts or []
     lines = [f"# Daily Report \u2014 {date_str}", ""]
 
-    for label, data in [("5m", data_5m), ("15m", data_15m)]:
+    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth)]:
         if data is None:
             lines.append(f"**{label}:** No data")
             lines.append("")
@@ -1158,7 +1164,8 @@ def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None):
     return "\n".join(lines)
 
 
-def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir=None, summary_path=None):
+def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir=None,
+                    summary_path=None, db_eth_path=None):
     """
     Main entry point. Generates daily report for the given date.
     Defaults to yesterday (UTC).
@@ -1169,27 +1176,26 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
 
     db_5m = db_5m_path or DB_5M
     db_15m = db_15m_path or DB_15M
+    db_eth = db_eth_path or DB_ETH
     daily_dir = Path(output_dir) if output_dir else DAILY_DIR
 
     print(f"Daily Report for {date_str}")
     print("=" * 40)
 
-    # Analyze both pipelines
+    # Analyze all 3 pipelines
     data_5m = analyze_pipeline(db_5m, date_str)
     data_15m = analyze_pipeline(db_15m, date_str)
+    data_eth = analyze_pipeline(db_eth, date_str)
 
-    if data_5m is None and data_15m is None:
+    if data_5m is None and data_15m is None and data_eth is None:
         print(f"  No predictions found for {date_str}")
         return None
 
-    if data_5m:
-        s = data_5m["summary"]
-        print(f"  5m: {s['total_predictions']} predictions, {s['resolved_bets']} resolved bets, "
-              f"{s['wr']}% WR, ${s['pnl']:+.2f} P&L")
-    if data_15m:
-        s = data_15m["summary"]
-        print(f"  15m: {s['total_predictions']} predictions, {s['resolved_bets']} resolved bets, "
-              f"{s['wr']}% WR, ${s['pnl']:+.2f} P&L")
+    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth)]:
+        if data:
+            s = data["summary"]
+            print(f"  {label}: {s['total_predictions']} predictions, {s['resolved_bets']} resolved bets, "
+                  f"{s['wr']}% WR, ${s['pnl']:+.2f} P&L")
 
     # Check decision triggers
     decision_alerts = check_decisions(db_5m, db_15m)
@@ -1203,7 +1209,8 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
     decision_alerts.extend(optimization_alerts)
 
     # Generate markdown
-    report = format_report(date_str, data_5m, data_15m, decision_alerts=decision_alerts)
+    report = format_report(date_str, data_5m, data_15m,
+                           decision_alerts=decision_alerts, data_eth=data_eth)
 
     # Write report file
     daily_dir.mkdir(parents=True, exist_ok=True)
@@ -1216,13 +1223,14 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
     print(f"  Index updated: {daily_dir / 'index.md'}")
 
     # Generate CI summary (for GitHub Actions Job Summary)
-    ci_summary = generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=decision_alerts)
+    ci_summary = generate_ci_summary(date_str, data_5m, data_15m,
+                                     decision_alerts=decision_alerts, data_eth=data_eth)
     if summary_path:
         Path(summary_path).write_text(ci_summary)
         print(f"  CI summary: {summary_path}")
 
     # Print alerts
-    for label, data in [("5m", data_5m), ("15m", data_15m)]:
+    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth)]:
         if data and data["alerts"]:
             print(f"\n  {label} Alerts:")
             for alert in data["alerts"]:
