@@ -1168,15 +1168,49 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
         </div>
     </div>"""
 
-    # -- Observation Mode Banner (asset-aware) --
-    if asset == "ETH":
-        obs_title = "PAPER TRADING — ETH CONTRARIAN"
-        obs_detail = "Fade streaks on exhaustion. Phase 2 validated contrarian at 54.4% WR on 1,601 markets. Collecting 200+ paper trades before going live."
+    # -- Trading Status Banner (asset-aware) --
+    # Detect live vs paper from orders data
+    is_live = orders_data and orders_data.get("mode") == "LIVE"
+    kill_switch_active = Path(__file__).parent.parent.joinpath("data", "KILL_SWITCH").exists()
+
+    if kill_switch_active:
+        obs_bg = "rgba(244,67,54,0.15)"
+        obs_border = "#f44336"
+        obs_title = "&#128308; KILL SWITCH ACTIVE"
+        obs_color = "#f44336"
+        obs_detail = "All trading halted. Remove data/KILL_SWITCH file or set KILL_SWITCH=false to resume."
+    elif is_live:
+        # Check circuit breaker status
+        daily_loss = abs(orders_data.get("today_pnl", 0)) if orders_data.get("today_pnl", 0) < 0 else 0
+        breaker_pct = (daily_loss / 300) * 100  # DAILY_LOSS_LIMIT=300
+        if breaker_pct >= 100:
+            obs_bg = "rgba(244,67,54,0.15)"
+            obs_border = "#f44336"
+            obs_title = "&#128308; CIRCUIT BREAKER TRIPPED"
+            obs_color = "#f44336"
+            obs_detail = f"Daily loss limit reached (${daily_loss:.0f}/$300). Trading paused until tomorrow."
+        else:
+            obs_bg = "rgba(63,185,80,0.12)"
+            obs_border = "#238636"
+            obs_title = "&#9889; LIVE TRADING ACTIVE"
+            obs_color = "#3fb950"
+            breaker_bar = f"Circuit breaker: {breaker_pct:.0f}% (${daily_loss:.0f}/$300)"
+            bet_size = orders_data.get("bet_size", 25)
+            obs_detail = f"Flat ${bet_size:.0f} per bet &middot; {breaker_bar}"
+    elif asset == "ETH":
+        obs_bg = "rgba(88,166,255,0.12)"
+        obs_border = "#1f6feb"
+        obs_title = "&#128203; PAPER TRADING — ETH CONTRARIAN"
+        obs_color = "#58a6ff"
+        obs_detail = "Fade streaks on exhaustion. Phase 2 validated contrarian at 54.4% WR on 1,601 markets."
     else:
-        obs_title = "PAPER TRADING — V4 MOMENTUM"
-        obs_detail = "Inverted contrarian: ride the streak. V3 contrarian lost at 37% WR / -$962. Validating momentum before going live."
-    observation_html = f"""<div style="background:rgba(88,166,255,0.12);border:1px solid #1f6feb;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">{obs_title}</div>
+        obs_bg = "rgba(88,166,255,0.12)"
+        obs_border = "#1f6feb"
+        obs_title = "&#128203; PAPER TRADING — V4 MOMENTUM"
+        obs_color = "#58a6ff"
+        obs_detail = "Ride the streak. Flat $25 production grind. Validating execution before going live."
+    observation_html = f"""<div style="background:{obs_bg};border:1px solid {obs_border};border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:{obs_color};letter-spacing:1px">{obs_title}</div>
         <div style="color:#8b949e;font-size:13px;margin-top:4px">{obs_detail}</div>
     </div>"""
 

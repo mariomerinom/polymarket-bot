@@ -37,11 +37,21 @@ EDGE_THRESHOLD = float(os.getenv("EDGE_THRESHOLD", "0.05"))  # 5% min edge
 ETH_BET_SIZES = {3: 25, 4: 50, 5: 75}
 ETH_MAX_BET_CEILING_PCT = 0.50  # Never exceed 50% of available liquidity @2%
 
+# ── Startup validation ───────────────────────────────────────────────────────
+
+if TRADING_ENABLED and not os.getenv("POLYMARKET_PRIVATE_KEY"):
+    raise RuntimeError(
+        "TRADING_ENABLED=true but POLYMARKET_PRIVATE_KEY not set. "
+        "Set the env var or disable trading."
+    )
+
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 def ensure_orders_table(db):
-    """Create orders table if it doesn't exist."""
+    """Create orders table if it doesn't exist. Enables WAL mode for concurrency."""
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA busy_timeout=5000")
     db.execute("""
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -336,8 +346,20 @@ def _submit_clob_order(token_id, side, size, price):
         side=clob_side,
     )
 
-    # GTC = Good-Til-Cancelled limit order
-    response = client.create_and_post_order(order_args, order_type=OrderType.GTC)
+    # GTC = Good-Til-Cancelled limit order, with timeout guard
+    import signal as _signal
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError("CLOB order submission timed out after 10s")
+
+    old_handler = _signal.signal(_signal.SIGALRM, _timeout_handler)
+    _signal.alarm(10)  # 10-second hard timeout
+    try:
+        response = client.create_and_post_order(order_args, order_type=OrderType.GTC)
+    finally:
+        _signal.alarm(0)  # Cancel alarm
+        _signal.signal(_signal.SIGALRM, old_handler)
+
     return response
 
 
@@ -471,6 +493,7 @@ def execute_trades(db, cycle):
         FROM predictions p
         JOIN markets m ON p.market_id = m.id
         WHERE p.cycle = ? AND p.conviction_score >= ?
+        AND m.resolved = 0
         AND p.market_id NOT IN (
             SELECT market_id FROM orders WHERE cycle = ?
         )
