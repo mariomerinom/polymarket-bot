@@ -399,7 +399,11 @@ def compute_ensemble(resolved):
     }
 
 
-def compute_pnl(resolved, unit_bet=100):
+BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
+ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 50, 5: 75}
+
+
+def compute_pnl(resolved, unit_bet=100, conviction_bets=None):
     """Simulate P&L using conviction-tier bet sizing.
 
     Conviction tiers determine bet size:
@@ -411,7 +415,7 @@ def compute_pnl(resolved, unit_bet=100):
     - Wins are variable: profit = bet × (1/price - 1)
     - Losses are fixed: always exactly -bet_size
     """
-    CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
+    CONVICTION_BETS = conviction_bets or BTC_CONVICTION_BETS
 
     agents = defaultdict(lambda: {
         "total_pnl": 0.0,
@@ -492,9 +496,9 @@ def compute_pnl(resolved, unit_bet=100):
     return dict(agents)
 
 
-def compute_ensemble_pnl(resolved, unit_bet=100):
+def compute_ensemble_pnl(resolved, unit_bet=100, conviction_bets=None):
     """Ensemble P&L using conviction-tier bet sizing. Only bets on MEDIUM+ conviction."""
-    CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
+    CONVICTION_BETS = conviction_bets or BTC_CONVICTION_BETS
     WEIGHTS = {"momentum_rule": 1.0, "contrarian_rule": 1.0, "contrarian": 0.55, "volume_wick": 0.45}
 
     market_data = defaultdict(lambda: {"agents": [], "outcome": None, "price_yes": None, "conviction": 0})
@@ -1116,8 +1120,9 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
         resolved = get_resolved_predictions(db)
         agent_stats = compute_agent_stats(resolved)
         ensemble = compute_ensemble(resolved)
-        agent_pnl = compute_pnl(resolved)
-        ensemble_pnl = compute_ensemble_pnl(resolved)
+        sizing = ETH_CONVICTION_BETS if asset == "ETH" else BTC_CONVICTION_BETS
+        agent_pnl = compute_pnl(resolved, conviction_bets=sizing)
+        ensemble_pnl = compute_ensemble_pnl(resolved, conviction_bets=sizing)
         calibration = compute_confidence_calibration(resolved)
         conviction_tiers = compute_conviction_breakdown(resolved)
         rolling = compute_rolling_accuracy(resolved)

@@ -229,6 +229,52 @@ class TestPlaceOrder:
         db.close()
 
 
+class TestGetBetSize:
+    """ETH-specific sizing: tiered by conviction, capped by book depth."""
+
+    def test_btc_flat_25(self):
+        from trade import get_bet_size
+        row = {"agent": "momentum_rule", "conviction_score": 4}
+        assert get_bet_size(row) == 25
+
+    def test_eth_conv3(self):
+        from trade import get_bet_size
+        row = {"agent": "contrarian_eth", "conviction_score": 3}
+        assert get_bet_size(row) == 25
+
+    def test_eth_conv4(self):
+        from trade import get_bet_size
+        row = {"agent": "contrarian_eth", "conviction_score": 4}
+        assert get_bet_size(row) == 50
+
+    def test_eth_conv5(self):
+        from trade import get_bet_size
+        row = {"agent": "contrarian_eth", "conviction_score": 5}
+        assert get_bet_size(row) == 75
+
+    def test_eth_capped_by_liquidity(self):
+        from trade import get_bet_size
+        row = {"agent": "contrarian_eth", "conviction_score": 5}
+        liq = {"max_bet_2pct": 60}  # 50% of 60 = 30, less than base 75
+        assert get_bet_size(row, liquidity=liq) == 30
+
+    def test_eth_no_liquidity_returns_base(self):
+        from trade import get_bet_size
+        row = {"agent": "contrarian_eth", "conviction_score": 4}
+        assert get_bet_size(row, liquidity=None) == 50
+
+    def test_eth_liquidity_error_returns_base(self):
+        from trade import get_bet_size
+        row = {"agent": "contrarian_eth", "conviction_score": 4}
+        liq = {"error": "no data"}
+        assert get_bet_size(row, liquidity=liq) == 50
+
+    def test_eth_conv0_returns_zero(self):
+        from trade import get_bet_size
+        row = {"agent": "contrarian_eth", "conviction_score": 0}
+        assert get_bet_size(row) == 0
+
+
 class TestKillSwitch:
     """Kill switch halts all trading."""
 

@@ -24,6 +24,8 @@ Source: [Pipeline Recommendations Mar 25–27](daily/pipeline_recommendations_ma
 | 12 | Audit candle-to-resolution timing | Before Part 6 (live trading) | 5m | MONITORING | Peer review: timing drift between candle fetch and Polymarket resolution could hurt. Need to verify CI execution happens early enough in the 5-min window, not at the boundary. |
 | 13 | Surface Brier score in daily report | Next daily report iteration | 5m+15m | MONITORING | Peer review: WR alone hides calibration problems. Brier is computed (score.py) but not prominently surfaced in reports. |
 | 14 | Production sizing: flat grind, not tiered | Before live trading launch | 5m+15m+ETH | READY | Concentration risk: last 50 bets avg $215 (35 at $200, 8 at $300) vs early $75 flat. Production launches with flat small bets (e.g. $25). Kelly only after bankroll builds from profits. Thin book caps max size via CLOB depth. Paper tiers stay for data collection. |
+| 15 | ETH model: deploy adapted model | ETH shadow WR > 55% at 50+ shadow-logged predictions with RSI/OBV/VWAP | ETH | MONITORING | Spec: docs/daily/spec_eth_model_training.md. Option B (adaptation layer) first. Regime recalibration + correlation features + ETH conviction scorer. Do not deploy live ETH bets until shadow clears 50 bets > 55% WR. ETH sizing codified: $25/$50/$75 by conviction, capped at 50% of CLOB max@2%. |
+| 16 | Recalibrate ETH regime thresholds | ETH HIGH_VOL predictions > 80% of total for 7+ days | ETH | MONITORING | 93% of ETH predictions land in HIGH_VOL — BTC thresholds don't fit ETH's higher baseline vol. Proposed shift: LOW 0→1.2, MEDIUM 1.2→2.2, HIGH 2.2+. Blocked on: 50+ shadow predictions for before/after comparison. |
 
 ---
 
