@@ -86,6 +86,17 @@ def main():
     else:
         print("  No unpredicted ETH markets")
 
+    # Shadow indicators — log RSI/OBV/VWAP for ETH predictions
+    try:
+        from shadow_indicators import shadow_log_indicators
+        eth_candles_shadow = fetch_eth_candles(limit=30)
+        if eth_candles_shadow and eth_candles_shadow.get("candles"):
+            shadow = shadow_log_indicators(db, cycle, candles=eth_candles_shadow["candles"])
+            if shadow:
+                print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
+    except Exception as e:
+        print(f"    [SHADOW] skipped: {e}")
+
     # 4. Score
     print("[4/5] Scoring...")
     results = calculate_brier_scores(db)

@@ -275,3 +275,31 @@ class TestShadowLogIntegration:
             "SELECT COUNT(*) FROM predictions WHERE agent = 'vwap_meanrev'"
         ).fetchone()[0]
         assert count == 1, f"Expected 1 VWAP prediction, got {count}"
+
+    def test_shadow_log_accepts_candles_param(self):
+        """When candles are passed directly, _fetch_candles is NOT called."""
+        db = _create_test_db()
+        reasoning = json.dumps({"mkt_price": 0.60})
+        db.execute(
+            "INSERT INTO predictions (market_id, agent, estimate, edge, confidence, "
+            "reasoning, predicted_at, cycle, conviction_score, regime) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("mkt1", "momentum_rule", 0.62, 0.12, "high", reasoning,
+             "2026-01-01T00:00:00", 1, 3, "MEDIUM_VOL / NEUTRAL"),
+        )
+        db.commit()
+
+        candles = _make_candles([100 + i for i in range(20)])
+
+        with patch("shadow_indicators._fetch_candles") as mock_fetch:
+            result = shadow_log_indicators(db, cycle=1, candles=candles)
+
+        # _fetch_candles must NOT have been called
+        mock_fetch.assert_not_called()
+
+        # Indicators should still be logged
+        row = db.execute("SELECT reasoning FROM predictions WHERE id = 1").fetchone()
+        updated = json.loads(row[0])
+        assert "shadow_rsi_14" in updated
+        assert isinstance(updated["shadow_rsi_14"], float)
+        assert result.get("updated") == 1

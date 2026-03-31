@@ -89,6 +89,17 @@ def main():
     else:
         print("  No unpredicted markets")
 
+    # Shadow indicators — log RSI/OBV/VWAP for BTC 15m predictions
+    try:
+        from shadow_indicators import shadow_log_indicators
+        btc_15m_shadow = fetch_btc_candles(limit=30, interval="15m")
+        if btc_15m_shadow and btc_15m_shadow.get("candles"):
+            shadow = shadow_log_indicators(db, cycle, candles=btc_15m_shadow["candles"])
+            if shadow:
+                print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
+    except Exception as e:
+        print(f"    [SHADOW] skipped: {e}")
+
     # 4. Score
     print("[15M 4/5] Scoring...")
     results = calculate_brier_scores(db)
