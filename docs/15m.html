@@ -607,19 +607,19 @@ tr:hover {
     <div class="status-bar">
         <div class="status-item">
             <span class="status-label">Status</span>
-            <span class="status-value" style="color:#da3633">Stale</span>
+            <span class="status-value" style="color:#238636">Active</span>
         </div>
         <div class="status-item">
             <span class="status-label">Last Cycle</span>
-            <span class="status-value">2026-03-30 23:03 UTC</span>
+            <span class="status-value">2026-03-31 01:59 UTC</span>
         </div>
         <div class="status-item">
             <span class="status-label">Markets</span>
-            <span class="status-value">359 / 359 resolved</span>
+            <span class="status-value">359 / 365 resolved</span>
         </div>
         <div class="status-item">
             <span class="status-label">Next Market</span>
-            <span class="status-value" id="countdown" >--</span>
+            <span class="status-value" id="countdown" data-next-market="2026-03-31T02:00:00Z">--</span>
         </div>
         <div class="status-item">
             <span class="status-label">Evolutions</span>
@@ -643,21 +643,26 @@ tr:hover {
             </div>
         </div>
         <div class="pipeline-meta">
-            <div class="pipeline-detail">Avg gap: 88min &middot; 50 total &middot; 49 missed</div>
-            <div class='pipeline-ago'>Last cycle: 54m ago</div>
+            <div class="pipeline-detail">Avg gap: 91min &middot; 50 total &middot; 49 missed</div>
+            <div class='pipeline-ago'>Last cycle: 1m ago</div>
         </div>
     </div>
 
     <div class="live-banner"><div class="live-card">
             <div class="live-label">BTC Price</div>
-            <div class="live-value">$66,694</div>
-            <div class="live-detail" style="color:#3fb950">+0.068% &middot; NEUTRAL</div>
+            <div class="live-value">$67,905</div>
+            <div class="live-detail" style="color:#3fb950">+0.302% &middot; NEUTRAL</div>
         </div><div class="live-card live-result" style="background:rgba(63,185,80,0.15);border-color:#238636">
             <div class="live-label">Last Result</div>
             <div class="live-verdict" style="color:#3fb950">&#10003; ALL HIT</div>
             <div class="live-outcome">Resolved <span style="color:#f44336;font-weight:700">DOWN &#9660;</span></div>
             <div class="live-detail">Bitcoin Up or Down - March 30, 7:00PM-7:...</div>
             <div class="result-chips"><span class="result-chip" style="background:rgba(63,185,80,0.15);border:1px solid #238636;color:#238636">&#10003; momentum_rule 30%</span> </div>
+        </div><div class="live-card">
+            <div class="live-label">Current Prediction</div>
+            <div class="live-value" style="color:#58a6ff">Mkt 80%</div>
+            <div class="live-detail">Bitcoin Up or Down - March 30, 9:45PM-10:00PM...</div>
+            <div class="live-sub">momentum_rule:80%(skip)</div>
         </div></div>
 
     <h2>Performance</h2>
@@ -873,6 +878,17 @@ tr:hover {
             <th>Max Bet @2%</th>
         </tr></thead>
         <tbody><tr>
+                <td class="agent-name">momentum_rule</td>
+                <td title="Bitcoin Up or Down - March 30, 9:45PM-10:00PM ET">Bitcoin Up or Down - March 30, 9:45PM-10:00PM ET</td>
+                <td>80.5%</td>
+                <td>80.5%</td>
+                <td>+30.5%</td>
+                <td>skip</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+                <td>C96</td>
+                <td>—</td>
+                <td>—</td>
+            </tr><tr>
                 <td class="agent-name">momentum_rule</td>
                 <td title="Bitcoin Up or Down - March 30, 7:00PM-7:15PM ET">Bitcoin Up or Down - March 30, 7:00PM-7:15PM ET</td>
                 <td>30.5%</td>
@@ -1411,17 +1427,6 @@ tr:hover {
                 <td>C47</td>
                 <td>—</td>
                 <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_rule</td>
-                <td title="Bitcoin Up or Down - March 27, 6:45PM-7:00PM ET">Bitcoin Up or Down - March 27, 6:45PM-7:00PM ET</td>
-                <td>62.0%</td>
-                <td>64.5%</td>
-                <td>+12.0%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C46</td>
-                <td>—</td>
-                <td>—</td>
             </tr></tbody>
     </table>
     </div>
@@ -1456,6 +1461,48 @@ tr:hover {
             <th>Status</th>
         </tr></thead>
         <tbody><tr>
+                <td title="Bitcoin Up or Down - March 30, 9:45PM-10:00PM ET">Bitcoin Up or Down - March 30, 9:45PM-10:00PM ET</td>
+                <td>crypto</td>
+                <td>80.5%</td>
+                <td>$80,842</td>
+                <td>2026-03-31</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 30, 10:00PM-10:15PM ET">Bitcoin Up or Down - March 30, 10:00PM-10:15PM ET</td>
+                <td>crypto</td>
+                <td>44.5%</td>
+                <td>$2,224</td>
+                <td>2026-03-31</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 30, 10:15PM-10:30PM ET">Bitcoin Up or Down - March 30, 10:15PM-10:30PM ET</td>
+                <td>crypto</td>
+                <td>49.5%</td>
+                <td>$105</td>
+                <td>2026-03-31</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 30, 10:30PM-10:45PM ET">Bitcoin Up or Down - March 30, 10:30PM-10:45PM ET</td>
+                <td>crypto</td>
+                <td>50.0%</td>
+                <td>$44</td>
+                <td>2026-03-31</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 30, 10:45PM-11:00PM ET">Bitcoin Up or Down - March 30, 10:45PM-11:00PM ET</td>
+                <td>crypto</td>
+                <td>50.5%</td>
+                <td>$42</td>
+                <td>2026-03-31</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
+                <td title="Bitcoin Up or Down - March 30, 11:00PM-11:15PM ET">Bitcoin Up or Down - March 30, 11:00PM-11:15PM ET</td>
+                <td>crypto</td>
+                <td>50.5%</td>
+                <td>$2</td>
+                <td>2026-03-31</td>
+                <td><span class="badge badge-pending">Pending</span></td>
+            </tr><tr>
                 <td title="Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET">Bitcoin Up or Down - March 25, 6:15PM-6:30PM ET</td>
                 <td>crypto</td>
                 <td>40.5%</td>
