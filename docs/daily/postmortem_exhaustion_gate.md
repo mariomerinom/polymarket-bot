@@ -127,16 +127,30 @@ The gate was effectively a hidden regime dependency: it worked in high-volatilit
 
 66.9% WR is excellent. There was no "it's broken" signal — just a gradually quieter bot. Paper trading success metrics (WR, P&L, ROI) were all positive. The failure mode wasn't bad bets — it was *missing* bets. And you can't see missing bets unless you track the counterfactual.
 
-## Backtest Validation
+## Backtest Contradicts Live Data
 
-The native Polymarket backtest (8,896 markets, 30 days) shows a different dynamic:
+The native Polymarket backtest (8,896 markets, 30 days) says the opposite of the live counterfactual:
 
 | Config | Bets | WR | P&L |
 |--------|------|----|-----|
 | With exhaustion | 140 | 52.9% | +$1,100 |
 | Without exhaustion | 1,755 | 49.0% | -$6,750 |
 
-The backtest uses Polymarket outcome sequences (not exchange candle data) and consistently runs ~15pp below live WR. The live system's candle-based streaks capture actual BTC price action that native outcomes don't. The backtest is useful for relative comparisons but not for absolute WR prediction.
+**The backtest says removing the gate makes things worse.** 49.0% WR is below breakeven. The gate adds +3.9pp and turns a losing strategy into a marginally winning one. On this data, the exhaustion gate is the only thing standing between the signal and a coin flip.
+
+**The live data says the opposite.** Filtered predictions hit 85% WR (n=100) vs 66.9% for kept predictions (n=245), consistently across 9 days with no day below 70%.
+
+These two data sources disagree, and we cannot reconcile them cleanly. The backtest uses Polymarket binary outcome sequences to detect streaks; the live system uses Kraken/Coinbase BTC candle data. These are correlated but not identical — a sequence of 5-minute market outcomes resolving UP is not the same thing as 3 consecutive green candles on an exchange. The backtest structurally underperforms live by ~15pp on absolute WR, but if the offset were uniform, the *relative* comparison (with vs without gate) should still hold — and it favors keeping the gate.
+
+**We are choosing to trust the live data.** This is a judgment call, not a certainty. The reasoning:
+
+1. The live signal uses the actual data source that production runs on. The backtest approximates it.
+2. The live counterfactual has 100 observations across 9 independent days. Small, but consistent.
+3. The theoretical argument (exhaustion is a contrarian filter on a momentum strategy) supports the live data's direction, not the backtest's.
+
+**But we could be wrong.** If the live counterfactual's 85% WR was an artifact of the specific market regime during Mar 23-31 (e.g., BTC happened to trend cleanly enough that even unconfirmed streaks won), then removing the gate will hurt in choppier conditions. The backtest covers a wider date range (Feb 26 - Mar 28) and may capture regimes the live window missed.
+
+**This is the risk we're carrying.** The revert criteria exist for this reason: if WR drops below 60% at 100+ bets, restore the gate. The daily filter breakdown will surface any degradation early.
 
 ## What Changed
 
