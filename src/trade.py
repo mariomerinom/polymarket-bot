@@ -31,6 +31,12 @@ MIN_CONVICTION = int(os.getenv("MIN_CONVICTION", "3"))
 MAX_SLIPPAGE_PCT = float(os.getenv("MAX_SLIPPAGE_PCT", "2.0"))  # 2% max
 EDGE_THRESHOLD = float(os.getenv("EDGE_THRESHOLD", "0.05"))  # 5% min edge
 
+# ETH sizing — thinner book requires smaller bets
+# ETH avg spread: 3.98%, max bet @2% slippage: $149
+# Activates when trade.py handles ETH markets (conv≥3)
+ETH_BET_SIZES = {3: 25, 4: 50, 5: 75}
+ETH_MAX_BET_CEILING_PCT = 0.50  # Never exceed 50% of available liquidity @2%
+
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -149,6 +155,25 @@ def _check_drawdown_pct(db):
     return (drawdown / peak) * 100
 
 
+def get_bet_size(prediction_row, liquidity=None):
+    """Return bet size based on asset and conviction.
+
+    BTC: flat $25 (medium grind phase).
+    ETH: tiered by conviction, capped by book depth.
+    """
+    agent = prediction_row.get("agent", "")
+    conviction = prediction_row.get("conviction_score", 0)
+
+    if "eth" in agent.lower() or "contrarian" in agent.lower():
+        base = ETH_BET_SIZES.get(conviction, 0)
+        if liquidity and not liquidity.get("error"):
+            ceiling = liquidity.get("max_bet_2pct", float("inf")) * ETH_MAX_BET_CEILING_PCT
+            return min(base, ceiling)
+        return base
+
+    return BET_SIZE  # BTC flat $25
+
+
 def compute_order(prediction_row, market_row, liquidity=None):
     """
     Compute order parameters from a prediction.
@@ -171,8 +196,8 @@ def compute_order(prediction_row, market_row, liquidity=None):
         token = "no"
         price_limit = min(1 - estimate, market_row.get("price_no", 0.5) + 0.02)
 
-    # Thin book constraint: cap size at what the book can absorb
-    size = BET_SIZE
+    # Asset-aware sizing: BTC flat $25, ETH tiered by conviction
+    size = get_bet_size(prediction_row, liquidity)
     if liquidity and not liquidity.get("error"):
         max_book = liquidity.get("max_bet_2pct", float("inf"))
         if max_book < size:

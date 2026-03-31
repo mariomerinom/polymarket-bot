@@ -21,7 +21,9 @@ DB_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 DAILY_DIR = Path(__file__).parent.parent / "docs" / "daily"
 
 # Conviction tier → bet size (must match dashboard.py)
-CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
+BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
+ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 50, 5: 75}
+CONVICTION_BETS = BTC_CONVICTION_BETS  # default for backward compat
 
 # Trade execution constants (safe import from trade.py)
 try:
@@ -1034,9 +1036,16 @@ def analyze_shadow_indicators(predictions, resolved):
 
 
 def analyze_pipeline(db_path, date_str):
-    """Run full analysis for one pipeline (5m or 15m)."""
+    """Run full analysis for one pipeline (5m, 15m, or ETH)."""
+    global CONVICTION_BETS
     if not Path(db_path).exists():
         return None
+
+    # Use ETH sizing for ETH pipeline
+    is_eth = "eth" in str(db_path).lower()
+    old_bets = CONVICTION_BETS
+    if is_eth:
+        CONVICTION_BETS = ETH_CONVICTION_BETS
 
     db = sqlite3.connect(db_path)
     db.row_factory = sqlite3.Row
@@ -1046,20 +1055,23 @@ def analyze_pipeline(db_path, date_str):
 
     if not predictions:
         db.close()
+        CONVICTION_BETS = old_bets
         return None
 
-    summary = analyze_summary(predictions, resolved)
-    regimes = analyze_regime_distribution(predictions)
-    directions = analyze_direction(resolved)
-    price_buckets = analyze_price_buckets(resolved)
-    conviction = analyze_conviction_tiers(resolved)
-    liquidity = analyze_liquidity(predictions)
-    rolling = rolling_trend(db, date_str, window=7)
-    orders = analyze_orders(db_path, date_str)
-    alerts = generate_alerts(summary, rolling, orders=orders)
-    shadow = analyze_shadow_indicators(predictions, resolved)
-
-    db.close()
+    try:
+        summary = analyze_summary(predictions, resolved)
+        regimes = analyze_regime_distribution(predictions)
+        directions = analyze_direction(resolved)
+        price_buckets = analyze_price_buckets(resolved)
+        conviction = analyze_conviction_tiers(resolved)
+        liquidity = analyze_liquidity(predictions)
+        rolling = rolling_trend(db, date_str, window=7)
+        orders = analyze_orders(db_path, date_str)
+        alerts = generate_alerts(summary, rolling, orders=orders)
+        shadow = analyze_shadow_indicators(predictions, resolved)
+    finally:
+        db.close()
+        CONVICTION_BETS = old_bets
 
     return {
         "summary": summary,
