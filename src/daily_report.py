@@ -248,6 +248,65 @@ def analyze_conviction_tiers(resolved):
     return dict(tiers)
 
 
+def analyze_filter_breakdown(predictions, resolved):
+    """Analyze skip reasons and counterfactual WR for filtered predictions.
+
+    Extracts the 'reason' field from prediction reasoning JSON to show
+    which filters are blocking bets and whether they're helping or hurting.
+    """
+    skip_reasons = defaultdict(lambda: {"count": 0, "resolved": 0, "would_win": 0})
+
+    for p in predictions:
+        conv = p.get("conviction_score") or 0
+        if conv >= 3:
+            continue  # not a skip
+
+        reasoning = p.get("reasoning")
+        if not reasoning:
+            continue
+        try:
+            data = json.loads(reasoning) if isinstance(reasoning, str) else reasoning
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        signal = data.get("signal", {})
+        reason = signal.get("reason", "unknown")
+
+        # Bucket similar reasons
+        if reason.startswith("streak_too_short"):
+            bucket = "streak_too_short"
+        elif reason.startswith("no_exhaustion"):
+            bucket = "no_exhaustion"
+        elif reason.startswith("cooldown_flip"):
+            bucket = "cooldown_flip"
+        elif reason.startswith("price_gate"):
+            bucket = "price_gate"
+        elif reason.startswith("time_gate"):
+            bucket = "time_gate"
+        elif reason.startswith("regime_skip"):
+            bucket = "regime_skip"
+        else:
+            bucket = reason
+
+        skip_reasons[bucket]["count"] += 1
+
+        # Counterfactual: if we had bet momentum, would it have won?
+        if p.get("resolved") == 1 and p.get("outcome") is not None:
+            streak_str = reason.split("streak=")[-1].rstrip(")") if "streak=" in reason else ""
+            try:
+                streak = int(streak_str)
+            except (ValueError, TypeError):
+                streak = 0
+
+            if abs(streak) >= 3:
+                skip_reasons[bucket]["resolved"] += 1
+                would_est = 0.62 if streak > 0 else 0.38
+                if is_correct(would_est, p["outcome"]):
+                    skip_reasons[bucket]["would_win"] += 1
+
+    return dict(skip_reasons)
+
+
 def analyze_liquidity(predictions):
     """Analyze CLOB liquidity data from prediction reasoning JSON.
 
@@ -754,6 +813,21 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 lines.append(f"| {regime} | {r['total']} | {r['bets']} | {r['skips']} |")
             lines.append("")
 
+        # Filter breakdown
+        if data.get("filters"):
+            lines.extend([
+                "### Filter Breakdown",
+                "| Filter | Skipped | Counterfactual WR |",
+                "|--------|---------|-------------------|",
+            ])
+            for reason, f in sorted(data["filters"].items(), key=lambda x: -x[1]["count"]):
+                if f["resolved"] > 0:
+                    cf_wr = f"{f['would_win']}/{f['resolved']} ({f['would_win']/f['resolved']*100:.0f}%)"
+                else:
+                    cf_wr = "—"
+                lines.append(f"| {reason} | {f['count']} | {cf_wr} |")
+            lines.append("")
+
         # Direction analysis
         if data["directions"]:
             lines.extend([
@@ -1065,6 +1139,7 @@ def analyze_pipeline(db_path, date_str):
         price_buckets = analyze_price_buckets(resolved)
         conviction = analyze_conviction_tiers(resolved)
         liquidity = analyze_liquidity(predictions)
+        filters = analyze_filter_breakdown(predictions, resolved)
         rolling = rolling_trend(db, date_str, window=7)
         orders = analyze_orders(db_path, date_str)
         alerts = generate_alerts(summary, rolling, orders=orders)
@@ -1083,6 +1158,7 @@ def analyze_pipeline(db_path, date_str):
         "rolling": rolling,
         "orders": orders,
         "alerts": alerts,
+        "filters": filters,
         "shadow": shadow,
     }
 
