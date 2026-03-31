@@ -4,17 +4,19 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
-## Frozen File Change: Remove Cooldown Flip Gate
+## Frozen File Change: Remove Exhaustion Gate + Cooldown Flip Gate
 **Date:** March 31, 2026 | **Approved by:** User | **Severity:** Planned
 
 **Files touched:**
-- `src/predict.py` — Removed cooldown_flip gate (lines 493-513). Direction reversals at streak=min_streak are no longer suppressed.
+- `src/predict.py` — Removed exhaustion gate (compression, volume spike, shrinking range checks) and cooldown_flip gate. Momentum signal now fires on streak >= 3 alone.
 
-**Rationale:** On 2026-03-31, cooldown_flip blocked 3 trades that were all winners (100% counterfactual WR). The gate was added speculatively after Incident 5 but the regime gate (mean-reverting skip) already handles chop. Cooldown was net drag on live performance.
+**Rationale:**
+- **Exhaustion gate:** Filtered predictions hit 85% WR (n=100, 9 days, no day below 70%) vs 67% WR for kept predictions. -18pp delta. The gate was a contrarian filter (selects for dying trends) on a momentum strategy (needs healthy trends). Pass rate dropped from 77% to 54% over one week as BTC candle sizes became more uniform, pushing range_ratio below the 0.7 threshold. Full analysis: `docs/daily/analysis_exhaustion_gate.md`.
+- **Cooldown flip:** Blocked 3/3 winning trades. Regime gate already handles chop.
 
-**Tracking:** Daily report now includes "Filter Breakdown" section showing skip reasons and counterfactual WR. Revert if WR drops below 55% at 50+ bets post-change.
+**Tracking:** Daily report filter breakdown section. Revert if WR drops below 60% at 100+ bets.
 
-**Rollback:** Re-add cooldown gate from git history (commit prior to this change).
+**Rollback:** Re-add gates from git history (commit prior to this change).
 
 ---
 

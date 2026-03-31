@@ -91,8 +91,10 @@ def test_streak_3_down_with_volume_spike():
     assert result["direction"] == "DOWN"
 
 
-def test_streak_without_exhaustion_no_trade():
-    """Streak ≥ 3 but no exhaustion signal → no trade."""
+def test_streak_without_exhaustion_still_trades():
+    """Streak >= 3 without exhaustion signals should still fire.
+    Exhaustion gate removed 2026-03-31 — filtered predictions hit 85% WR.
+    """
     candles = []
     price = 100.0
     # 10 candles, last 4 UP, all same range, no volume spike
@@ -108,8 +110,8 @@ def test_streak_without_exhaustion_no_trade():
         price = c
 
     result = momentum_signal(candles)
-    assert result["should_trade"] is False
-    assert "no_exhaustion" in result["reason"]
+    assert result["should_trade"] is True
+    assert result["direction"] == "UP"
 
 
 def test_high_confidence_streak_5():
@@ -134,7 +136,7 @@ def test_high_confidence_streak_5():
 
 
 def test_streak_2_fires_with_min_streak_2():
-    """Streak=2 + exhaustion fires when min_streak=2 (15m mode)."""
+    """Streak=2 fires when min_streak=2 (15m mode)."""
     candles = []
     price = 100.0
     # 8 mixed candles
