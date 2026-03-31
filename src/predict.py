@@ -5,7 +5,7 @@ V4: No LLM agents. Pure computation from BTC candle data.
 - Fetch 20 candles from Kraken/Coinbase
 - Compute regime (volatility + autocorrelation)
 - If mean-reverting → skip
-- If streak >= 3 + exhaustion → RIDE the streak (momentum)
+- If streak >= 3 → RIDE the streak (momentum)
 - Cost: $0/day
 
 History: V3 contrarian (fade) lost at 37% WR on live Polymarket.
@@ -80,13 +80,14 @@ def compute_regime_from_candles(candles, autocorr_threshold=-0.15):
 
 def momentum_signal(candles, min_streak=3):
     """
-    Momentum signal: ride BTC streaks when exhaustion confirms continuation.
+    Momentum signal: ride BTC streaks.
     1. streak >= min_streak same direction (default 3 for 5m, 2 for 15m)
-    2. At least one exhaustion signal (compression, volume spike, or shrinking range)
-    3. RIDE the streak (bet WITH it, not against it)
+    2. RIDE the streak (bet WITH it, not against it)
 
     History: V3 "contrarian" faded streaks and lost at 37% WR on live Polymarket.
     Inverting to momentum (ride) validated at 63% WR. Do NOT revert to fade.
+    Exhaustion gate removed 2026-03-31 — it was a contrarian filter that rejected
+    healthy trends (85% WR on 100 filtered predictions vs 67% on kept ones).
 
     Returns dict with estimate, confidence, should_trade, and signal details.
     """
@@ -112,35 +113,10 @@ def momentum_signal(candles, min_streak=3):
             "streak": signed_streak,
         }
 
-    # Exhaustion signals
-    # 1. Compression: last 3 candle ranges shrinking
-    compression = False
-    if len(candles) >= 3:
-        ranges = [c["high"] - c["low"] for c in candles[-3:]]
-        compression = ranges[0] > ranges[1] > ranges[2] and ranges[2] > 0
-
-    # 2. Volume spike: last candle volume > 1.8x average
-    volumes = [c["volume"] for c in candles]
-    avg_vol = sum(volumes) / len(volumes) if volumes else 1
-    vol_ratio = candles[-1]["volume"] / avg_vol if avg_vol > 0 else 1.0
-    volume_spike = vol_ratio > 1.8
-
-    # 3. Shrinking range: last candle range < 70% of average
-    avg_range = sum(c["high"] - c["low"] for c in candles) / len(candles)
-    last_range = candles[-1]["high"] - candles[-1]["low"]
-    range_ratio = last_range / avg_range if avg_range > 0 else 1.0
-    shrinking = range_ratio < 0.7
-
-    has_exhaustion = compression or volume_spike or shrinking
-
-    if not has_exhaustion:
-        return {
-            "estimate": 0.5, "should_trade": False,
-            "reason": f"no_exhaustion (streak={signed_streak})",
-            "streak": signed_streak,
-        }
-
     # Ride the streak (momentum — inverted from V3 contrarian which lost at 37% WR)
+    # Exhaustion gate removed 2026-03-31: was a contrarian filter on a momentum
+    # strategy. Filtered predictions hit 85% WR (n=100) vs 67% for passed ones.
+    # See docs/daily/analysis_exhaustion_gate.md
     if signed_streak >= min_streak:
         estimate = 0.62  # streak UP → predict UP (ride it)
         direction = "UP"
@@ -151,8 +127,6 @@ def momentum_signal(candles, min_streak=3):
     confidence = "medium"
     if abs(signed_streak) >= 5:
         confidence = "high"
-    if volume_spike and compression:
-        confidence = "high"
 
     return {
         "estimate": estimate,
@@ -160,13 +134,6 @@ def momentum_signal(candles, min_streak=3):
         "direction": direction,
         "confidence": confidence,
         "streak": signed_streak,
-        "exhaustion": {
-            "compression": compression,
-            "volume_spike": volume_spike,
-            "vol_ratio": round(vol_ratio, 2),
-            "shrinking_range": shrinking,
-            "range_ratio": round(range_ratio, 2),
-        },
         "reason": f"ride_streak_{direction}",
     }
 
@@ -422,9 +389,6 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
     signal = momentum_signal(candles, min_streak=min_streak)
     if signal["should_trade"]:
         print(f"  Signal: RIDE {signal['direction']} (streak={signal['streak']}, conf={signal['confidence']})")
-        print(f"    Exhaustion: compression={signal['exhaustion']['compression']}, "
-              f"vol_spike={signal['exhaustion']['volume_spike']} ({signal['exhaustion']['vol_ratio']:.1f}x), "
-              f"shrink={signal['exhaustion']['shrinking_range']} ({signal['exhaustion']['range_ratio']:.2f}x)")
     else:
         print(f"  Signal: NONE ({signal['reason']})")
 
