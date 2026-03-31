@@ -105,14 +105,21 @@ def compute_vwap_zscore(candles):
     }
 
 
-def shadow_log_indicators(db, cycle):
+def shadow_log_indicators(db, cycle, candles=None):
     """Main entry point. Compute indicators and attach to this cycle's predictions.
 
     Called from execute_trades() AFTER all orders are placed.
     Never raises — all errors caught and logged.
+
+    Args:
+        db: sqlite3 connection
+        cycle: prediction cycle number
+        candles: optional list of candle dicts. When None, falls back to
+                 _fetch_candles() (BTC 5m default). Pass candles directly
+                 for ETH or BTC 15m pipelines.
     """
     try:
-        return _shadow_log_impl(db, cycle)
+        return _shadow_log_impl(db, cycle, candles=candles)
     except Exception as e:
         print(f"    [SHADOW] error: {e}")
         return {}
@@ -124,12 +131,16 @@ def _fetch_candles(limit=30):
     return fetch_btc_candles(limit=limit)
 
 
-def _shadow_log_impl(db, cycle):
-    btc = _fetch_candles(limit=30)
-    if not btc or not btc.get("candles"):
+def _shadow_log_impl(db, cycle, candles=None):
+    if candles is None:
+        btc = _fetch_candles(limit=30)
+        if not btc or not btc.get("candles"):
+            return {"summary": "no candle data"}
+        candles = btc["candles"]
+
+    if not candles:
         return {"summary": "no candle data"}
 
-    candles = btc["candles"]
     closes = [c["close"] for c in candles]
 
     # Compute all 3 indicators once
