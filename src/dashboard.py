@@ -7,8 +7,9 @@ Serves on http://localhost:5050
 
 import sqlite3
 import json
+import re
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 try:
@@ -27,6 +28,35 @@ AGENT_COLORS = {
     "volume_wick": "#58a6ff",      # Legacy V2
 }
 AGENT_COLOR_LIST = ["#d2a8ff", "#58a6ff", "#f0883e", "#3fb950", "#f778ba"]
+
+# Pattern: "April 1, 10:15AM-10:20AM ET" or "March 29, 8:20AM-8:25AM ET"
+_ET_TIME_RE = re.compile(
+    r'(\w+ \d+), (\d{1,2}:\d{2}(?:AM|PM))-(\d{1,2}:\d{2}(?:AM|PM)) ET$'
+)
+
+
+def _et_to_utc_label(question):
+    """Append UTC times to market question if it contains ET times.
+
+    'Bitcoin Up or Down - April 1, 10:15AM-10:20AM ET'
+    → 'Bitcoin Up or Down - April 1, 10:15AM-10:20AM ET (14:15-14:20 UTC)'
+    """
+    m = _ET_TIME_RE.search(question)
+    if not m:
+        return question
+    try:
+        # EDT = UTC-4 (Polymarket uses US Eastern)
+        et_offset = timedelta(hours=-4)
+        for fmt in ("%I:%M%p", "%I:%M%p"):
+            start_et = datetime.strptime(m.group(2), "%I:%M%p")
+            end_et = datetime.strptime(m.group(3), "%I:%M%p")
+            break
+        start_utc = start_et - et_offset
+        end_utc = end_et - et_offset
+        utc_str = f"({start_utc.strftime('%H:%M')}-{end_utc.strftime('%H:%M')} UTC)"
+        return f"{question} {utc_str}"
+    except (ValueError, IndexError):
+        return question
 
 
 def get_db(db_path=None):
@@ -1684,9 +1714,10 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
                 outcome_str = f"{result_icon} {outcome_str}"
             else:
                 outcome_str = '<span class="badge badge-pending">Pending</span>'
-            question = row["question"]
-            if len(question) > 80:
-                question = question[:77] + "..."
+            full_question = _et_to_utc_label(row["question"])
+            question = full_question
+            if len(question) > 100:
+                question = question[:97] + "..."
 
             # Extract liquidity data from reasoning JSON
             spread_cell = "—"
@@ -1716,7 +1747,7 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
 
             prediction_rows += f"""<tr>
                 <td class="agent-name">{row["agent"]}</td>
-                <td title="{row["question"]}">{question}</td>
+                <td title="{full_question}">{question}</td>
                 <td>{row["estimate"]:.1%}</td>
                 <td>{row["price_yes"]:.1%}</td>
                 <td>{row["edge"]:+.1%}</td>
@@ -1836,13 +1867,14 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
                 mstatus = '<span class="badge badge-yes">UP</span>' if row["outcome"] == 1 else '<span class="badge badge-no">DOWN</span>'
             else:
                 mstatus = '<span class="badge badge-pending">Pending</span>'
-            question = row["question"]
-            if len(question) > 90:
-                question = question[:87] + "..."
+            mkt_full = _et_to_utc_label(row["question"])
+            question = mkt_full
+            if len(question) > 110:
+                question = question[:107] + "..."
             vol = row["volume"]
             vol_str = f"${vol:,.0f}" if vol else "$0"
             market_rows += f"""<tr>
-                <td title="{row["question"]}">{question}</td>
+                <td title="{mkt_full}">{question}</td>
                 <td>{row["category"] or "N/A"}</td>
                 <td>{row["price_yes"]:.1%}</td>
                 <td>{vol_str}</td>

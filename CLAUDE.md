@@ -52,10 +52,95 @@ All workflows use `git pull --rebase -X theirs` with fallback to merge pull. CI-
 
 Production sizing is a grind, not a gamble. The current paper-trading tiers ($75/$200/$300) revealed concentration risk: 16 bets at $219 avg carries more variance than 43 bets at $75. One bad day hurts 3x as much.
 
-- **Phase 1 — Flat grind (CURRENT).** Production uses flat $25 per bet (`src/trade.py`, `BET_SIZE=25`). Every bet is the same. Conviction tiers still gate *which* bets fire, but all bets are the same dollar amount. The edge compounds through volume, not through sizing luck.
-- **Phase 2 — Kelly on house money.** Once the bankroll has grown meaningfully from Phase 1 profits, introduce Kelly fractional sizing. Size bets proportional to measured edge. Only risk winnings — never the seed.
-- **Thin book constraint.** Polymarket 5-minute markets have low liquidity. Large bets move the line and eat the edge. Kelly must be capped by book depth (CLOB data), not just by bankroll math. The bet size ceiling is whatever the book can absorb at ≤2% slippage.
+| Phase | Bet Size | Trigger to Advance | Trigger to Stop |
+|-------|----------|--------------------|-----------------|
+| **Phase 1 — Flat grind (CURRENT)** | $25 flat | Bankroll +$500 from grind profits | WR < 52% over 50 bets, or -$300 daily loss |
+| **Phase 2 — Full grind** | $50 flat | Bankroll +$1,500 cumulative | WR < 52% over 50 bets, or -$500 daily loss |
+| **Phase 3 — Kelly on house money** | Kelly fractional, CLOB-capped | Bankroll +$3,000 cumulative | Drawdown > 30% of peak bankroll |
+
+- **Conviction still gates which bets fire.** Only conv ≥ 3 places orders. All bets are the same dollar amount within a phase.
+- **Thin book constraint.** Kelly must be capped by book depth (CLOB data), not just by bankroll math. The bet size ceiling is whatever the book can absorb at ≤2% slippage.
 - **Paper tiers stay as-is.** The current tiered system continues in paper trading to collect data on whether tier differentiation actually predicts performance. But production does NOT inherit paper sizing.
+
+## Documentation Map
+
+### Active Documents (keep current)
+
+| Document | Goal |
+|----------|------|
+| `CLAUDE.md` | Project rules for Claude — source of truth for behavior |
+| `docs/strategy.md` | Current trading strategy for all pipelines |
+| `docs/PRIMER.md` | System overview, repo map, onboarding |
+| `docs/ROADMAP.md` | Project phases and validation gates |
+| `docs/decisions.md` | Tracked decisions with automated triggers |
+| `docs/BREAK_FIX_LOG.md` | Production incident log |
+| `docs/multi-asset-plan.md` | Multi-asset expansion status and plan |
+| `docs/TESTING.md` | Test strategy, layers, CI pipeline |
+| `docs/ENGINEERING_LESSONS.md` | Evergreen operational lessons |
+| `docs/kelly_analysis.md` | Kelly sizing reference for Phase 3 |
+| `docs/liquidity_probe.md` | Multi-asset CLOB liquidity reference |
+| `docs/KALSHI_INTEGRATION_PLAN.md` | Future venue expansion (deferred) |
+| `config/macro_bias.md` | Macro overlay config (not used in V4) |
+
+### ETH Pipeline (active)
+
+| Document | Goal |
+|----------|------|
+| `docs/daily/eth_pipeline_acceptance_criteria.md` | Phased rollout plan: Phase 1 (validate momentum) → Phase 2 (adaptation layer) → Phase 3 (full integration) |
+| `docs/daily/spec_eth_model_training.md` | ETH adaptation layer spec: regime recalibration, cross-asset features, conviction scoring |
+
+### Future Indicator Specs (queued for evaluation)
+
+These are unimplemented feature specs. Evaluate after ETH Phase 1 validates and BTC live trading stabilizes.
+
+| Document | Goal |
+|----------|------|
+| `docs/daily/spec_rsi_conviction_gate.md` | RSI as pre-bet filter to downgrade conflicting signals |
+| `docs/daily/spec_obv_bucket_filter.md` | On-Balance Volume filter for 0.50-0.70 price bucket |
+| `docs/daily/spec_vwap_mean_reversion.md` | VWAP deviation for mean-reverting regime bets |
+| `docs/daily/spec_volatility_breakout.md` | Volatility compression→expansion breakout detection |
+| `docs/daily/spec_stochastic_entry_timing.md` | Stochastic Oscillator for entry timing within windows |
+| `docs/daily/spec_order_flow_imbalance.md` | CLOB bid/ask imbalance as leading indicator |
+| `docs/daily/spec_market_price_dislocation.md` | Polymarket price lag vs BTC spot arbitrage |
+| `docs/daily/spec_cross_exchange_lead_lag.md` | Kraken/Coinbase lead-lag temporal arbitrage |
+| `docs/daily/spec_dead_regime_harvesting.md` | Edge extraction from mean-reverting/dead-hour regimes |
+| `docs/daily/spec_generic_conviction_engine.md` | Parameterized conviction scorer for all assets (shadow mode) |
+
+### Historical Analysis (read-only reference)
+
+| Document | Goal |
+|----------|------|
+| `docs/BACKTEST_FINDINGS.md` | V1→V4 backtest results and regime analysis |
+| `docs/outcome_analysis_bitcoin.md` | Phase 1 BTC statistical analysis (8,653 markets) |
+| `docs/outcome_analysis_ethereum.md` | Phase 1 ETH statistical analysis (8,654 markets) |
+| `docs/outcome_analysis_solana.md` | Phase 1 SOL statistical analysis (8,653 markets) |
+| `docs/pattern_mining_results.md` | Phase 2 pattern mining results |
+| `docs/daily/analysis_exhaustion_gate.md` | Analysis showing exhaustion gate filtered best predictions |
+| `docs/daily/postmortem_exhaustion_gate.md` | Postmortem on exhaustion + cooldown gate removal |
+| `docs/daily/thesis_paper_to_live_degradation.md` | Paper-to-live WR degradation thesis (Decision #17) |
+| `docs/daily/pipeline_recommendations_mar25-27.md` | Source data for decisions #1-9 |
+
+### Archived (superseded, in `docs/archive/`)
+
+| Document | Why Archived |
+|----------|-------------|
+| `docs/archive/bot-V3.md` | V3 contrarian strategy — lost at 37% WR |
+| `docs/archive/bot-V3.1.md` | V3.1 production plan — superseded by V4 |
+| `docs/archive/bot-V3.2.md` | V3.2 iteration — superseded by V4 |
+| `docs/archive/BACKTEST_RESULTS.md` | Early backtest data |
+| `docs/archive/DEPLOYMENT_PLAN.md` | Pre-V4 deployment plan |
+| `docs/archive/PROJECT_EVOLUTION.md` | Project history narrative |
+| `docs/archive/signal-infrastructure-plan.md` | Multi-source signal exploration — useful parts in strategy.md |
+| `docs/archive/acceptance_criteria_generic_conviction.md` | Duplicate of spec_generic_conviction_scorer.md |
+| `program.md` | V1/V2 LLM agent system — marked LEGACY |
+
+### Auto-Generated (do not edit manually)
+
+| Document | Source |
+|----------|--------|
+| `docs/daily/YYYY-MM-DD.md` | Generated by `daily_report.py` via CI |
+| `docs/sessions/*.md` | Working session logs |
+| `docs/daily/index.md` | Daily report index |
 
 ## Validation Principles
 

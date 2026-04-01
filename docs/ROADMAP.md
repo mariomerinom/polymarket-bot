@@ -63,35 +63,26 @@ V3 XGBoost + Logistic Regression with 32 features.
 - **Result:** 51.3% WR, +0.5% ROI — failed to beat contrarian rule baseline
 - **Decision gate:** Required +3pp WR or +5pp ROI over baseline. Did not pass.
 - **Calibration:** Failed on 6/8 bins. Kelly sizing would be dangerous.
-- **Root cause:** Too many features (32) for too few samples (500). 5-min BTC is too noisy for ML to find patterns beyond simple exhaustion rules.
-
-See `docs/BACKTEST_FINDINGS.md` and `src/v3/model.py` for details.
+- **Root cause:** Too many features (32) for too few samples (500). 5-min BTC is too noisy for ML to find patterns beyond simple rules.
 
 ---
 
-## Part 5: Zero-Cost Momentum Mode (DONE ✅)
+## Part 5: Zero-Cost Momentum Mode (DONE)
 
 **Goal:** Replace $1.50/day LLM agents with $0/day momentum rule + regime filter.
-Keep the bot running, keep logging, keep the dashboard — stop paying for predictions.
 
 ### What happened
 - V3 contrarian (fade streaks) lost at 37% WR / -$962 on live Polymarket
 - Polymarket already prices in BTC streak patterns — fading was redundant
-- **Inverting to momentum (ride streaks) validated at 63% WR in paper trading**
-- Regime filter correctly skips mean-reverting periods (no bets placed)
-
-### Implementation (DONE)
-1. `predict.py` — momentum_signal() + regime computation, $0/day
-2. Regime logging — volatility level + autocorrelation per prediction
-3. Dashboard — P&L asymmetry visualization, regime breakdown
-4. No LLM dependencies (no ANTHROPIC_API_KEY needed)
+- **Inverting to momentum (ride streaks) validated at 67% WR in paper trading**
+- Regime filter correctly skips mean-reverting periods
 
 ### Validation criteria (ALL MET — 2026-03-30)
 - [x] 500+ resolved predictions accumulated
 - [x] Bet win rate ≥ 52% → **67.4% on 227 bets**
 - [x] Mean-reverting regime correctly skipped
 - [x] 200+ bets with sustained WR ≥ 55% → **227 bets at 67.4%**
-- [x] Positive ROI after simulated fees → **+$44K simulated P&L**
+- [x] Positive ROI after simulated fees → **+$8K simulated P&L**
 
 ### Success gate: PASSED
 All criteria met. Proceeding to Part 6.
@@ -100,7 +91,7 @@ All criteria met. Proceeding to Part 6.
 
 ## Part 5.5: Continuous Optimization Validation (ACTIVE)
 
-**Goal:** Every optimization we ship gets automatically tracked, monitored, and flagged — no manual DB queries, no "did that change work?"
+**Goal:** Every optimization gets automatically tracked, monitored, and flagged.
 
 ### Level 1: Auto-monitor with alerts (ACTIVE)
 - Ship an optimization → register it with baseline stats and revert criteria
@@ -109,83 +100,66 @@ All criteria met. Proceeding to Part 6.
 - Human decides, Claude executes
 
 ### Level 2: Auto-revert with PR (NEXT)
-- When an optimization crosses its revert threshold, CI automatically:
-  - Creates a rollback branch reverting the specific change
-  - Opens a PR with the before/after stats in the description
-  - Human merges or closes — the fix is already written and tested
-- Jump from Level 1 is small: add `git revert` + `gh pr create` to the alert path
+- When an optimization crosses its revert threshold, CI automatically creates a rollback PR
+- Human merges or closes — the fix is already written and tested
 
 ### Level 3: A/B split testing (DEFERRED)
-- Split predictions into control/treatment groups (50/50)
-- Same market, same cycle — one arm uses the new filter, one doesn't
-- After N bets per arm, compare and auto-promote or auto-kill
-- Requires schema changes (treatment group column) and dashboard changes
 - Only viable when bet volume supports splitting (100+ bets/day)
-
-### Implementation
-- `src/optimization_tracker.py` — register, monitor, compare optimizations
-- `docs/optimizations.json` — registry of all active/completed optimizations
-- Daily report integration — reads registry, computes deltas, fires alerts
-- Skill: `/validate-optimization` — registers new optimizations from any Claude session
 
 ---
 
-## Part 6: Live Trading — Medium Grind (NEXT)
+## Part 6: Live Trading — Medium Grind (ACTIVE)
 
-> Part 5 gate PASSED (227 bets, 67.4% WR). Moving to production.
+> Part 5 gate PASSED (227 bets, 67.4% WR). Live trading started 2026-03-31.
 
 ### Sizing philosophy: grind, not gamble
 
-Paper trading revealed concentration risk — tiered sizing ($75/$200/$300) produced 16 bets at $219 avg instead of 43 bets at $75. One bad day would hurt 3x as much. Production resets sizing to flat and earns its way up.
-
 | Phase | Bet size | Trigger to advance | Trigger to stop |
 |-------|----------|--------------------|-----------------|
-| **Medium grind** | $25 flat | Bankroll +$500 from grind profits | WR < 52% over 50 bets, or -$300 daily loss |
+| **Medium grind (CURRENT)** | $25 flat | Bankroll +$500 from grind profits | WR < 52% over 50 bets, or -$300 daily loss |
 | **Full grind** | $50 flat | Bankroll +$1,500 cumulative | WR < 52% over 50 bets, or -$500 daily loss |
 | **Kelly on house money** | Kelly fractional, CLOB-capped | Bankroll +$3,000 cumulative | Drawdown > 30% of peak bankroll |
 
-- **Conviction still gates which bets fire.** Only conv ≥ 3 places orders. But all bets are the same dollar amount within a phase.
-- **Thin book constraint.** Max bet is whatever the CLOB can absorb at ≤2% slippage, regardless of phase. `clob_depth.py` already measures this.
-- **Paper tiers keep running in parallel.** The current tiered system continues logging at conv 2 to collect counterfactual data.
+### Implementation (DONE)
+- [x] Polygon wallet funded with USDC
+- [x] `py-clob-client` SDK integrated
+- [x] `src/trade.py` — signal → order conversion, flat $25 bets
+- [x] Order fill tracking — orders table in DB
+- [x] Daily loss limit circuit breaker (-$300)
+- [x] Kill switch — `KILL_SWITCH=true` env var or `data/KILL_SWITCH` file
+- [x] Thin book guard — caps bets at 90% of CLOB max@2% slippage
 
-### Prerequisites
-- [ ] Polygon wallet funded with USDC
-- [ ] `py-clob-client` SDK integrated
-- [ ] `src/trade.py` — signal → order conversion
-- [ ] Order fill tracking — log placed price vs fill price vs slippage
-- [ ] Daily loss limit circuit breaker (-$300 → pause 1 hour)
-- [ ] Kill switch — manual override to halt all trading
-
-### Implementation plan
-1. **`src/trade.py`** — Takes a prediction + conviction → places a CLOB limit order at $25. Logs order ID, fill status, actual price. No market orders (slippage risk on thin book).
-2. **Order tracking table** — New `orders` table in DB: order_id, market_id, prediction_id, side, size, price_placed, price_filled, status, timestamp.
-3. **CI integration** — After `run_predictions()`, if conviction ≥ 3 and trading enabled, call `trade.py`. Separate flag (`TRADING_ENABLED=true`) so we can kill it without touching code.
-4. **Dashboard** — Add live P&L card showing real money: orders placed, filled, slippage, actual returns vs simulated.
-5. **Circuit breakers** — Daily loss limit. Max concurrent open positions. CLOB depth check before every order.
+### Status
+- Live trading enabled in CI 2026-03-31
+- SDK bug fixed 2026-04-01 (`order_type` parameter removed in py-clob-client v0.34.6)
+- Monitoring for first successful fills and paper-to-live degradation (Decision #17)
 
 ---
 
-## Part 7: Mac Mini Deployment (DEFERRED)
+## Part 7: DigitalOcean VPS Deployment (NEXT)
 
-Move from GitHub Actions (unreliable cron, 1-30 min delays) to always-on Mac Mini.
-Only worthwhile if Part 5/6 prove the edge is real.
+Move from GitHub Actions to a dedicated VPS in a non-US region. GitHub Actions runners are US-based and get 403 geoblocked by Polymarket's CLOB API — all live orders fail.
 
-- `scripts/mac-mini-loop.sh` — continuous loop with git push
-- `scripts/com.polymarket.bot.plist` — launchd daemon
-- Keep GitHub Pages dashboard (push HTML from Mini)
+- **Droplet:** $6/mo, Amsterdam/Frankfurt/Singapore (non-US IP)
+- **What moves:** All pipelines, trading, scoring, dashboards, daily report
+- **What stays on GitHub:** Code hosting, Pages (serves dashboards from pushed HTML)
+- **GitHub Actions:** Disabled. Re-enable via `workflow_dispatch` as fallback.
+- **Setup guide:** `scripts/setup-digitalocean.md`
+- **Loop script:** `scripts/vps-loop.sh` — runs all 3 pipelines in one process
 
 ---
 
 ## Part 8: Multi-Asset Expansion (ACTIVE)
 
-Expand from BTC-only to ETH, SOL, and beyond.
-
-### ETH 5m Contrarian (ACTIVE — paper trading)
-- Phase 1 outcome analysis + Phase 2 pattern mining validated **contrarian at 54.4% WR on 1,601 markets**
-- Parallel pipeline shipped: `predict_eth.py`, `ci_run_eth.py`, `predict-eth-5m.yml`
+### ETH 5m Momentum (ACTIVE — paper trading)
+- Originally deployed as contrarian (validated at 54.4% WR on 1,601 historical markets via pattern mining)
+- Live contrarian hit **33.3% WR on 54 resolved predictions** — catastrophic
+- Momentum counterfactual on same 54 bets: **66.7%** — exact complement
+- **Flipped to momentum 2026-04-01.** Same V3→V4 pattern as BTC.
+- Parallel pipeline: `predict_eth.py`, `ci_run_eth.py`, `predict-eth-5m.yml`
 - Separate DB (`predictions_eth.db`), separate dashboard (`docs/eth.html`)
-- All predictions at conviction 2 (paper). Collecting 200+ resolved before calibration.
-- Dashboard linked from nav bar: BTC 5m | BTC 15m | ETH 5m
+- All predictions at conviction 2 (paper). Collecting 50+ resolved before Phase 2.
+- Phase 2 (ETH adaptation layer): regime recalibration, cross-asset features, ETH-specific conviction. See `docs/daily/eth_pipeline_acceptance_criteria.md`.
 
 ### BTC 15m (ACTIVE — paper trading)
 - Momentum signal with relaxed params (`min_streak=2`, `loose_mode=True`)
@@ -195,4 +169,4 @@ Expand from BTC-only to ETH, SOL, and beyond.
 - Phase 2 showed contrarian_exhaust_s3 at 53.8% on 186 bets — weaker signal, smaller sample.
 - Not prioritized until ETH paper trading validates.
 
-See [docs/multi-asset-plan.md](multi-asset-plan.md) for the original plan.
+See [docs/multi-asset-plan.md](multi-asset-plan.md) for the original expansion plan.
