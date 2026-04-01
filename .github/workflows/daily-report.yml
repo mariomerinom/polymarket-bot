@@ -45,8 +45,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/daily/
-          git diff --cached --quiet || git commit -m "Daily report $(date -u +%Y-%m-%d)"
           git stash --include-untracked || true
           git pull --rebase -X theirs || {
             echo "Rebase conflict — accepting remote and retrying"
@@ -54,4 +52,6 @@ jobs:
             git pull --no-rebase -X theirs
           }
           git stash pop || true
+          git add docs/daily/
+          git diff --cached --quiet || git commit -m "Daily report $(date -u +%Y-%m-%d)"
           git push || echo "Push failed — next run will retry"
