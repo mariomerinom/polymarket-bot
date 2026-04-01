@@ -317,7 +317,7 @@ def _submit_clob_order(token_id, side, size, price):
     """
     try:
         from py_clob_client.client import ClobClient
-        from py_clob_client.clob_types import OrderArgs, OrderType
+        from py_clob_client.clob_types import OrderArgs
         from py_clob_client.order_builder.constants import BUY, SELL
     except ImportError:
         raise RuntimeError(
@@ -360,7 +360,7 @@ def _submit_clob_order(token_id, side, size, price):
     old_handler = _signal.signal(_signal.SIGALRM, _timeout_handler)
     _signal.alarm(10)  # 10-second hard timeout
     try:
-        response = client.create_and_post_order(order_args, order_type=OrderType.GTC)
+        response = client.create_and_post_order(order_args)
     finally:
         _signal.alarm(0)  # Cancel alarm
         _signal.signal(_signal.SIGALRM, old_handler)
