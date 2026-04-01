@@ -994,7 +994,7 @@ def get_markets(db):
         SELECT id, question, category, end_date, volume, price_yes, price_no,
                resolved, outcome
         FROM markets
-        ORDER BY resolved ASC, end_date ASC
+        ORDER BY resolved ASC, end_date DESC
     """).fetchall()
     return rows
 
@@ -1828,10 +1828,10 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
     else:
         scorecard_rows = '<tr><td colspan="4" class="empty">No resolved markets yet.</td></tr>'
 
-    # -- Markets --
+    # -- Markets (show last 50 only) --
     market_rows = ""
     if markets:
-        for row in markets:
+        for row in markets[:50]:
             if row["resolved"]:
                 mstatus = '<span class="badge badge-yes">UP</span>' if row["outcome"] == 1 else '<span class="badge badge-no">DOWN</span>'
             else:
@@ -2568,7 +2568,7 @@ tr:hover {{
     </table>
     </div>
 
-    <h2>Markets</h2>
+    <h2>Markets <span style="color:#8b949e;font-size:0.85rem;font-weight:400">(latest 50 of {len(markets) if markets else 0})</span></h2>
     <div class="table-wrap">
     <table>
         <thead><tr>
