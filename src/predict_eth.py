@@ -1,16 +1,16 @@
 """
-predict_eth.py — Regime-filtered CONTRARIAN predictions for ETH.
+predict_eth.py — Regime-filtered MOMENTUM predictions for ETH.
 
 PARALLEL PIPELINE — does NOT touch predict.py (BTC momentum).
 
-ETH uses the OPPOSITE signal direction from BTC:
-- BTC: streak UP + exhaustion → predict UP (ride/momentum). Validated 63% WR.
-- ETH: streak UP + exhaustion → predict DOWN (fade/contrarian). Validated 54.4% WR on 1,601 markets.
+ETH uses the SAME signal direction as BTC:
+- BTC: streak UP → predict UP (ride/momentum). Validated 63% WR.
+- ETH: streak UP → predict UP (ride/momentum). Flipped 2026-04-01.
 
-Phase 2 pattern mining (scripts/pattern_mining.py) proved ETH is contrarian:
-- contrarian_s3_RF: 54.4% WR on 1,601 bets
-- momentum_s3_RF: 45.6% WR on 1,601 bets (inverse)
-- Best regimes: LOW_VOL/NEUTRAL (72.5%), MEDIUM_VOL/TRENDING (60.2%)
+History: contrarian_s3_RF validated at 54.4% WR on 1,601 historical markets,
+but live contrarian signal hit 33.3% WR on 54 resolved predictions.
+Momentum counterfactual on the same 54 bets: 66.7% WR (exact complement).
+Same V3→V4 pattern as BTC. Do NOT revert to contrarian.
 
 PAPER TRADING ONLY — all predictions at conviction 2 (no money risked)
 until 200+ resolved predictions validate the signal on live Polymarket.
@@ -31,14 +31,16 @@ DEAD_HOURS_UTC = set()
 DB_PATH_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 
 
-def contrarian_signal_eth(candles, min_streak=3):
+def momentum_signal_eth(candles, min_streak=3):
     """
-    Contrarian signal for ETH: FADE streaks when exhaustion confirms trend fatigue.
+    Momentum signal for ETH: RIDE streaks.
     1. streak >= min_streak same direction (default 3)
-    2. At least one exhaustion signal (compression, volume spike, or shrinking range)
-    3. FADE the streak (bet AGAINST it)
+    2. RIDE the streak (bet WITH it)
 
-    Validated on 1,601 resolved Polymarket ETH markets at 54.4% WR.
+    Flipped from contrarian 2026-04-01:
+    - Contrarian: 33.3% WR on 54 resolved live predictions
+    - Momentum counterfactual: 66.7% on same bets
+    - Exhaustion gate removed (contradicts momentum, same as BTC)
     """
     if len(candles) < 5:
         return {"estimate": 0.5, "should_trade": False, "reason": "insufficient_data"}
@@ -62,48 +64,18 @@ def contrarian_signal_eth(candles, min_streak=3):
             "streak": signed_streak,
         }
 
-    # Exhaustion signals (identical logic to BTC — these are asset-agnostic)
-    # 1. Compression: last 3 candle ranges shrinking
-    compression = False
-    if len(candles) >= 3:
-        ranges = [c["high"] - c["low"] for c in candles[-3:]]
-        compression = ranges[0] > ranges[1] > ranges[2] and ranges[2] > 0
-
-    # 2. Volume spike: last candle volume > 1.8x average
-    volumes = [c["volume"] for c in candles]
-    avg_vol = sum(volumes) / len(volumes) if volumes else 1
-    vol_ratio = candles[-1]["volume"] / avg_vol if avg_vol > 0 else 1.0
-    volume_spike = vol_ratio > 1.8
-
-    # 3. Shrinking range: last candle range < 70% of average
-    avg_range = sum(c["high"] - c["low"] for c in candles) / len(candles)
-    last_range = candles[-1]["high"] - candles[-1]["low"]
-    range_ratio = last_range / avg_range if avg_range > 0 else 1.0
-    shrinking = range_ratio < 0.7
-
-    has_exhaustion = compression or volume_spike or shrinking
-
-    if not has_exhaustion:
-        return {
-            "estimate": 0.5, "should_trade": False,
-            "reason": f"no_exhaustion (streak={signed_streak})",
-            "streak": signed_streak,
-        }
-
-    # FADE the streak (contrarian — opposite of BTC's momentum)
+    # RIDE the streak (momentum — same as BTC)
     if signed_streak >= min_streak:
-        # Streak is UP → predict DOWN (fade it)
-        estimate = 0.38
-        direction = "DOWN"
-    else:
-        # Streak is DOWN → predict UP (fade it)
+        # Streak is UP → predict UP (ride it)
         estimate = 0.62
         direction = "UP"
+    else:
+        # Streak is DOWN → predict DOWN (ride it)
+        estimate = 0.38
+        direction = "DOWN"
 
     confidence = "medium"
     if abs(signed_streak) >= 5:
-        confidence = "high"
-    if volume_spike and compression:
         confidence = "high"
 
     return {
@@ -112,14 +84,7 @@ def contrarian_signal_eth(candles, min_streak=3):
         "direction": direction,
         "confidence": confidence,
         "streak": signed_streak,
-        "exhaustion": {
-            "compression": compression,
-            "volume_spike": volume_spike,
-            "vol_ratio": round(vol_ratio, 2),
-            "shrinking_range": shrinking,
-            "range_ratio": round(range_ratio, 2),
-        },
-        "reason": f"fade_streak_{direction}",
+        "reason": f"ride_streak_{direction}",
     }
 
 
@@ -186,7 +151,7 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
         "regime": regime,
         "paper_trading": True,
         "asset": "ETH",
-        "signal_type": "contrarian",
+        "signal_type": "momentum",
         "would_have_bet": signal.get("should_trade", False) and confidence in ("medium", "high"),
         "conviction_tier": conviction,
         "mkt_price": mkt_price,
@@ -197,13 +162,13 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
         reasoning_data["liquidity"] = liquidity
     reasoning = json.dumps(reasoning_data)
 
-    # Store as "contrarian_eth" agent (distinct from BTC's "momentum_rule")
+    # Store as "momentum_eth" agent (distinct from BTC's "momentum_rule")
     db.execute("""
         INSERT INTO predictions
         (market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle, conviction_score, regime)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        market_id, "contrarian_eth", estimate, edge, confidence,
+        market_id, "momentum_eth", estimate, edge, confidence,
         reasoning, predicted_at, cycle, conviction, regime["label"],
     ))
     db.commit()
@@ -213,7 +178,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                         min_streak=3, autocorr_threshold=-0.15):
     """
     Main ETH prediction loop.
-    Fetch candles → compute regime → apply CONTRARIAN rule → store.
+    Fetch candles → compute regime → apply MOMENTUM rule → store.
     No API calls. $0 cost.
     """
     from eth_data import fetch_eth_candles
@@ -241,13 +206,10 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
     if regime["is_mean_reverting"]:
         print(f"  SKIP: Mean-reverting regime detected — no trades")
 
-    # Compute CONTRARIAN signal (opposite of BTC's momentum)
-    signal = contrarian_signal_eth(candles, min_streak=min_streak)
+    # Compute MOMENTUM signal (same direction as BTC)
+    signal = momentum_signal_eth(candles, min_streak=min_streak)
     if signal["should_trade"]:
-        print(f"  Signal: FADE {signal['direction']} (streak={signal['streak']}, conf={signal['confidence']})")
-        print(f"    Exhaustion: compression={signal['exhaustion']['compression']}, "
-              f"vol_spike={signal['exhaustion']['volume_spike']} ({signal['exhaustion']['vol_ratio']:.1f}x), "
-              f"shrink={signal['exhaustion']['shrinking_range']} ({signal['exhaustion']['range_ratio']:.2f}x)")
+        print(f"  Signal: RIDE {signal['direction']} (streak={signal['streak']}, conf={signal['confidence']})")
     else:
         print(f"  Signal: NONE ({signal['reason']})")
 
@@ -311,7 +273,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
             print(f"    → SKIP (mean-reverting regime)")
             continue
 
-        # Apply contrarian signal
+        # Apply momentum signal
         if signal["should_trade"]:
             # CLOB depth query (read-only, never blocks)
             liquidity = None
@@ -330,8 +292,8 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
             store_prediction_eth(db, market["id"], signal, regime, cycle,
                                  mkt_price=mkt_price, consensus=consensus,
                                  liquidity=liquidity)
-            direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
-            print(f"    → FADE {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, PAPER conv=2)")
+            direction = "UP" if signal["estimate"] > 0.5 else "DOWN"
+            print(f"    → RIDE {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, PAPER conv=2)")
         else:
             no_signal = {
                 "estimate": mkt_price,
