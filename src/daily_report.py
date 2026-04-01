@@ -270,7 +270,12 @@ def analyze_filter_breakdown(predictions, resolved):
             continue
 
         signal = data.get("signal", {})
-        reason = signal.get("reason", "unknown")
+        if isinstance(signal, str):
+            reason = signal
+        elif isinstance(signal, dict):
+            reason = signal.get("reason", "unknown")
+        else:
+            continue
 
         # Bucket similar reasons
         if reason.startswith("streak_too_short"):
