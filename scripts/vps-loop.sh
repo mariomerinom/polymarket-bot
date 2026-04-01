@@ -49,9 +49,9 @@ log "Python: $(which python3)"
 log "TRADING_ENABLED: ${TRADING_ENABLED:-false}"
 log "Cycle interval: ${CYCLE_INTERVAL}s"
 
-# Run tests once at startup
+# Run tests once at startup (unset trading env so paper-mode tests pass)
 log "Running startup tests..."
-if python3 -m pytest tests/ -v --tb=short 2>&1 | tee -a "$LOG_FILE"; then
+if TRADING_ENABLED= POLYMARKET_PRIVATE_KEY= python3 -m pytest tests/ -v --tb=short 2>&1 | tee -a "$LOG_FILE"; then
     log "Tests passed. Starting main loop."
 else
     log "FATAL: Tests failed. Fix before running."
