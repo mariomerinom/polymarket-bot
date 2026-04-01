@@ -328,12 +328,15 @@ def _submit_clob_order(token_id, side, size, price):
     if not private_key:
         raise RuntimeError("POLYMARKET_PRIVATE_KEY env var not set")
 
-    # Polygon mainnet, EOA wallet (signature_type=0)
+    # Polygon mainnet — GNOSIS_SAFE (type 2) if proxy configured, else EOA (type 0)
+    proxy_address = os.environ.get("POLYMARKET_PROXY_ADDRESS", "")
+    sig_type = 2 if proxy_address else 0
     client = ClobClient(
         "https://clob.polymarket.com",
         key=private_key,
         chain_id=137,
-        signature_type=0,
+        signature_type=sig_type,
+        funder=proxy_address if proxy_address else None,
     )
 
     # Derive API credentials from private key (EIP-712 signing)
@@ -393,11 +396,14 @@ def settle_orders(db):
     try:
         from py_clob_client.client import ClobClient
 
+        proxy_address = os.environ.get("POLYMARKET_PROXY_ADDRESS", "")
+        sig_type = 2 if proxy_address else 0
         client = ClobClient(
             "https://clob.polymarket.com",
             key=os.environ.get("POLYMARKET_PRIVATE_KEY"),
             chain_id=137,
-            signature_type=0,
+            signature_type=sig_type,
+            funder=proxy_address if proxy_address else None,
         )
         creds = client.create_or_derive_api_creds()
         client.set_api_creds(creds)
