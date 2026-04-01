@@ -4,6 +4,19 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## Frozen File Change: Fix CLOB SDK API Change (order_type removed)
+**Date:** April 1, 2026 | **Approved by:** User | **Severity:** P0 — all live orders failing
+
+**Files touched:**
+- `src/trade.py` — Removed `OrderType` import and `order_type=OrderType.GTC` kwarg from `_submit_clob_order()`. `py-clob-client` v0.34.6 removed this parameter; GTC is now the default.
+- `.github/workflows/daily-report.yml` — Reordered git operations: stash+pull before commit+push. Previous order caused `cannot pull with rebase: unstaged changes` errors (Mar 29, 30 failures).
+
+**Impact:** 13+ live orders failed between 04:27–10:52 UTC on April 1. All showed `ClobClient.create_and_post_order() got an unexpected keyword argument 'order_type'`. Zero orders placed on the first full day of live trading post-exhaustion-gate removal.
+
+**Rollback:** N/A — the old code is broken against the current SDK version.
+
+---
+
 ## Frozen File Change: Remove Exhaustion Gate + Cooldown Flip Gate
 **Date:** March 31, 2026 | **Approved by:** User | **Severity:** Planned
 
