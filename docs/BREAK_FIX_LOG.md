@@ -4,6 +4,28 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## ETH Signal Flip: Contrarian → Momentum
+**Date:** April 1, 2026 | **Approved by:** User | **Severity:** Planned
+
+**Files touched:**
+- `src/predict_eth.py` — Renamed `contrarian_signal_eth()` → `momentum_signal_eth()`. Flipped signal direction: streak UP → predict UP (was DOWN). Removed exhaustion gate. Agent name `contrarian_eth` → `momentum_eth`. Signal type `contrarian` → `momentum`.
+- `tests/test_eth_signal.py` — Updated all tests for momentum direction.
+- `tests/test_trade.py` — Updated agent name references.
+- `src/trade.py` — Simplified ETH agent detection (removed stale `"contrarian"` check).
+- `CLAUDE.md` — Updated ETH strategy documentation.
+
+**Rationale:**
+- Contrarian: 33.3% WR on 54 resolved live predictions (catastrophic)
+- Momentum counterfactual: 66.7% on same 54 bets (exact complement)
+- Pattern mining validated contrarian at 54.4% on historical data, but live data contradicts it
+- Same V3→V4 pattern as BTC (contrarian lost, momentum wins)
+
+**Tracking:** Paper trading at conv=2. Revert criteria: WR < 55% at 100+ resolved momentum predictions.
+
+**Rollback:** Revert `predict_eth.py` from git history. Agent name change means new predictions won't conflict with old ones.
+
+---
+
 ## Frozen File Change: Fix CLOB SDK API Change (order_type removed)
 **Date:** April 1, 2026 | **Approved by:** User | **Severity:** P0 — all live orders failing
 

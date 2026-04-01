@@ -179,7 +179,7 @@ def get_bet_size(prediction_row, liquidity=None):
     agent = prediction_row.get("agent", "")
     conviction = prediction_row.get("conviction_score", 0)
 
-    if "eth" in agent.lower() or "contrarian" in agent.lower():
+    if "eth" in agent.lower():
         base = ETH_BET_SIZES.get(conviction, 0)
         if liquidity and not liquidity.get("error"):
             ceiling = liquidity.get("max_bet_2pct", float("inf")) * ETH_MAX_BET_CEILING_PCT

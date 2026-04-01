@@ -18,8 +18,8 @@
 ## Bot Design
 
 - **No agent bias.** The bot must not have built-in directional bias (UP or DOWN). All bias comes from human macro config, not prompts or code.
-- **BTC strategy is MOMENTUM (ride streaks).** V3 contrarian lost at 37% WR on live Polymarket. Inverting to momentum validated at 63% WR. Do NOT revert BTC signal direction. Streak UP + exhaustion → predict UP. Streak DOWN + exhaustion → predict DOWN.
-- **ETH strategy is CONTRARIAN (fade streaks).** Phase 2 pattern mining validated contrarian_s3_RF at 54.4% WR on 1,601 resolved markets. Momentum loses at 45.7% on ETH. Each asset's signal direction was independently validated. ETH pipeline is in `src/predict_eth.py` (paper trading, conviction=2).
+- **BTC strategy is MOMENTUM (ride streaks).** V3 contrarian lost at 37% WR on live Polymarket. Inverting to momentum validated at 63% WR. Do NOT revert BTC signal direction. Streak UP → predict UP. Streak DOWN → predict DOWN.
+- **ETH strategy is MOMENTUM (ride streaks).** Contrarian validated at 54.4% in pattern mining but lost at 33.3% WR on 54 live predictions. Momentum counterfactual: 66.7% on same bets. Flipped 2026-04-01. Same V3→V4 pattern as BTC. Do NOT revert to contrarian. ETH pipeline is in `src/predict_eth.py` (paper trading, conviction=2).
 - **Paper trade first.** Every new signal must accumulate 200+ resolved predictions in paper trading before risking real capital.
 - **Conviction gates real money.** Only conviction >= 3 places bets. Conviction 0-2 = skip.
 - **Trade execution is in `src/trade.py`.** Two modes: `TRADING_ENABLED=false` (default, paper) logs what it would do; `TRADING_ENABLED=true` places real limit orders via `py-clob-client` SDK on Polygon. Flat $25 bet size. Kill switch via `KILL_SWITCH=true` env var or `data/KILL_SWITCH` file. Daily loss circuit breaker at $300 (env `DAILY_LOSS_LIMIT`). Thin book guard caps bets at 90% of CLOB max@2% slippage.
@@ -32,7 +32,7 @@ Three independent pipelines run in parallel, each with its own workflow, databas
 |----------|----------|----|-----------|--------|--------|
 | BTC 5m | `predict-and-score.yml` | `predictions.db` | `docs/index.html` | Momentum | **Production** |
 | BTC 15m | `predict-15m.yml` | `predictions_15m.db` | `docs/15m.html` | Momentum | Paper |
-| ETH 5m | `predict-eth-5m.yml` | `predictions_eth.db` | `docs/eth.html` | Contrarian | Paper |
+| ETH 5m | `predict-eth-5m.yml` | `predictions_eth.db` | `docs/eth.html` | Momentum | Paper |
 
 All three dashboards are cross-linked via a nav bar on GitHub Pages.
 
