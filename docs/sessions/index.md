@@ -2,5 +2,6 @@
 
 Working session summaries — what was built, shipped, learned, and kicked forward.
 
+- [2026-04-01](2026-04-01.md) — P0 break-fix day: CLOB SDK order_type removal killed 13 live orders; daily report git hardened with backup/reset/restore
 - [2026-03-30](2026-03-30.md) — Full Part 6 build day: ETH pipeline, trade execution module, anomaly/Monte Carlo, shadow indicators, 15 commits
 - [2026-03-29](2026-03-29.md) — Massive build day: Phase 6a CLOB, Kelly analysis, 15m CI fix, multi-asset plan, backtester, 17 commits
