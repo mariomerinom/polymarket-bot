@@ -12,6 +12,8 @@ import json
 import statistics
 from datetime import datetime, timezone
 
+from config import OBV_WINDOW, OBV_PRICE_BUCKET_LOW, OBV_PRICE_BUCKET_HIGH
+
 
 def compute_rsi(closes, period=14):
     """Wilder-smoothed RSI. Returns 0-100 float, or 50.0 if insufficient data."""
@@ -145,7 +147,7 @@ def _shadow_log_impl(db, cycle, candles=None):
 
     # Compute all 3 indicators once
     rsi_val = compute_rsi(closes, period=14)
-    obv_val = compute_obv_slope(candles, window=10)
+    obv_val = compute_obv_slope(candles, window=OBV_WINDOW)
     vwap_data = compute_vwap_zscore(candles)
 
     # Fetch this cycle's predictions
@@ -180,7 +182,7 @@ def _shadow_log_impl(db, cycle, candles=None):
 
         # Spec 2: OBV — only for 0.50-0.70 price bucket
         mkt_price = reasoning.get("mkt_price")
-        if mkt_price is not None and 0.50 <= mkt_price <= 0.70:
+        if mkt_price is not None and OBV_PRICE_BUCKET_LOW <= mkt_price <= OBV_PRICE_BUCKET_HIGH:
             reasoning["shadow_obv_slope"] = obv_val
 
         # Spec 3: VWAP z-score — attach to MEAN_REVERTING predictions

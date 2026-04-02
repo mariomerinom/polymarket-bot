@@ -29,10 +29,12 @@ OPTIMIZATIONS_PATH = Path(__file__).parent.parent / "docs" / "optimizations.json
 DB_5M = Path(__file__).parent.parent / "data" / "predictions.db"
 DB_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
 
-# Date-aware sizing (must match dashboard.py and daily_report.py)
-PAPER_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
-LIVE_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
-LIVE_START_DATE = "2026-04-01"
+# Date-aware sizing: imported from centralized config.py
+from config import (
+    PAPER_BTC_CONVICTION_BETS as PAPER_CONVICTION_BETS,
+    LIVE_BTC_CONVICTION_BETS as LIVE_CONVICTION_BETS,
+    LIVE_START_DATE,
+)
 CONVICTION_BETS = LIVE_CONVICTION_BETS
 
 

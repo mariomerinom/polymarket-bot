@@ -13,49 +13,7 @@ import json
 import math
 from datetime import datetime, timezone
 
-
-# ── Asset configs ────────────────────────────────────────────────────────
-# BTC 5m values derived from 227+ paper bets. ETH values are placeholders
-# until ETH momentum data accumulates. Kalshi mirrors btc_15m.
-
-SHADOW_CONFIGS = {
-    "btc_5m": {
-        "min_streak": 3,
-        "baseline_streak": 8,
-        "magnitude_multiplier": 2.0,
-        "max_edge": 0.14,
-        "high_confidence_threshold": 0.80,
-        "conv_thresholds": [0.02, 0.05, 0.08, 0.12],  # edge → tier 2/3/4/5
-    },
-    "btc_15m": {
-        "min_streak": 2,
-        "baseline_streak": 5,
-        "magnitude_multiplier": 2.5,
-        "max_edge": 0.14,
-        "high_confidence_threshold": 0.80,
-        "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
-    },
-    "eth_5m": {
-        # Recalibrated 2026-04-02: max_edge bumped from 0.08 to 0.10 so streak=3
-        # clears the 0.05 edge gate in trade.py (was 0.049, now 0.061).
-        "min_streak": 3,
-        "baseline_streak": 6,
-        "magnitude_multiplier": 2.0,
-        "max_edge": 0.10,
-        "high_confidence_threshold": 0.85,
-        "conv_thresholds": [0.03, 0.04, 0.05, 0.07],
-    },
-    "kalshi": {
-        "min_streak": 2,
-        "baseline_streak": 5,
-        "magnitude_multiplier": 2.5,
-        "max_edge": 0.14,
-        "high_confidence_threshold": 0.80,
-        "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
-    },
-}
-
-VOL_FLOOR = 0.02  # Prevent division by near-zero volatility
+from config import SHADOW_CONFIGS, VOL_FLOOR
 
 
 def strength_signal(candles, signed_streak, config_key, regime=None):

@@ -12,6 +12,12 @@ import statistics
 import time
 from datetime import datetime, timezone
 
+from config import (
+    DOJI_BODY_FRACTION, DOJI_WICK_RATIO, HAMMER_WICK_RATIO,
+    ENGULFING_BODY_RATIO, TREND_FILTER_OFFSET, STREAK_AGREEMENT_MIN,
+    API_TIMEOUT_EXCHANGE,
+)
+
 KRAKEN_OHLC = "https://api.kraken.com/0/public/OHLC"
 COINBASE_CANDLES = "https://api.exchange.coinbase.com/products/ETH-USD/candles"
 
@@ -206,7 +212,7 @@ def _compute_consensus(kraken_data, coinbase_data):
     c_streak = coinbase_data["consecutive_direction"]
 
     result["direction_agree"] = k_dir == c_dir
-    result["streak_agree"] = (k_dir == c_dir and k_streak >= 2 and c_streak >= 2)
+    result["streak_agree"] = (k_dir == c_dir and k_streak >= STREAK_AGREEMENT_MIN and c_streak >= STREAK_AGREEMENT_MIN)
 
     if result["streak_agree"]:
         result["score"] = 2
@@ -242,9 +248,9 @@ def _compute_summary(candles):
 
     ups = sum(1 for c in candles if c["direction"] == "UP")
     downs = len(candles) - ups
-    if ups > downs + 2:
+    if ups > downs + TREND_FILTER_OFFSET:
         trend = "up"
-    elif downs > ups + 2:
+    elif downs > ups + TREND_FILTER_OFFSET:
         trend = "down"
     else:
         trend = "neutral"
@@ -280,17 +286,17 @@ def _compute_summary(candles):
     last_candle_pattern = "none"
     if last_full_range > 0:
         body_frac = last_body / last_full_range
-        if body_frac < 0.15 and last["wick_ratio"] > 0.7:
+        if body_frac < DOJI_BODY_FRACTION and last["wick_ratio"] > DOJI_WICK_RATIO:
             last_candle_pattern = "doji"
-        elif last["direction"] == "DOWN" and last_lower_wick > 2 * last_body and last_body > 0:
+        elif last["direction"] == "DOWN" and last_lower_wick > HAMMER_WICK_RATIO * last_body and last_body > 0:
             last_candle_pattern = "hammer"
-        elif last["direction"] == "UP" and last_upper_wick > 2 * last_body and last_body > 0:
+        elif last["direction"] == "UP" and last_upper_wick > HAMMER_WICK_RATIO * last_body and last_body > 0:
             last_candle_pattern = "inv_hammer"
 
     if len(candles) >= 2:
         prev = candles[-2]
         prev_body = abs(prev["close"] - prev["open"])
-        if last_body > prev_body * 1.1 and last["direction"] != prev["direction"]:
+        if last_body > prev_body * ENGULFING_BODY_RATIO and last["direction"] != prev["direction"]:
             if last["direction"] == "UP":
                 last_candle_pattern = "engulfing_bull"
             else:

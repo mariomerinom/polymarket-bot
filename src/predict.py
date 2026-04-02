@@ -17,13 +17,18 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Fallback dead hours — used when DB has insufficient data (< min_bets per hour)
-_FALLBACK_DEAD_HOURS = {3, 21}
+from config import (
+    FALLBACK_DEAD_HOURS, DEAD_HOUR_LOOKBACK_DAYS, DEAD_HOUR_MIN_BETS,
+    DEAD_HOUR_MAX_WR, BTC_VOL_LOW, BTC_VOL_HIGH, AUTOCORR_TRENDING,
+    PRICE_GATE_UPPER, PRICE_GATE_LOWER, PRICE_SWEET_SPOT_LOW,
+    PRICE_SWEET_SPOT_HIGH, CONFIDENCE_HIGH_STREAK, MAX_CONVICTION,
+)
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 
 
-def compute_dead_hours(db_path=None, lookback_days=90, min_bets=30, max_wr=0.50):
+def compute_dead_hours(db_path=None, lookback_days=DEAD_HOUR_LOOKBACK_DAYS,
+                       min_bets=DEAD_HOUR_MIN_BETS, max_wr=DEAD_HOUR_MAX_WR):
     """
     Data-driven dead hour gate: query resolved predictions and return hours
     with WR below max_wr on at least min_bets samples.
@@ -31,11 +36,11 @@ def compute_dead_hours(db_path=None, lookback_days=90, min_bets=30, max_wr=0.50)
     Returns (dead_hours: set, stats: list[dict]) where stats has per-hour
     breakdown for logging.
 
-    Starts from _FALLBACK_DEAD_HOURS (proven bad hours) and adds any new hours
+    Starts from FALLBACK_DEAD_HOURS (proven bad hours) and adds any new hours
     the data confirms. Fallback hours can be rehabilitated once they accumulate
     min_bets samples with WR >= max_wr (i.e., the gate got them wrong).
 
-    Falls back to _FALLBACK_DEAD_HOURS alone if the DB query fails or has no data.
+    Falls back to FALLBACK_DEAD_HOURS alone if the DB query fails or has no data.
     """
     try:
         db = sqlite3.connect(db_path or DB_PATH)
@@ -58,14 +63,14 @@ def compute_dead_hours(db_path=None, lookback_days=90, min_bets=30, max_wr=0.50)
         """, (f"-{lookback_days} days",)).fetchall()
         db.close()
     except Exception as e:
-        print(f"  [dead hours] DB query failed ({e}), using fallback {_FALLBACK_DEAD_HOURS}")
-        return _FALLBACK_DEAD_HOURS, []
+        print(f"  [dead hours] DB query failed ({e}), using fallback {FALLBACK_DEAD_HOURS}")
+        return FALLBACK_DEAD_HOURS, []
 
     if not rows:
-        return _FALLBACK_DEAD_HOURS, []
+        return FALLBACK_DEAD_HOURS, []
 
     # Start with fallback set, then adjust based on data
-    dead = set(_FALLBACK_DEAD_HOURS)
+    dead = set(FALLBACK_DEAD_HOURS)
     stats = []
     hours_seen = set()
     for hour_utc, n, wins in rows:
@@ -116,14 +121,14 @@ def compute_regime_from_candles(candles, autocorr_threshold=-0.15):
         autocorr = cov / var
 
     # Labels
-    if volatility < 0.05:
+    if volatility < BTC_VOL_LOW:
         vol_label = "LOW_VOL"
-    elif volatility < 0.12:
+    elif volatility < BTC_VOL_HIGH:
         vol_label = "MEDIUM_VOL"
     else:
         vol_label = "HIGH_VOL"
 
-    if autocorr > 0.15:
+    if autocorr > AUTOCORR_TRENDING:
         trend_label = "TRENDING"
     elif autocorr < autocorr_threshold:
         trend_label = "MEAN_REVERTING"
@@ -182,7 +187,7 @@ def momentum_signal(candles, min_streak=3, config_key="btc_5m"):
         estimate = 0.55 if direction == "UP" else 0.45
 
     confidence = "medium"
-    if abs(signed_streak) >= 5:
+    if abs(signed_streak) >= CONFIDENCE_HIGH_STREAK:
         confidence = "high"
 
     return {
@@ -227,7 +232,7 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         if not loose_mode and direction == "DOWN" and "NEUTRAL" in regime_label:
             conviction = 2
         # RIDE UP in sweet spot → high conviction ($200 bet)
-        elif direction == "UP" and mkt_price is not None and 0.20 <= mkt_price <= 0.70:
+        elif direction == "UP" and mkt_price is not None and PRICE_SWEET_SPOT_LOW <= mkt_price <= PRICE_SWEET_SPOT_HIGH:
             conviction = 4
         else:
             conviction = 3
@@ -236,7 +241,7 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         # Bump conviction by 1 (max 5) when score=2 (strong agreement)
         consensus_score = consensus.get("score", 0) if consensus else 0
         if consensus_score == 2 and conviction >= 3:
-            conviction = min(conviction + 1, 5)
+            conviction = min(conviction + 1, MAX_CONVICTION)
     elif signal["should_trade"]:
         conviction = 2
     else:
@@ -468,7 +473,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
         # Price gate: skip extreme prices (terrible risk/reward even when correct)
         # At price 0.95, need 95% WR to break even. Our signal hits ~66%. Math can't work.
-        if mkt_price > 0.85 or mkt_price < 0.15:
+        if mkt_price > PRICE_GATE_UPPER or mkt_price < PRICE_GATE_LOWER:
             skip_signal = {
                 "estimate": mkt_price,
                 "should_trade": False,

@@ -12,7 +12,7 @@
 
 - Run `pytest tests/ -v` before every commit. Tests gate CI — a broken push stops the pipeline.
 - Never skip pre-commit hooks.
-- Document production incidents in `docs/BREAK_FIX_LOG.md`.
+- Document production incidents in `docs/ops/BREAK_FIX_LOG.md`.
 - Add a regression test for every fix.
 
 ## Bot Design
@@ -65,61 +65,81 @@ Production sizing is a grind, not a gamble. The current paper-trading tiers ($75
 
 ## Documentation Map
 
-### Active Documents (keep current)
+### Core (`docs/core/`) — project rules, strategy, roadmap
 
 | Document | Goal |
 |----------|------|
 | `CLAUDE.md` | Project rules for Claude — source of truth for behavior |
-| `docs/strategy.md` | Current trading strategy for all pipelines |
-| `docs/PRIMER.md` | System overview, repo map, onboarding |
-| `docs/ROADMAP.md` | Project phases and validation gates |
-| `docs/decisions.md` | Tracked decisions with automated triggers |
-| `docs/BREAK_FIX_LOG.md` | Production incident log |
-| `docs/multi-asset-plan.md` | Multi-asset expansion status and plan |
-| `docs/TESTING.md` | Test strategy, layers, CI pipeline |
-| `docs/ENGINEERING_LESSONS.md` | Evergreen operational lessons |
-| `docs/kelly_analysis.md` | Kelly sizing reference for Phase 3 |
-| `docs/liquidity_probe.md` | Multi-asset CLOB liquidity reference |
-| `docs/KALSHI_INTEGRATION_PLAN.md` | Future venue expansion (deferred) |
+| `docs/core/strategy.md` | Current trading strategy for all pipelines |
+| `docs/core/PRIMER.md` | System overview, repo map, onboarding |
+| `docs/core/ROADMAP.md` | Project phases and validation gates |
+| `docs/core/decisions.md` | Tracked decisions with automated triggers |
+| `docs/core/TESTING.md` | Test strategy, layers, CI pipeline |
 | `config/macro_bias.md` | Macro overlay config (not used in V4) |
 
-### ETH Pipeline (active)
+### Operations (`docs/ops/`) — incidents, lessons learned
 
 | Document | Goal |
 |----------|------|
-| `docs/daily/eth_pipeline_acceptance_criteria.md` | Phased rollout plan: Phase 1 (validate momentum) → Phase 2 (adaptation layer) → Phase 3 (full integration) |
-| `docs/daily/spec_eth_model_training.md` | ETH adaptation layer spec: regime recalibration, cross-asset features, conviction scoring |
+| `docs/ops/BREAK_FIX_LOG.md` | Production incident log |
+| `docs/ops/ENGINEERING_LESSONS.md` | Evergreen operational lessons |
 
-### Future Indicator Specs (queued for evaluation)
+### Plans (`docs/plans/`) — active expansion plans
+
+| Document | Goal |
+|----------|------|
+| `docs/plans/KALSHI_INTEGRATION_PLAN.md` | Kalshi venue expansion (Phase 0 active) |
+| `docs/plans/multi-asset-plan.md` | Multi-asset expansion status and plan |
+
+### Reference (`docs/reference/`) — sizing, liquidity
+
+| Document | Goal |
+|----------|------|
+| `docs/reference/kelly_analysis.md` | Kelly sizing reference for Phase 3 |
+| `docs/reference/liquidity_probe.md` | Multi-asset CLOB liquidity reference |
+
+### Pipelines (`docs/pipelines/`) — pipeline-specific docs
+
+| Document | Goal |
+|----------|------|
+| `docs/pipelines/eth_pipeline_acceptance_criteria.md` | Phased rollout plan: Phase 1 (validate momentum) → Phase 2 (adaptation layer) → Phase 3 (full integration) |
+| `docs/pipelines/spec_eth_model_training.md` | ETH adaptation layer spec: regime recalibration, cross-asset features, conviction scoring |
+
+### Specs (`docs/specs/`) — unimplemented feature designs
 
 These are unimplemented feature specs. Evaluate after ETH Phase 1 validates and BTC live trading stabilizes.
 
 | Document | Goal |
 |----------|------|
-| `docs/daily/spec_rsi_conviction_gate.md` | RSI as pre-bet filter to downgrade conflicting signals |
-| `docs/daily/spec_obv_bucket_filter.md` | On-Balance Volume filter for 0.50-0.70 price bucket |
-| `docs/daily/spec_vwap_mean_reversion.md` | VWAP deviation for mean-reverting regime bets |
-| `docs/daily/spec_volatility_breakout.md` | Volatility compression→expansion breakout detection |
-| `docs/daily/spec_stochastic_entry_timing.md` | Stochastic Oscillator for entry timing within windows |
-| `docs/daily/spec_order_flow_imbalance.md` | CLOB bid/ask imbalance as leading indicator |
-| `docs/daily/spec_market_price_dislocation.md` | Polymarket price lag vs BTC spot arbitrage |
-| `docs/daily/spec_cross_exchange_lead_lag.md` | Kraken/Coinbase lead-lag temporal arbitrage |
-| `docs/daily/spec_dead_regime_harvesting.md` | Edge extraction from mean-reverting/dead-hour regimes |
-| `docs/daily/spec_generic_conviction_engine.md` | Parameterized conviction scorer for all assets (shadow mode) |
+| `docs/specs/spec_rsi_conviction_gate.md` | RSI as pre-bet filter to downgrade conflicting signals |
+| `docs/specs/spec_obv_bucket_filter.md` | On-Balance Volume filter for 0.50-0.70 price bucket |
+| `docs/specs/spec_vwap_mean_reversion.md` | VWAP deviation for mean-reverting regime bets |
+| `docs/specs/spec_volatility_breakout.md` | Volatility compression→expansion breakout detection |
+| `docs/specs/spec_stochastic_entry_timing.md` | Stochastic Oscillator for entry timing within windows |
+| `docs/specs/spec_order_flow_imbalance.md` | CLOB bid/ask imbalance as leading indicator |
+| `docs/specs/spec_market_price_dislocation.md` | Polymarket price lag vs BTC spot arbitrage |
+| `docs/specs/spec_cross_exchange_lead_lag.md` | Kraken/Coinbase lead-lag temporal arbitrage |
+| `docs/specs/spec_dead_regime_harvesting.md` | Edge extraction from mean-reverting/dead-hour regimes |
+| `docs/specs/spec_generic_conviction_engine.md` | Parameterized conviction scorer for all assets (shadow mode) |
 
-### Historical Analysis (read-only reference)
+### Research (`docs/research/`) — historical analysis, read-only reference
 
 | Document | Goal |
 |----------|------|
-| `docs/BACKTEST_FINDINGS.md` | V1→V4 backtest results and regime analysis |
-| `docs/outcome_analysis_bitcoin.md` | Phase 1 BTC statistical analysis (8,653 markets) |
-| `docs/outcome_analysis_ethereum.md` | Phase 1 ETH statistical analysis (8,654 markets) |
-| `docs/outcome_analysis_solana.md` | Phase 1 SOL statistical analysis (8,653 markets) |
-| `docs/pattern_mining_results.md` | Phase 2 pattern mining results |
-| `docs/daily/analysis_exhaustion_gate.md` | Analysis showing exhaustion gate filtered best predictions |
-| `docs/daily/postmortem_exhaustion_gate.md` | Postmortem on exhaustion + cooldown gate removal |
-| `docs/daily/thesis_paper_to_live_degradation.md` | Paper-to-live WR degradation thesis (Decision #17) |
-| `docs/daily/pipeline_recommendations_mar25-27.md` | Source data for decisions #1-9 |
+| `docs/research/BACKTEST_FINDINGS.md` | V1→V4 backtest results and regime analysis |
+| `docs/research/outcome_analysis_bitcoin.md` | Phase 1 BTC statistical analysis (8,653 markets) |
+| `docs/research/outcome_analysis_ethereum.md` | Phase 1 ETH statistical analysis (8,654 markets) |
+| `docs/research/outcome_analysis_solana.md` | Phase 1 SOL statistical analysis (8,653 markets) |
+| `docs/research/pattern_mining_results.md` | Phase 2 pattern mining results |
+
+### Analysis (`docs/analysis/`) — investigations, postmortems, theses
+
+| Document | Goal |
+|----------|------|
+| `docs/analysis/analysis_exhaustion_gate.md` | Analysis showing exhaustion gate filtered best predictions |
+| `docs/analysis/postmortem_exhaustion_gate.md` | Postmortem on exhaustion + cooldown gate removal |
+| `docs/analysis/thesis_paper_to_live_degradation.md` | Paper-to-live WR degradation thesis (Decision #17) |
+| `docs/analysis/pipeline_recommendations_mar25-27.md` | Source data for decisions #1-9 |
 
 ### Archived (superseded, in `docs/archive/`)
 
@@ -169,8 +189,8 @@ When asked "how are we doing?", "check the project", "what's the status", or sim
 1. `git pull` — always first
 2. Read the latest file in `docs/daily/` — yesterday's WR, P&L, alerts, trade execution, circuit breaker status
 3. `python3 src/optimization_tracker.py summary` — are active optimizations improving or regressing?
-4. Read `docs/decisions.md` — has anything moved to READY?
-5. Read `docs/ROADMAP.md` — what's the current phase, what's next?
+4. Read `docs/core/decisions.md` — has anything moved to READY?
+5. Read `docs/core/ROADMAP.md` — what's the current phase, what's next?
 6. `python3 -m pytest tests/ -v` — are tests passing?
 7. Check GitHub Actions — are all 3 pipelines (BTC 5m, BTC 15m, ETH 5m) running green?
 8. Check trade execution — is `TRADING_ENABLED`? Any kill switch or circuit breaker trips?
