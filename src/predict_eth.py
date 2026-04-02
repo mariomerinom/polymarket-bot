@@ -25,9 +25,8 @@ from pathlib import Path
 # Import regime computation from BTC predict
 from predict import compute_regime_from_candles as _btc_regime
 
-# ETH-specific dead hours — EMPTY until calibrated from ETH paper trading data.
-# BTC uses {3, 21} UTC but those are BTC-specific. ETH may differ.
-DEAD_HOURS_UTC = set()
+# Import data-driven dead hours from predict.py (shared logic)
+from predict import compute_dead_hours
 
 # ETH volatility thresholds (Decision #16): BTC thresholds put 83% of ETH in HIGH_VOL.
 # ETH baseline vol is higher. Thresholds derived from 99 historical predictions:
@@ -227,6 +226,12 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
         db.close()
         return
 
+    # Data-driven dead hours from ETH data
+    dead_hours, hour_stats = compute_dead_hours(db_path or DB_PATH_ETH)
+    if hour_stats:
+        dead_list = sorted(dead_hours) if dead_hours else ["none"]
+        print(f"  Dead hours (auto): {dead_list}")
+
     # Compute regime with ETH-calibrated volatility thresholds (Decision #16)
     regime = compute_regime_eth(candles, autocorr_threshold=autocorr_threshold)
     print(f"  Regime: {regime['label']} (autocorr: {regime['autocorrelation']:+.4f})")
@@ -264,9 +269,9 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
         mkt_price = market['price_yes']
         print(f"  Mkt price: {mkt_price:.0%}")
 
-        # Dead hours gate (empty for now — will be calibrated from ETH data)
+        # Dead hours gate — data-driven from ETH predictions
         current_hour_utc = datetime.now(timezone.utc).hour
-        if DEAD_HOURS_UTC and current_hour_utc in DEAD_HOURS_UTC:
+        if current_hour_utc in dead_hours:
             skip_signal = {
                 "estimate": mkt_price,
                 "should_trade": False,
