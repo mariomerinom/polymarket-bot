@@ -115,9 +115,75 @@ After independent reviews, teammates debate via direct messaging:
 
 This is the key advantage of agent teams over a single-pass review: competing perspectives surface blind spots.
 
-### 5. Lead synthesizes the final matrix
+### 5. Counterfactual backtest phase
 
-The lead produces the final output using findings from all 4 reviewers:
+After the debate, the lead spawns **parallel sub-agents** (one per Tier 1 candidate) to run counterfactual analysis against historical resolved data. This answers: "If this spec had been active, how would our actual bets have changed?"
+
+This is NOT a traditional backtest that implements new code. It's a counterfactual query against existing predictions — what would have been different?
+
+```
+For each Tier 1 spec (up to 5), spawn a sub-agent to:
+
+1. Read the spec's filter/gate logic
+2. Query predictions.db for ALL resolved predictions (conv >= 3, m.resolved=1)
+3. Apply the spec's rule retroactively:
+   - Which bets would have been FILTERED (demoted to conv 2, no bet)?
+   - Which conv-2 predictions would have been PROMOTED (new bets)?
+4. Calculate the counterfactual impact:
+   - Baseline WR and P&L (what actually happened)
+   - Counterfactual WR and P&L (what would have happened with this spec)
+   - Delta: WR change, P&L change, bet count change
+   - Sample size of affected bets (must be >= 50 to trust)
+5. Flag suspicious results:
+   - WR improvement > 10 points → likely overfitting or tiny sample
+   - P&L sign contradicts WR direction → calculation error, re-verify
+   - Affected bets < 20 → insufficient data, mark as inconclusive
+```
+
+**Example counterfactual query (RSI conviction gate):**
+```sql
+-- Bets where RSI was mentioned in reasoning (shadow data exists)
+-- Check if RSI-conflicting bets performed worse
+SELECT
+  CASE WHEN reasoning LIKE '%RSI_divergence%' THEN 'RSI_conflict' ELSE 'no_conflict' END as rsi_status,
+  COUNT(*) as bets,
+  SUM(CASE WHEN (estimate>=0.5 AND outcome=1) OR (estimate<0.5 AND outcome=0) THEN 1 ELSE 0 END) as wins
+FROM predictions p JOIN markets m ON p.market_id=m.id
+WHERE p.conviction_score>=3 AND m.resolved=1
+GROUP BY rsi_status;
+```
+
+**Example counterfactual query (dead regime harvesting):**
+```sql
+-- Bets in mean-reverting regime that we currently skip
+SELECT COUNT(*) as would_bet,
+  SUM(CASE WHEN (estimate>=0.5 AND outcome=1) OR (estimate<0.5 AND outcome=0) THEN 1 ELSE 0 END) as would_win
+FROM predictions p JOIN markets m ON p.market_id=m.id
+WHERE p.regime LIKE '%MEAN_REVERTING%' AND p.conviction_score < 3 AND m.resolved=1;
+```
+
+**Critical rule: Derived from ≠ validated by.** This counterfactual uses the SAME dataset we'd use to confirm the edge — so it cannot be the final word. It's a sanity check, not validation. The output must say: "Counterfactual suggests +X% WR on N bets. Forward validation still required (50 new bets minimum)."
+
+Each sub-agent returns a structured result:
+```markdown
+### Counterfactual: spec_name
+
+| Metric | Baseline | With Spec | Delta |
+|--------|----------|-----------|-------|
+| Bets | N | N±X | ±X |
+| WR | X% | Y% | ±Z pp |
+| P&L | $X | $Y | ±$Z |
+| Sample (affected) | — | N bets | ≥50? ✅/🔴 |
+
+**Suspicious?** No / Yes: [reason, re-verified result]
+**Verdict**: Promising (forward-test) / Inconclusive (need data) / Negative (skip)
+```
+
+If any sub-agent flags suspicious numbers (P&L sign contradicts WR, or improvement is implausibly large), the lead asks the devil-advocate to re-verify the calculation before including it in the final matrix.
+
+### 6. Lead synthesizes the final matrix
+
+The lead produces the final output using findings from all 4 reviewers plus the counterfactual results:
 
 #### Tier 1 — Ready Now
 Specs where: data-analyst confirms shadow data, engineer confirms low complexity and no frozen files, strategist confirms strategic fit, and devil-advocate couldn't find a fatal flaw.
@@ -142,13 +208,14 @@ Specs where: engineer found frozen file violations without justification, devil-
 | Reversibility | X/5 | engineer | ... |
 
 **Devil's advocate**: [Key challenge raised and whether it was addressed]
+**Counterfactual**: WR X%→Y% (±Z pp) on N affected bets | ⚠️ Suspicious: [reason] | N/A (no data)
 **Frozen files**: PASS / FAIL (list affected files)
 **Related decisions**: #N, #M
 **Shadow data**: Collecting (N samples) / Not collecting / N/A
 **Consensus**: Build now / Wait for data / Redesign spec / Rejected
 ```
 
-### 6. Clean up the team
+### 7. Clean up the team
 
 After the matrix is synthesized:
 
