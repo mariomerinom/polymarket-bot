@@ -1171,6 +1171,26 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
         predictions = get_recent_predictions(db)
         markets = get_markets(db)
         orders_data = get_orders_summary(db)
+        # Fetch real P&L only for pipelines with live trade execution
+        _real_pnl_data = None
+        _has_live_orders = False
+        try:
+            tbl = db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='orders'"
+            ).fetchone()
+            if tbl:
+                live_row = db.execute(
+                    "SELECT COUNT(*) FROM orders WHERE mode='live'"
+                ).fetchone()
+                _has_live_orders = (live_row[0] or 0) > 0
+        except Exception:
+            pass
+        if _has_live_orders:
+            try:
+                from polymarket_pnl import fetch_real_pnl
+                _real_pnl_data = fetch_real_pnl(db)
+            except Exception as e:
+                print(f"  [DASHBOARD] Real P&L fetch: {e}")
     finally:
         db.close()
 
@@ -1196,22 +1216,41 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
     calibration = compute_confidence_calibration(active_resolved)
     rolling = compute_rolling_accuracy(active_resolved)
 
-    # P&L: live era (hero) + paper era (secondary)
-    if has_live:
-        agent_pnl = compute_pnl(live_resolved, asset=asset)
-        ensemble_pnl = compute_ensemble_pnl(live_resolved, asset=asset)
+    # P&L: real (from Polymarket API) for live pipelines, simulated for paper
+    real_pnl = _real_pnl_data
+    using_real_pnl = False
+
+    if _has_live_orders:
+        # Pipeline has real trades — use real P&L, no simulation
+        using_real_pnl = True
+        if real_pnl:
+            agent_pnl = real_pnl
+        else:
+            # No real fills yet — show $0
+            agent_pnl = {"portfolio": {
+                "total_pnl": 0, "total_wagered": 0, "num_bets": 0,
+                "num_wins": 0, "num_losses": 0, "gross_wins": 0,
+                "gross_losses": 0, "pnl_series": [], "bet_results": [],
+                "max_drawdown": 0, "roi": 0, "avg_win": 0, "avg_loss": 0,
+                "skipped": 0,
+            }}
+        p = agent_pnl["portfolio"]
+        ensemble_pnl = {
+            "total_pnl": p["total_pnl"],
+            "total_wagered": p["total_wagered"],
+            "num_bets": p["num_bets"],
+            "num_skipped": 0,
+            "roi": p["roi"],
+            "pnl_series": p["pnl_series"],
+        }
         conviction_tiers = compute_conviction_breakdown(live_resolved, asset=asset)
     else:
         agent_pnl = compute_pnl(active_resolved, asset=asset)
         ensemble_pnl = compute_ensemble_pnl(active_resolved, asset=asset)
         conviction_tiers = compute_conviction_breakdown(active_resolved, asset=asset)
 
-    if has_paper:
-        paper_agent_pnl = compute_pnl(paper_resolved, asset=asset)
-        paper_ensemble_pnl = compute_ensemble_pnl(paper_resolved, asset=asset)
-    else:
-        paper_agent_pnl = {}
-        paper_ensemble_pnl = {"total_pnl": 0, "pnl_series": []}
+    paper_agent_pnl = {}
+    paper_ensemble_pnl = {"total_pnl": 0, "pnl_series": []}
 
     # -- Status Header --
     status_color = {
@@ -1475,8 +1514,9 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
         avg_win_all = (gross_wins_all / total_wins_all) if total_wins_all > 0 else 0
         avg_loss_all = (gross_losses_all / total_losses_all) if total_losses_all > 0 else 0
 
+        portfolio_label = "POLYMARKET PORTFOLIO" if using_real_pnl else "TOTAL PORTFOLIO"
         consolidated_html = f"""<div class="consolidated-pnl">
-            <div class="consolidated-label">TOTAL PORTFOLIO</div>
+            <div class="consolidated-label">{portfolio_label}</div>
             <div class="consolidated-return" style="color:{all_color}">{all_sign}${total_pnl_all:,.0f}</div>
             <div class="consolidated-detail">{total_bets_all} discrete bets &middot; {roi_all:+.0f}% ROI (cumulative) &middot; <span style="color:{all_color};font-weight:700">{roi_per_bet:+.0f}% ROI/bet</span></div>
             <div class="pnl-asymmetry">
@@ -1500,33 +1540,37 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
         </div>"""
 
         pnl_cards = ""
-        for agent in sorted(agent_pnl.keys()):
-            p = agent_pnl[agent]
-            color = AGENT_COLORS.get(agent, "#c9d1d9")
-            pnl_color = "#3fb950" if p["total_pnl"] >= 0 else "#f44336"
-            pnl_sign = "+" if p["total_pnl"] >= 0 else ""
-            roi_sign = "+" if p["roi"] >= 0 else ""
-            wr = (p["num_wins"] / p["num_bets"] * 100) if p["num_bets"] > 0 else 0
-            pnl_cards += f"""<div class="perf-card">
-                <div class="perf-agent" style="color:{color}">{agent}</div>
-                <div class="perf-accuracy" style="color:{pnl_color}">{pnl_sign}${p["total_pnl"]:,.0f}</div>
-                <div class="perf-record">{p["num_wins"]}W-{p["num_losses"]}L ({wr:.0f}% WR)</div>
-                <div class="perf-vs" style="color:#3fb950">+${p["gross_wins"]:,.0f} won (avg +${p["avg_win"]:,.0f})</div>
-                <div class="perf-vs" style="color:#f44336">${p["gross_losses"]:,.0f} lost (fixed ${p["avg_loss"]:,.0f})</div>
-                <div class="perf-vs" style="color:#8b949e">Max DD: ${p["max_drawdown"]:,.0f} &middot; {roi_sign}{p["roi"]:.0f}% ROI</div>
-            </div>"""
+        if using_real_pnl:
+            # Single portfolio card — no agent breakdown for real P&L
+            pass
+        else:
+            for agent in sorted(agent_pnl.keys()):
+                p = agent_pnl[agent]
+                color = AGENT_COLORS.get(agent, "#c9d1d9")
+                pnl_color = "#3fb950" if p["total_pnl"] >= 0 else "#f44336"
+                pnl_sign = "+" if p["total_pnl"] >= 0 else ""
+                roi_sign = "+" if p["roi"] >= 0 else ""
+                wr = (p["num_wins"] / p["num_bets"] * 100) if p["num_bets"] > 0 else 0
+                pnl_cards += f"""<div class="perf-card">
+                    <div class="perf-agent" style="color:{color}">{agent}</div>
+                    <div class="perf-accuracy" style="color:{pnl_color}">{pnl_sign}${p["total_pnl"]:,.0f}</div>
+                    <div class="perf-record">{p["num_wins"]}W-{p["num_losses"]}L ({wr:.0f}% WR)</div>
+                    <div class="perf-vs" style="color:#3fb950">+${p["gross_wins"]:,.0f} won (avg +${p["avg_win"]:,.0f})</div>
+                    <div class="perf-vs" style="color:#f44336">${p["gross_losses"]:,.0f} lost (fixed ${p["avg_loss"]:,.0f})</div>
+                    <div class="perf-vs" style="color:#8b949e">Max DD: ${p["max_drawdown"]:,.0f} &middot; {roi_sign}{p["roi"]:.0f}% ROI</div>
+                </div>"""
 
-        # Ensemble P&L card
-        ep = ensemble_pnl
-        ep_color = "#3fb950" if ep["total_pnl"] >= 0 else "#f44336"
-        ep_sign = "+" if ep["total_pnl"] >= 0 else ""
-        ep_roi_sign = "+" if ep["roi"] >= 0 else ""
-        pnl_cards += f"""<div class="perf-card perf-ensemble">
-            <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
-            <div class="perf-accuracy" style="color:{ep_color}">{ep_sign}${ep["total_pnl"]:,.0f}</div>
-            <div class="perf-record">{ep["num_bets"]} bets &middot; {ep_roi_sign}{ep["roi"]:.0f}% ROI</div>
-            <div class="perf-vs">from ${ep["total_wagered"]:,.0f} cumulative ({ep["num_skipped"]} skipped)</div>
-        </div>"""
+            # Ensemble P&L card
+            ep = ensemble_pnl
+            ep_color = "#3fb950" if ep["total_pnl"] >= 0 else "#f44336"
+            ep_sign = "+" if ep["total_pnl"] >= 0 else ""
+            ep_roi_sign = "+" if ep["roi"] >= 0 else ""
+            pnl_cards += f"""<div class="perf-card perf-ensemble">
+                <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
+                <div class="perf-accuracy" style="color:{ep_color}">{ep_sign}${ep["total_pnl"]:,.0f}</div>
+                <div class="perf-record">{ep["num_bets"]} bets &middot; {ep_roi_sign}{ep["roi"]:.0f}% ROI</div>
+                <div class="perf-vs">from ${ep["total_wagered"]:,.0f} cumulative ({ep["num_skipped"]} skipped)</div>
+            </div>"""
 
         # EV & Breakeven analysis
         ev_data = compute_ev_breakeven(agent_pnl)
@@ -1575,8 +1619,15 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
                 </div>
             </div>"""
 
-        pnl_title = "Trading P&amp;L" if has_live else "Paper Trading P&amp;L"
-        pnl_desc = "Flat $25 per bet. Wins variable (entry price dependent), losses fixed at bet size." if has_live else "Paper-era conviction-tiered sizing."
+        if using_real_pnl:
+            pnl_title = "Real Trading P&amp;L"
+            pnl_desc = "From Polymarket. Actual fill prices, actual costs."
+        elif has_live:
+            pnl_title = "Trading P&amp;L"
+            pnl_desc = "Flat $25 per bet. Wins variable (entry price dependent), losses fixed at bet size."
+        else:
+            pnl_title = "Paper Trading P&amp;L"
+            pnl_desc = "Paper-era conviction-tiered sizing."
         pnl_html = f"""<h2>{pnl_title}</h2>
         <p class="section-desc">{pnl_desc}</p>
         {consolidated_html}
@@ -1595,23 +1646,7 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
             {build_pnl_svg(agent_pnl, ensemble_pnl)}
         </div>"""
 
-        # Paper era secondary section (only shown when live data exists)
-        if has_live and has_paper and paper_agent_pnl:
-            paper_total = paper_ensemble_pnl.get("total_pnl", 0)
-            paper_wagered = sum(p.get("wagered", 0) for p in paper_agent_pnl.values())
-            paper_bets = sum(p.get("num_wins", 0) + p.get("num_losses", 0) for p in paper_agent_pnl.values())
-            paper_c = "#3fb950" if paper_total >= 0 else "#f44336"
-            pnl_html += f"""
-            <details style="margin-top:24px">
-                <summary style="cursor:pointer;color:#8b949e;font-size:0.95rem">
-                    Paper Trading History (before {LIVE_START_DATE}) &mdash;
-                    <span style="color:{paper_c}">${paper_total:+,.0f}</span> on {paper_bets} bets
-                </summary>
-                <p style="color:#484f58;font-size:0.85rem;margin:8px 0">
-                    Paper-era used conviction-tiered sizing ($75/$200/$300). Not real money.
-                    Total wagered: ${paper_wagered:,.0f}
-                </p>
-            </details>"""
+        # Paper era section removed — user wants real money only
     else:
         pnl_html = ""
 

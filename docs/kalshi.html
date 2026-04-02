@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="300">
-<title>Polymarket Bot Dashboard</title>
+<title>BOTSY CASH MATERIALIZER</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -404,40 +404,6 @@ tr:hover {
     display: inline-block;
 }
 
-/* Evolution */
-.evo-card {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
-}
-.evo-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
-}
-.evo-cycle {
-    color: #58a6ff;
-    font-weight: 700;
-    font-size: 0.95rem;
-}
-.evo-time {
-    color: #484f58;
-    font-size: 0.85rem;
-    margin-left: auto;
-}
-.evo-body p {
-    margin: 4px 0;
-    font-size: 0.9rem;
-}
-.evo-scores {
-    color: #8b949e;
-    font-size: 0.85rem;
-}
-
 /* Pipeline Health Banner */
 .pipeline-banner {
     background: #161b22;
@@ -593,21 +559,19 @@ tr:hover {
     h1 { font-size: 1.4rem; }
     td, th { padding: 6px 8px; font-size: 0.82rem; }
     .perf-grid { grid-template-columns: repeat(2, 1fr); }
-    .evo-header { flex-direction: column; align-items: flex-start; gap: 4px; }
-    .evo-time { margin-left: 0; }
 }
 </style>
 </head>
 <body>
 <div class="container">
-    <h1>Polymarket Autoresearch Bot</h1>
+    <h1>BOTSY CASH MATERIALIZER</h1>
     <nav class="dash-nav"><a href="index.html" class="dash-nav-link">BTC 5m</a><a href="15m.html" class="dash-nav-link">BTC 15m</a><a href="eth.html" class="dash-nav-link">ETH 5m</a><a href="kalshi.html" class="dash-nav-link">Kalshi</a></nav>
-    <p class="subtitle">Kalshi BTC signal transfer (paper) &mdash; autoresearch loop</p>
+    <p class="subtitle">Kalshi BTC (Phase 0 — Paper)</p>
 
     <div class="status-bar">
         <div class="status-item">
             <span class="status-label">Status</span>
-            <span class="status-value" style="color:#238636">Active</span>
+            <span class="status-value" style="color:#da3633">Stale</span>
         </div>
         <div class="status-item">
             <span class="status-label">Last Cycle</span>
@@ -619,17 +583,13 @@ tr:hover {
         </div>
         <div class="status-item">
             <span class="status-label">Next Market</span>
-            <span class="status-value" id="countdown" data-next-market="2026-04-02T13:50:09.432502+00:00">--</span>
-        </div>
-        <div class="status-item">
-            <span class="status-label">Evolutions</span>
-            <span class="status-value">0</span>
+            <span class="status-value" id="countdown" data-next-market="2026-04-02T15:35:09.432502+00:00">--</span>
         </div>
     </div>
 
     <div style="background:rgba(88,166,255,0.12);border:1px solid #1f6feb;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">&#128203; PAPER TRADING — V4 MOMENTUM</div>
-        <div style="color:#8b949e;font-size:13px;margin-top:4px">Ride the streak. Flat $25 production grind. Validating execution before going live.</div>
+        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">&#128203; PAPER TRADING — MOMENTUM</div>
+        <div style="color:#8b949e;font-size:13px;margin-top:4px">Ride the streak. Collecting data for validation.</div>
     </div>
 
     <div class="pipeline-banner" style="background:rgba(63,185,80,0.08);border-color:#238636">
@@ -644,14 +604,14 @@ tr:hover {
         </div>
         <div class="pipeline-meta">
             <div class="pipeline-detail">Avg gap: 0min &middot; 1 total &middot; 0 missed</div>
-            <div class='pipeline-ago'>Last cycle: 0m ago</div>
+            <div class='pipeline-ago'>Last cycle: 1.1h ago</div>
         </div>
     </div>
 
     <div class="live-banner"><div class="live-card">
             <div class="live-label">BTC Price</div>
-            <div class="live-value">$65,736</div>
-            <div class="live-detail" style="color:#f44336">-0.438% &middot; NEUTRAL</div>
+            <div class="live-value">$66,773</div>
+            <div class="live-detail" style="color:#3fb950">+0.585% &middot; NEUTRAL</div>
         </div><div class="live-card">
             <div class="live-label">Current Prediction</div>
             <div class="live-value" style="color:#58a6ff">Mkt 48%</div>
@@ -798,8 +758,7 @@ tr:hover {
     </table>
     </div>
 
-    <h2>Evolution History</h2>
-    <p class="empty">No evolution history yet.</p>
+
 </div>
 <script>
 (function() {
