@@ -18,6 +18,7 @@ from pathlib import Path
 DB_5M = Path(__file__).parent.parent / "data" / "predictions.db"
 DB_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
 DB_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
+DB_KALSHI = Path(__file__).parent.parent / "data" / "predictions_kalshi.db"
 DAILY_DIR = Path(__file__).parent.parent / "docs" / "daily"
 
 # Date-aware sizing: paper-era tiers before live, flat $25 after
@@ -25,6 +26,7 @@ PAPER_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
 PAPER_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 50, 5: 75}
 LIVE_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
 LIVE_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
+LIVE_KALSHI_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
 LIVE_START_DATE = "2026-04-01"
 BTC_CONVICTION_BETS = LIVE_BTC_CONVICTION_BETS
 ETH_CONVICTION_BETS = LIVE_ETH_CONVICTION_BETS
@@ -34,6 +36,8 @@ CONVICTION_BETS = BTC_CONVICTION_BETS  # default for backward compat
 def _get_bet_size_dr(conv, predicted_at, asset="BTC"):
     """Return bet size based on date: paper tiers before LIVE_START_DATE, flat $25 after."""
     date_str = (predicted_at or "")[:10]
+    if asset == "KALSHI":
+        return LIVE_KALSHI_CONVICTION_BETS.get(conv, 0)
     if date_str >= LIVE_START_DATE:
         tiers = LIVE_BTC_CONVICTION_BETS if asset == "BTC" else LIVE_ETH_CONVICTION_BETS
     else:
@@ -787,7 +791,7 @@ def check_decisions(db_5m_path, db_15m_path):
     return alerts
 
 
-def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None):
+def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None):
     """Format analysis data into markdown report."""
     decision_alerts = decision_alerts or []
     lines = [
@@ -800,6 +804,7 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
         ("5-Minute Pipeline", data_5m),
         ("15-Minute Pipeline", data_15m),
         ("ETH 5-Minute Pipeline", data_eth),
+        ("Kalshi BTC Pipeline", data_kalshi),
     ]
     for label, data in pipelines:
         if data is None:
@@ -1130,15 +1135,19 @@ def analyze_shadow_indicators(predictions, resolved):
 
 
 def analyze_pipeline(db_path, date_str):
-    """Run full analysis for one pipeline (5m, 15m, or ETH)."""
+    """Run full analysis for one pipeline (5m, 15m, ETH, or Kalshi)."""
     global CONVICTION_BETS
     if not Path(db_path).exists():
         return None
 
-    # Use ETH sizing for ETH pipeline
-    is_eth = "eth" in str(db_path).lower()
+    # Use appropriate sizing for each pipeline
+    db_str = str(db_path).lower()
+    is_eth = "eth" in db_str
+    is_kalshi = "kalshi" in db_str
     old_bets = CONVICTION_BETS
-    if is_eth:
+    if is_kalshi:
+        CONVICTION_BETS = LIVE_KALSHI_CONVICTION_BETS
+    elif is_eth:
         CONVICTION_BETS = ETH_CONVICTION_BETS
 
     db = sqlite3.connect(db_path)

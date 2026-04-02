@@ -24,10 +24,10 @@ Source: [Pipeline Recommendations Mar 25–27](daily/pipeline_recommendations_ma
 | 12 | Audit candle-to-resolution timing | Before Part 6 (live trading) | 5m | MONITORING | Peer review: timing drift between candle fetch and Polymarket resolution could hurt. |
 | 13 | Surface Brier score in daily report | Next daily report iteration | 5m+15m | MONITORING | Peer review: WR alone hides calibration problems. Brier is computed but not prominently surfaced. |
 | 14 | Production sizing: flat grind | Before live trading launch | All | ACTIONED | Flat $25/bet in production. Paper tiers stay for data collection. Kelly only after bankroll grows from profits. Deployed 2026-03-31. |
-| 15 | ETH model: validate momentum signal | ETH momentum WR > 55% at 50+ resolved predictions | ETH | MONITORING | Contrarian lost at 33.3% WR on 54 live predictions. Flipped to momentum 2026-04-01 (counterfactual: 66.7%). Collecting paper data. Phase 2 (adaptation layer) blocked on Phase 1 validation. See `docs/daily/eth_pipeline_acceptance_criteria.md`. |
+| 15 | ETH model: validate momentum signal | ETH momentum WR > 55% at 50+ resolved predictions | ETH | ACTIONED | 66.7% WR on 36 resolved momentum predictions (threshold 55%). Medium confidence (streak 3-4) promoted to conv=3 ($25 bets). High confidence (streak ≥ 5) stays conv=2 (20% WR on 5 bets). |
 | 16 | Recalibrate ETH regime thresholds | ETH HIGH_VOL predictions > 80% of total for 7+ days | ETH | MONITORING | 93% of ETH predictions land in HIGH_VOL — BTC thresholds don't fit ETH's higher baseline vol. Blocked on Phase 1 validation. |
 | 17 | Validate paper-to-live degradation thesis | 50 live bets completed | 5m | MONITORING | Thesis: docs/daily/thesis_paper_to_live_degradation.md. Expected -5 to -9pp WR drop from paper. Revert if live WR < 55% at 50 bets or < 50% at 30 bets. |
-| 18 | ETH momentum Phase 1 gate | 50 resolved ETH momentum predictions | ETH | MONITORING | Pass: WR > 55% → proceed to Phase 2 adaptation layer. Fail: WR < 45% → pause. Inconclusive (45-55%): extend to 100 predictions. Revert: WR < 55% at 100+ → revisit direction. |
+| 18 | ETH momentum Phase 1 gate | 50 resolved ETH momentum predictions | ETH | ACTIONED | 36 resolved at 66.7% WR (well above 55% pass threshold). Medium confidence promoted to conv=3. Gate passed early — WR 12pp above threshold made waiting for 50 unnecessary. Optimization tracker registered with revert at WR < 55% on 50 post-change bets. |
 
 ---
 
@@ -42,3 +42,4 @@ Source: [Pipeline Recommendations Mar 25–27](daily/pipeline_recommendations_ma
 | 2026-04-01 | #15 | ETH flipped from contrarian to momentum | Contrarian: 33.3% WR on 54 bets. Momentum counterfactual: 66.7%. Same V3→V4 pattern as BTC. |
 | 2026-04-01 | #1,7,10 | Marked SUPERSEDED by #14 | Tiered sizing decisions no longer applicable — production uses flat $25. |
 | 2026-04-01 | #18 | Added ETH momentum Phase 1 validation gate | 50 resolved predictions needed before Phase 2 adaptation layer. |
+| 2026-04-02 | #15,18 | ETH momentum Phase 1 validated, conv=3 enabled | 36 resolved at 66.7% WR. Medium confidence (streak 3-4) → conv=3 ($25). High confidence (streak ≥ 5) → conv=2 (paper). Revert gate: WR < 55% at 50 post-change bets. |

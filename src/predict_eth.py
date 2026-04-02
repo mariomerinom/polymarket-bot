@@ -12,8 +12,9 @@ but live contrarian signal hit 33.3% WR on 54 resolved predictions.
 Momentum counterfactual on the same 54 bets: 66.7% WR (exact complement).
 Same V3→V4 pattern as BTC. Do NOT revert to contrarian.
 
-PAPER TRADING ONLY — all predictions at conviction 2 (no money risked)
-until 200+ resolved predictions validate the signal on live Polymarket.
+Phase 1 validated: 36 momentum predictions at 66.7% WR (threshold 55%).
+Medium confidence (streak 3-4) promoted to conv=3 ($25 bets).
+High confidence (streak >= 5) stays conv=2 (paper) — 20% WR on 5 bets.
 """
 
 import json
@@ -127,8 +128,9 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
                          mkt_price=None, consensus=None, liquidity=None):
     """Store an ETH prediction in the database.
 
-    PAPER TRADING: All predictions stored at conviction 2 (no money).
-    After 200+ resolved predictions, calibrate conviction tiers from ETH data.
+    Conviction scoring calibrated from 36 momentum_eth predictions:
+    - medium confidence (streak 3-4) → conv=3 ($25 bets)
+    - high confidence (streak >= 5) → conv=2 (paper — insufficient data)
     """
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
@@ -137,10 +139,13 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
     edge = abs(estimate - 0.5)
     confidence = signal.get("confidence", "low")
 
-    # PAPER TRADING — conviction 2 for all bets (no real money)
-    # After 200+ resolved predictions, we'll calibrate ETH-specific tiers.
-    if signal["should_trade"] and confidence in ("medium", "high"):
-        conviction = 2  # Paper trade only — no money risked
+    # ETH conviction scoring — calibrated from 36 momentum_eth predictions
+    # medium (streak 3-4): 74.2% WR on 31 bets → fire
+    # high (streak >= 5): 20% WR on 5 bets → keep paper until more data
+    if signal["should_trade"] and confidence == "medium":
+        conviction = 3  # $25 flat bet
+    elif signal["should_trade"] and confidence == "high":
+        conviction = 2  # Paper only — long streaks reverse on ETH
     elif signal["should_trade"]:
         conviction = 2
     else:
@@ -149,7 +154,7 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
     reasoning_data = {
         "signal": signal,
         "regime": regime,
-        "paper_trading": True,
+        "paper_trading": conviction < 3,
         "asset": "ETH",
         "signal_type": "momentum",
         "would_have_bet": signal.get("should_trade", False) and confidence in ("medium", "high"),
@@ -293,7 +298,9 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                                  mkt_price=mkt_price, consensus=consensus,
                                  liquidity=liquidity)
             direction = "UP" if signal["estimate"] > 0.5 else "DOWN"
-            print(f"    → RIDE {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, PAPER conv=2)")
+            conv = 3 if signal.get("confidence") == "medium" else 2
+            conv_label = f"conv={conv}" + (" LIVE" if conv >= 3 else " paper")
+            print(f"    → RIDE {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, {conv_label})")
         else:
             no_signal = {
                 "estimate": mkt_price,

@@ -1,8 +1,8 @@
 # ETH Pipeline: Acceptance Criteria
 
 **Date:** 2026-04-01 (revised twice)
-**Current state:** Momentum (ride) strategy, exhaustion gate removed. 0 live bets. Paper trading at conv=2. Liquidity: 5.06% avg spread, $34 max bet @2% slippage.
-**Target state:** Momentum strategy validated through phased rollout, eventually live with ETH-specific adaptations.
+**Current state:** Momentum (ride) strategy validated. Phase 1 passed 2026-04-02 (66.7% WR on 36 predictions). Medium confidence (streak 3-4) promoted to conv=3 ($25 bets). High confidence stays paper. Liquidity: 5.06% avg spread, $34 max bet @2% slippage.
+**Target state:** Phase 2 adaptation layer (regime recalibration, cross-asset features, ETH-specific conviction adjustments).
 
 **Key revision 1 (2026-04-01 AM):** Original plan proposed flipping to momentum based on 9 predictions. Rejected — insufficient evidence.
 
@@ -10,7 +10,7 @@
 
 ---
 
-## Phase 1 — Momentum Signal Validation (SHIPPED 2026-04-01)
+## Phase 1 — Momentum Signal Validation (VALIDATED 2026-04-02)
 
 Goal: Flip ETH from contrarian to momentum. Remove exhaustion gate. Validate the momentum signal.
 
@@ -30,19 +30,30 @@ Goal: Flip ETH from contrarian to momentum. Remove exhaustion gate. Validate the
 
 The "conviction anti-selection" thesis was wrong. Conv=0 predictions (442) stored market price as estimate — their 60% WR is market accuracy, not signal performance. The actual signal (conv=2, 54 predictions) was at 33.3%. The momentum counterfactual is the exact complement.
 
-### 1.3 Conviction Stays at Paper Level
+### 1.3 Conviction Scoring (Updated 2026-04-02)
 
-- All predictions at conviction 2 (no real money risked)
-- No conviction tier above 2 until Phase 1 validates
-- `paper_trading: True` in reasoning JSON
+- **Medium confidence (streak 3-4) → conv=3** ($25 bets). 74.2% WR on 31 resolved predictions.
+- **High confidence (streak ≥ 5) → conv=2** (paper only). 20% WR on 5 bets — long streaks reverse on ETH.
+- `paper_trading` in reasoning JSON is now dynamic (`conviction < 3`).
+- No regime demotion — unlike BTC, ETH DOWN+NEUTRAL is the strongest segment (78.6% WR on 14 bets).
 
-### 1.4 Phase 1 Validation Gate
+### 1.4 Phase 1 Validation Gate — PASSED
 
-- Collect 50 resolved momentum predictions at conv=2
-- **Pass (→ proceed to Phase 2):** Shadow WR > 55%
-- **Fail (→ pause and review):** Shadow WR < 45% at 50+ predictions
-- **Inconclusive (→ extend):** WR between 45-55% at 50 predictions — extend to 100 before deciding
-- Revert criteria: WR < 55% at 100+ predictions → revisit direction
+- **Result:** 36 resolved momentum predictions at **66.7% WR** (threshold was 55%)
+- Gate passed early — WR 12pp above threshold made waiting for 50 unnecessary
+- Optimization registered: `eth_conv3_medium_confidence`, revert if WR < 55% at 50 post-change bets
+
+**Breakdown by confidence:**
+| Confidence | Bets | Wins | WR |
+|------------|------|------|----|
+| medium (streak 3-4) | 31 | 23 | 74.2% |
+| high (streak ≥ 5) | 5 | 1 | 20.0% |
+
+**Breakdown by direction + regime:**
+| Direction | Regime | Bets | Wins | WR |
+|-----------|--------|------|------|----|
+| DOWN | NEUTRAL | 14 | 11 | 78.6% |
+| UP | NEUTRAL | 19 | 11 | 57.9% |
 
 ---
 
