@@ -68,9 +68,9 @@ def main():
         _generate_dashboard()
         return
 
-    # 3. Predict using CONTRARIAN rule (no API calls)
+    # 3. Predict using MOMENTUM rule (no API calls)
     cycle = get_next_cycle(db)
-    print(f"[3/5] Predictions — ETH contrarian rule (cycle {cycle})...")
+    print(f"[3/5] Predictions — ETH momentum rule (cycle {cycle})...")
     eth_data = fetch_eth_candles(limit=20)
     if eth_data:
         print(f"  ETH: ${eth_data['current_price']:,.2f} | 1h: {eth_data['1h_change_pct']:+.3f}% | Trend: {eth_data['trend']}")
@@ -98,6 +98,14 @@ def main():
                 print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
     except Exception as e:
         print(f"    [SHADOW] skipped: {e}")
+
+    # Shadow conviction scorer — continuous strength signal
+    try:
+        from shadow_conviction_scorer import shadow_log_cycle
+        if eth_data and eth_data.get("candles"):
+            shadow_log_cycle(db, cycle, eth_data["candles"], "eth_5m")
+    except Exception as e:
+        print(f"    [shadow] skipped: {e}")
 
     # 3b. Execute trades
     if is_kill_switched():

@@ -171,3 +171,45 @@ class TestMomentumSignalEth:
         row = db.execute("SELECT conviction_score FROM predictions").fetchone()
         assert row[0] == 3, f"Medium confidence should be conv=3, got {row[0]}"
         db.close()
+
+
+class TestEthRegimeThresholds:
+    """Decision #16: ETH uses recalibrated volatility thresholds."""
+
+    def test_eth_regime_medium_vol(self):
+        """Volatility between 0.10 and 0.20 should be MEDIUM_VOL with ETH thresholds."""
+        from predict_eth import compute_regime_eth
+        # Craft candles with ~0.15% stdev returns (between ETH LOW=0.10 and HIGH=0.20)
+        candles = _make_candles(["UP", "DOWN", "UP", "DOWN", "UP", "DOWN", "UP"],
+                                base_price=2000.0, range_pct=0.15)
+        regime = compute_regime_eth(candles)
+        assert "MEDIUM_VOL" in regime["label"] or "LOW_VOL" in regime["label"], \
+            f"Expected LOW/MEDIUM_VOL for small ETH moves, got {regime['label']} (vol={regime['volatility']})"
+
+    def test_eth_regime_not_always_high_vol(self):
+        """With ETH thresholds, uniform small moves should not be HIGH_VOL."""
+        from predict_eth import compute_regime_eth
+        # Very small uniform moves → low volatility
+        candles = []
+        price = 2000.0
+        for i in range(10):
+            move = 0.5  # tiny $0.50 moves on $2000 → 0.025% returns
+            d = "UP" if i % 2 == 0 else "DOWN"
+            o = price
+            c = price + move if d == "UP" else price - move
+            candles.append({
+                "time": f"{i:02d}:00", "open": o, "close": c,
+                "high": max(o, c) + 0.1, "low": min(o, c) - 0.1,
+                "volume": 100, "direction": d,
+                "body_pct": round((c - o) / o * 100, 4), "wick_ratio": 0.1,
+            })
+            price = c
+        regime = compute_regime_eth(candles)
+        assert "HIGH_VOL" not in regime["label"], \
+            f"Tiny moves should not be HIGH_VOL with ETH thresholds, got {regime['label']}"
+
+    def test_eth_high_vol_threshold_higher_than_btc(self):
+        """ETH HIGH_VOL threshold (0.20) is higher than BTC (0.12)."""
+        from predict_eth import ETH_VOL_LOW, ETH_VOL_HIGH
+        assert ETH_VOL_LOW == 0.10
+        assert ETH_VOL_HIGH == 0.20

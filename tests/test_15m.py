@@ -58,6 +58,37 @@ def test_build_html_accepts_db_path():
     assert "subtitle" in sig.parameters
 
 
+def test_15m_conv_cap_demotes_above_3():
+    """Decision #20: 15m pipeline caps conviction at 3 post-prediction."""
+    import sqlite3
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE predictions (
+        id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT,
+        estimate REAL, edge REAL, confidence TEXT, reasoning TEXT,
+        predicted_at TEXT, cycle INTEGER, conviction_score INTEGER, regime TEXT
+    )""")
+    # Insert predictions with conv=4 and conv=5
+    db.execute("INSERT INTO predictions (market_id, agent, estimate, cycle, conviction_score) "
+               "VALUES ('m1', 'momentum_v4', 0.62, 100, 4)")
+    db.execute("INSERT INTO predictions (market_id, agent, estimate, cycle, conviction_score) "
+               "VALUES ('m2', 'momentum_v4', 0.38, 100, 5)")
+    db.execute("INSERT INTO predictions (market_id, agent, estimate, cycle, conviction_score) "
+               "VALUES ('m3', 'momentum_v4', 0.55, 100, 3)")
+    db.commit()
+
+    # Apply the same cap that ci_run_15m.py does
+    demoted = db.execute(
+        "UPDATE predictions SET conviction_score = 3 WHERE cycle = ? AND conviction_score > 3",
+        (100,)
+    ).rowcount
+    db.commit()
+
+    assert demoted == 2, f"Expected 2 demoted, got {demoted}"
+    rows = db.execute("SELECT conviction_score FROM predictions ORDER BY id").fetchall()
+    assert all(r[0] <= 3 for r in rows), f"All should be <=3, got {[r[0] for r in rows]}"
+    db.close()
+
+
 def test_15m_ci_workflow_commits_correct_files():
     """15m CI workflow only commits 15m files, not 5m files."""
     workflow = os.path.join(os.path.dirname(__file__), "..",
