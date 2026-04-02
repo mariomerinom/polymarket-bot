@@ -609,10 +609,10 @@ def compute_ensemble_pnl(resolved, unit_bet=100, conviction_bets=None, asset="BT
     }
 
 
-def compute_conviction_breakdown(resolved):
+def compute_conviction_breakdown(resolved, asset="BTC"):
     """Compute accuracy and P&L by conviction tier. v2 feature."""
     # Group by market, get conviction score per market
-    market_data = defaultdict(lambda: {"estimates": [], "outcome": None, "price_yes": None, "conviction": None})
+    market_data = defaultdict(lambda: {"estimates": [], "outcome": None, "price_yes": None, "conviction": None, "predicted_at": ""})
     for row in resolved:
         md = market_data[row["market_id"]]
         md["estimates"].append({"agent": row["agent"], "estimate": row["estimate"]})
@@ -620,6 +620,8 @@ def compute_conviction_breakdown(resolved):
         md["price_yes"] = row["price_yes"]
         if row.get("conviction_score") is not None:
             md["conviction"] = row["conviction_score"]
+        if row.get("predicted_at"):
+            md["predicted_at"] = row["predicted_at"]
 
     def score_to_tier(score):
         if score is None:
@@ -633,7 +635,6 @@ def compute_conviction_breakdown(resolved):
         else:
             return "HIGH"
 
-    bet_sizes = {"NO_BET": 0, "LOW": 0, "MEDIUM": 75, "HIGH": 200, "UNKNOWN": 0}
     weights = {"momentum_rule": 1.0, "contrarian_rule": 1.0, "contrarian": 0.55, "volume_wick": 0.45}
 
     tiers = defaultdict(lambda: {"wins": 0, "losses": 0, "total": 0, "pnl": 0.0, "wagered": 0.0})
@@ -660,7 +661,8 @@ def compute_conviction_breakdown(resolved):
         else:
             ts["losses"] += 1
 
-        bet_size = bet_sizes.get(tier, 0)
+        conv = md["conviction"] or 0
+        bet_size = _get_bet_size(conv, md["predicted_at"], asset)
         if bet_size > 0:
             ts["wagered"] += bet_size
             if ens_est >= 0.5:
@@ -1170,7 +1172,7 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
         agent_pnl = compute_pnl(resolved, asset=asset)
         ensemble_pnl = compute_ensemble_pnl(resolved, asset=asset)
         calibration = compute_confidence_calibration(resolved)
-        conviction_tiers = compute_conviction_breakdown(resolved)
+        conviction_tiers = compute_conviction_breakdown(resolved, asset=asset)
         rolling = compute_rolling_accuracy(resolved)
         scorecard = get_agent_scorecard(db)
         predictions = get_recent_predictions(db)
