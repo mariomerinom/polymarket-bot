@@ -1160,6 +1160,7 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
             {"label": "BTC 15m", "href": "15m.html"},
             {"label": "ETH 5m", "href": "eth.html"},
             {"label": "Kalshi", "href": "kalshi.html"},
+            {"label": "Bybit Perps", "href": "bybit-perps.html"},
         ]
     db = get_db(db_path)
     try:
