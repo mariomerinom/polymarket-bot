@@ -17,11 +17,71 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Dead hours (UTC) — consistently below 50% WR on 5+ bets each.
-# 3 UTC = 9pm CST (41.7% WR, 12 bets), 21 UTC = 3pm CST (37.5% WR, 8 bets)
-DEAD_HOURS_UTC = {3, 21}
+# Fallback dead hours — used when DB has insufficient data (< min_bets per hour)
+_FALLBACK_DEAD_HOURS = {3, 21}
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
+
+
+def compute_dead_hours(db_path=None, lookback_days=90, min_bets=30, max_wr=0.50):
+    """
+    Data-driven dead hour gate: query resolved predictions and return hours
+    with WR below max_wr on at least min_bets samples.
+
+    Returns (dead_hours: set, stats: list[dict]) where stats has per-hour
+    breakdown for logging.
+
+    Starts from _FALLBACK_DEAD_HOURS (proven bad hours) and adds any new hours
+    the data confirms. Fallback hours can be rehabilitated once they accumulate
+    min_bets samples with WR >= max_wr (i.e., the gate got them wrong).
+
+    Falls back to _FALLBACK_DEAD_HOURS alone if the DB query fails or has no data.
+    """
+    try:
+        db = sqlite3.connect(db_path or DB_PATH)
+        rows = db.execute("""
+            SELECT
+                CAST(strftime('%H', p.predicted_at) AS INTEGER) as hour_utc,
+                COUNT(*) as n,
+                SUM(CASE
+                    WHEN (p.estimate >= 0.5 AND m.outcome = 1)
+                      OR (p.estimate < 0.5 AND m.outcome = 0)
+                    THEN 1 ELSE 0
+                END) as wins
+            FROM predictions p
+            JOIN markets m ON p.market_id = m.id
+            WHERE m.resolved = 1
+              AND p.conviction_score >= 3
+              AND p.predicted_at >= datetime('now', ?)
+            GROUP BY hour_utc
+            ORDER BY hour_utc
+        """, (f"-{lookback_days} days",)).fetchall()
+        db.close()
+    except Exception as e:
+        print(f"  [dead hours] DB query failed ({e}), using fallback {_FALLBACK_DEAD_HOURS}")
+        return _FALLBACK_DEAD_HOURS, []
+
+    if not rows:
+        return _FALLBACK_DEAD_HOURS, []
+
+    # Start with fallback set, then adjust based on data
+    dead = set(_FALLBACK_DEAD_HOURS)
+    stats = []
+    hours_seen = set()
+    for hour_utc, n, wins in rows:
+        wr = wins / n if n > 0 else 0
+        entry = {"hour": hour_utc, "bets": n, "wins": wins, "wr": wr}
+        stats.append(entry)
+        hours_seen.add(hour_utc)
+
+        if n >= min_bets and wr < max_wr:
+            # Data confirms this hour is dead
+            dead.add(hour_utc)
+        elif n >= min_bets and wr >= max_wr and hour_utc in dead:
+            # Enough data to rehabilitate a fallback hour
+            dead.discard(hour_utc)
+
+    return dead, stats
 
 
 def compute_regime_from_candles(candles, autocorr_threshold=-0.15):
@@ -330,6 +390,20 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
     except sqlite3.OperationalError:
         pass
 
+    # Data-driven dead hour gate (replaces hardcoded set)
+    # Disabled in loose_mode (15m gathers its own data)
+    if not loose_mode:
+        dead_hours, hour_stats = compute_dead_hours(db_path or DB_PATH)
+        if hour_stats:
+            dead_list = sorted(dead_hours) if dead_hours else ["none"]
+            print(f"  Dead hours (auto): {dead_list}")
+            for s in hour_stats:
+                if s["bets"] >= 10:  # only log hours with meaningful data
+                    flag = " ← DEAD" if s["hour"] in dead_hours else ""
+                    print(f"    UTC {s['hour']:2d}: {s['bets']:3d} bets, {s['wr']:.0%} WR{flag}")
+    else:
+        dead_hours = set()
+
     # Fetch BTC candles
     if btc_data is None:
         btc_data = fetch_btc_candles(limit=20)
@@ -401,10 +475,9 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
         mkt_price = market['price_yes']
         print(f"  Mkt price: {mkt_price:.0%}")
 
-        # Time-of-day gate: skip hours with consistently negative WR
-        # Derived from 5m data — disabled in loose_mode (15m)
+        # Time-of-day gate: data-driven, recomputed each cycle from last 90 days
         current_hour_utc = datetime.now(timezone.utc).hour
-        if not loose_mode and current_hour_utc in DEAD_HOURS_UTC:
+        if current_hour_utc in dead_hours:
             skip_signal = {
                 "estimate": mkt_price,
                 "should_trade": False,

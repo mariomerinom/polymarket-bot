@@ -256,11 +256,92 @@ def test_up_neutral_still_bets():
         assert rows[1] == ("m2", 3), f"UP+NEUTRAL outside sweet spot should be conv=3, got {rows[1]}"
 
 
-def test_dead_hour_gate_exists():
-    """DEAD_HOURS_UTC constant exists and contains the known dead zones."""
-    from predict import DEAD_HOURS_UTC
-    assert 3 in DEAD_HOURS_UTC, "UTC 3 (9pm CST, 41.7% WR) should be a dead hour"
-    assert 21 in DEAD_HOURS_UTC, "UTC 21 (3pm CST, 37.5% WR) should be a dead hour"
+def test_dead_hour_gate_is_data_driven():
+    """Dead hour gate computes from DB, not hardcoded."""
+    import sqlite3
+    from predict import compute_dead_hours
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE markets (
+        id TEXT PRIMARY KEY, resolved INTEGER, outcome INTEGER
+    )""")
+    db.execute("""CREATE TABLE predictions (
+        id INTEGER PRIMARY KEY, market_id TEXT, estimate REAL,
+        conviction_score INTEGER, predicted_at TEXT
+    )""")
+
+    # Insert hour 5 with bad WR: 10 wins out of 40 bets = 25% WR
+    for i in range(40):
+        mid = f"m-h5-{i}"
+        outcome = 1 if i < 10 else 0
+        db.execute("INSERT INTO markets VALUES (?, 1, ?)", (mid, outcome))
+        db.execute(
+            "INSERT INTO predictions (market_id, estimate, conviction_score, predicted_at) "
+            "VALUES (?, 0.62, 3, ?)", (mid, f"2026-03-15T05:{i:02d}:00"))
+
+    # Insert hour 12 with good WR: 28 wins out of 40 = 70% WR
+    for i in range(40):
+        mid = f"m-h12-{i}"
+        outcome = 1 if i < 28 else 0
+        db.execute("INSERT INTO markets VALUES (?, 1, ?)", (mid, outcome))
+        db.execute(
+            "INSERT INTO predictions (market_id, estimate, conviction_score, predicted_at) "
+            "VALUES (?, 0.62, 3, ?)", (mid, f"2026-03-15T12:{i:02d}:00"))
+    db.commit()
+
+    # Write to temp file for compute_dead_hours
+    import tempfile, os
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    # Copy schema + data to temp file
+    dst = sqlite3.connect(tmp.name)
+    db.backup(dst)
+    dst.close()
+    db.close()
+
+    dead, stats = compute_dead_hours(tmp.name, lookback_days=365, min_bets=30)
+    os.unlink(tmp.name)
+
+    assert 5 in dead, f"Hour 5 (25% WR, 40 bets) should be dead, got {dead}"
+    assert 12 not in dead, f"Hour 12 (70% WR) should NOT be dead, got {dead}"
+
+
+def test_dead_hour_fallback():
+    """When DB has no data, falls back to hardcoded set."""
+    from predict import compute_dead_hours, _FALLBACK_DEAD_HOURS
+    dead, stats = compute_dead_hours("/nonexistent/path.db")
+    assert dead == _FALLBACK_DEAD_HOURS
+    assert 3 in dead and 21 in dead
+
+
+def test_dead_hour_min_bets_enforced():
+    """Hours with < min_bets samples are NOT gated, even with 0% WR."""
+    import sqlite3, tempfile, os
+    from predict import compute_dead_hours
+
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE markets (id TEXT PRIMARY KEY, resolved INTEGER, outcome INTEGER)")
+    db.execute("CREATE TABLE predictions (id INTEGER PRIMARY KEY, market_id TEXT, estimate REAL, conviction_score INTEGER, predicted_at TEXT)")
+
+    # Hour 7: only 5 bets, all losses = 0% WR but under min_bets
+    for i in range(5):
+        mid = f"m-h7-{i}"
+        db.execute("INSERT INTO markets VALUES (?, 1, 0)", (mid,))
+        db.execute("INSERT INTO predictions (market_id, estimate, conviction_score, predicted_at) VALUES (?, 0.62, 3, ?)",
+                   (mid, f"2026-03-15T07:{i:02d}:00"))
+    db.commit()
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    dst = sqlite3.connect(tmp.name)
+    db.backup(dst)
+    dst.close()
+    db.close()
+
+    dead, _ = compute_dead_hours(tmp.name, lookback_days=365, min_bets=30)
+    os.unlink(tmp.name)
+
+    assert 7 not in dead, f"Hour 7 with only 5 bets should NOT be dead (min_bets=30)"
 
 
 def test_workflows_have_git_stash():
