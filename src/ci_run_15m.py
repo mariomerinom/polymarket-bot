@@ -124,7 +124,7 @@ def _generate_dashboard():
     output = docs_dir / "15m.html"
     output.write_text(build_html(
         db_path=str(DB_PATH_15M),
-        subtitle="BTC 15-minute candle prediction"
+        subtitle="BTC 15-Minute Momentum"
     ))
     print(f"  Dashboard written to {output}")
 

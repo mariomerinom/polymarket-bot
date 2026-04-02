@@ -121,7 +121,7 @@ def _generate_dashboard():
     output = docs_dir / "eth.html"
     output.write_text(build_html(
         db_path=DB_PATH_ETH,
-        subtitle="ETH 5-minute contrarian (paper trading)"
+        subtitle="ETH 5-Minute Momentum"
     ))
     print(f"  ETH dashboard written to {output}")
 
