@@ -533,7 +533,7 @@ def execute_trades(db, cycle):
     # Find predictions from this cycle that qualify
     cursor = db.execute("""
         SELECT p.id, p.market_id, p.estimate, p.conviction_score, p.reasoning,
-               m.price_yes, m.price_no, m.end_date
+               p.agent, m.price_yes, m.price_no, m.end_date
         FROM predictions p
         JOIN markets m ON p.market_id = m.id
         WHERE p.cycle = ? AND p.conviction_score >= ?
@@ -545,7 +545,7 @@ def execute_trades(db, cycle):
 
     predictions = [dict(zip(
         ["id", "market_id", "estimate", "conviction_score", "reasoning",
-         "price_yes", "price_no", "end_date"],
+         "agent", "price_yes", "price_no", "end_date"],
         row
     )) for row in cursor.fetchall()]
 

@@ -3,10 +3,11 @@ ci_run_eth.py — One-shot ETH cycle for GitHub Actions.
 
 PARALLEL PIPELINE — does NOT touch ci_run.py (BTC).
 
-ETH Contrarian Paper Trading:
+ETH Momentum Trading:
   1. Fetch active ETH 5-min markets
-  2. Predict using regime-filtered CONTRARIAN rule ($0 cost)
-  3. Auto-resolve closed markets
+  2. Auto-resolve closed markets
+  3. Predict using regime-filtered MOMENTUM rule
+  3b. Execute trades (paper or live, controlled by TRADING_ENABLED env var)
   4. Score
   5. Generate static dashboard HTML
 """
@@ -20,6 +21,7 @@ from fetch_markets import init_db_eth, fetch_active_markets_eth, store_markets, 
 from predict_eth import run_predictions_eth
 from score import auto_resolve, calculate_brier_scores, print_scorecard
 from eth_data import fetch_eth_candles
+from trade import execute_trades, is_kill_switched, get_trading_summary, ensure_orders_table
 
 
 def get_next_cycle(db):
@@ -96,6 +98,21 @@ def main():
                 print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
     except Exception as e:
         print(f"    [SHADOW] skipped: {e}")
+
+    # 3b. Execute trades
+    if is_kill_switched():
+        print("[3b/5] Trading KILLED — kill switch active")
+    else:
+        print(f"[3b/5] Trade execution...")
+        try:
+            ensure_orders_table(db)
+            orders = execute_trades(db, cycle)
+            summary = get_trading_summary(db)
+            print(f"  Mode: {summary['mode']} | Bet size: ${summary['bet_size']:.0f} | "
+                  f"Today: {summary['total_orders']} orders, ${summary['total_wagered']:.0f} wagered, "
+                  f"${summary['total_pnl']:+.0f} P&L")
+        except Exception as e:
+            print(f"  Trade execution error: {e}")
 
     # 4. Score
     print("[4/5] Scoring...")
