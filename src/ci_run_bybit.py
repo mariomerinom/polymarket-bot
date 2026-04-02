@@ -175,7 +175,7 @@ def main():
 
     else:
         # Compute momentum signal
-        signal = momentum_signal(candles, min_streak=3)
+        signal = momentum_signal(candles, min_streak=3, config_key="bybit_5m")
         if signal["should_trade"]:
             print(f"  Signal: RIDE {signal['direction']} "
                   f"(streak={signal['streak']}, conf={signal['confidence']})")
