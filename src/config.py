@@ -140,6 +140,14 @@ SHADOW_CONFIGS = {
         "high_confidence_threshold": 0.80,
         "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
     },
+    "bybit_5m": {
+        "min_streak": 3,
+        "baseline_streak": 8,
+        "magnitude_multiplier": 2.0,
+        "max_edge": 0.14,
+        "high_confidence_threshold": 0.80,
+        "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
+    },
 }
 
 VOL_FLOOR = 0.02  # Prevent division by near-zero volatility
@@ -175,6 +183,17 @@ PAPER_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 50, 5: 75}
 LIVE_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
 LIVE_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
 LIVE_KALSHI_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
+
+# ── Bybit perpetual futures ─────────────────────────────────────────────────
+# Position size in BTC (0.005 = ~$420 at $84k). No leverage (1x).
+BYBIT_BET_SIZE = float(_env("BYBIT_BET_SIZE", "0.005"))
+BYBIT_DAILY_LOSS_LIMIT = float(_env("BYBIT_DAILY_LOSS_LIMIT", "50"))
+BYBIT_MAX_HOLD_CYCLES = int(_env("BYBIT_MAX_HOLD_CYCLES", "6"))
+BYBIT_STOP_ATR_MULT = float(_env("BYBIT_STOP_ATR_MULT", "1.5"))
+BYBIT_FEE_RATE = 0.00055   # 0.055% taker (conservative); maker is 0.02%
+BYBIT_MIN_CONVICTION = int(_env("BYBIT_MIN_CONVICTION", "3"))
+API_TIMEOUT_BYBIT = 10
+LIVE_BYBIT_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 0.005, 4: 0.005, 5: 0.005}
 
 # API timeouts (seconds)
 API_TIMEOUT_EXCHANGE = 10       # Kraken, Coinbase candle fetches
