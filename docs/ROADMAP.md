@@ -170,3 +170,11 @@ Move from GitHub Actions to a dedicated VPS in a non-US region. GitHub Actions r
 - Not prioritized until ETH paper trading validates.
 
 See [docs/multi-asset-plan.md](multi-asset-plan.md) for the original expansion plan.
+
+### Kalshi BTC (ACTIVE — Phase 0)
+- Phase 0 infrastructure completed 2026-04-02. Pipeline running in mock mode (no API credentials yet).
+- Momentum signal (same as BTC production) on 15-min Kalshi markets. Paper trading only (conviction=2).
+- Collecting predictions toward 200+ resolved gate.
+- Gate: WR > 55% → Phase 0.5 (paper trading with fill simulation). WR < 50% → signal is venue-specific, skip to Phase 1 (paired data).
+
+See [docs/KALSHI_INTEGRATION_PLAN.md](KALSHI_INTEGRATION_PLAN.md) for full phased roadmap (Phase 0–5) and risk framework.

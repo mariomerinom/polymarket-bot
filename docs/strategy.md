@@ -92,6 +92,19 @@ Same momentum signal as BTC: streak >= 3 in non-mean-reverting regime → ride t
 
 ---
 
+## Kalshi BTC Pipeline (Paper — Phase 0)
+
+Same momentum signal as BTC production, running against Kalshi BTC 15-min/1h markets. Uses Kraken/Coinbase 15-min candles (BTC is BTC regardless of venue). All predictions at conviction 2 (paper only). Goal: determine whether the momentum edge transfers to a different venue.
+
+- **Signal**: `momentum_signal(candles, min_streak=2)` — same as BTC 15m pipeline
+- **Regime gate**: `autocorr_threshold=-0.20` — skip mean-reverting regimes
+- **Entry point**: `src/ci_run_kalshi.py` → `data/predictions_kalshi.db` → `docs/kalshi.html`
+- **Phase 0 gate**: 200+ resolved predictions. WR > 55% → Phase 0.5. WR < 50% → signal is venue-specific.
+
+See [docs/KALSHI_INTEGRATION_PLAN.md](KALSHI_INTEGRATION_PLAN.md) for cross-market arbitrage strategy (Phase 1+).
+
+---
+
 ## What We Don't Do
 
 - **No contrarian/fading.** V3 faded streaks and lost at 37% WR (BTC) and 33% WR (ETH). The signal direction is MOMENTUM for all assets. This is non-negotiable.
