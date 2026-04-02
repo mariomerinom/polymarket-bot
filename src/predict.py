@@ -113,16 +113,17 @@ def momentum_signal(candles, min_streak=3):
             "streak": signed_streak,
         }
 
-    # Ride the streak (momentum — inverted from V3 contrarian which lost at 37% WR)
-    # Exhaustion gate removed 2026-03-31: was a contrarian filter on a momentum
-    # strategy. Filtered predictions hit 85% WR (n=100) vs 67% for passed ones.
-    # See docs/daily/analysis_exhaustion_gate.md
-    if signed_streak >= min_streak:
-        estimate = 0.62  # streak UP → predict UP (ride it)
-        direction = "UP"
-    else:
-        estimate = 0.38  # streak DOWN → predict DOWN (ride it)
-        direction = "DOWN"
+    # Ride the streak (momentum — V3 contrarian lost at 37% WR, momentum at 63%)
+    direction = "UP" if signed_streak >= min_streak else "DOWN"
+
+    # Dynamic estimate from streak length + price magnitude + volatility
+    # Replaces hardcoded 0.62/0.38 — longer/stronger streaks produce higher edge
+    try:
+        from shadow_conviction_scorer import strength_signal
+        shadow = strength_signal(candles, signed_streak, "btc_5m")
+        estimate = shadow["estimate"] if shadow else (0.55 if direction == "UP" else 0.45)
+    except Exception:
+        estimate = 0.55 if direction == "UP" else 0.45
 
     confidence = "medium"
     if abs(signed_streak) >= 5:
@@ -136,10 +137,6 @@ def momentum_signal(candles, min_streak=3):
         "streak": signed_streak,
         "reason": f"ride_streak_{direction}",
     }
-
-
-# Backward compatibility alias — old tests/imports may reference this name
-contrarian_signal = momentum_signal
 
 
 def ensure_regime_column(db):
@@ -162,18 +159,8 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
     edge = abs(estimate - 0.5)
     confidence = signal.get("confidence", "low")
 
-    # PAPER TRADING — tiered conviction scoring, simulated P&L only
-    # Conviction tiers (dashboard maps to bet sizes):
-    #   0 = skip ($0)    2 = low ($0)    3 = medium ($75)    4 = high ($200)    5 = max ($300)
-    #
-    # Tiered sizing based on 169-bet analysis (March 2026):
-    #   RIDE UP + price 20-70%: 71% WR, +$2,314 P&L → conviction 4 ($200)
-    #   All other bets in sweet spot: 61% WR → conviction 3 ($75)
-    #   No signal or low confidence: conviction 0 ($0)
-    #
-    # Cross-exchange consensus (March 2026):
-    #   2/2 exchanges agree on streak → conviction bump (+1)
-    #   Disagreement → no bump (tracked for analysis)
+    # Conviction scoring — gates which predictions become bets
+    # Production: flat $25/bet (Decision #14). Conv >= 3 places orders.
     if signal["should_trade"] and confidence in ("medium", "high"):
         direction = signal.get("direction", "")
         regime_label = regime.get("label", "") if regime else ""
@@ -202,7 +189,6 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
     reasoning_data = {
         "signal": signal,
         "regime": regime,
-        "observation_mode": True,
         "would_have_bet": signal.get("should_trade", False) and confidence in ("medium", "high"),
         "conviction_tier": conviction,
         "mkt_price": mkt_price,
@@ -475,24 +461,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
                              sibling_context=sibling_context, consensus=consensus,
                              liquidity=liquidity)
             direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
-            # Determine conviction label for logging
-            consensus_score = consensus.get("score", 0) if consensus else 0
-            if consensus_score == 2 and direction == "UP" and mkt_price and 0.20 <= mkt_price <= 0.70:
-                conv_label = "MAX $300 (consensus+sweet)"
-            elif consensus_score == 2:
-                conv_label = "HIGH $200 (consensus)" if direction != "UP" or not mkt_price or not (0.20 <= mkt_price <= 0.70) else "HIGH $200"
-            elif direction == "UP" and mkt_price and 0.20 <= mkt_price <= 0.70:
-                conv_label = "HIGH $200"
-            else:
-                conv_label = "MED $75"
-            # Cross-timeframe confirmation log
-            if sibling_context and sibling_context.get("bets", 0) > 0:
-                sib_dir = sibling_context.get("direction", "?")
-                agrees = sib_dir == direction
-                tag = "✓ 5m AGREES" if agrees else "✗ 5m DISAGREES"
-                print(f"    → {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, {conv_label}) [{tag}: {sibling_context['message']}]")
-            else:
-                print(f"    → {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, {conv_label})")
+            print(f"    → {direction} @ {signal['estimate']:.2f} ({signal['confidence']}, est={signal['estimate']:.4f})")
         else:
             # No signal — store as NO_BET
             no_signal = {

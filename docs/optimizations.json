@@ -15,7 +15,7 @@
         "pnl": 4964.57,
         "wagered": 18525.0
       },
-      "latest_check": "2026-04-02T16:44:02.937839+00:00",
+      "latest_check": "2026-04-02T16:58:06.518016+00:00",
       "post_stats": {
         "bets": 77,
         "wins": 59,
@@ -41,7 +41,7 @@
         "pnl": 4964.57,
         "wagered": 18525.0
       },
-      "latest_check": "2026-04-02T16:44:02.937839+00:00",
+      "latest_check": "2026-04-02T16:58:06.518016+00:00",
       "post_stats": {
         "bets": 77,
         "wins": 59,
@@ -67,7 +67,7 @@
         "pnl": 33.56,
         "wagered": 1400.0
       },
-      "latest_check": "2026-04-02T16:44:02.937839+00:00",
+      "latest_check": "2026-04-02T16:58:06.518016+00:00",
       "post_stats": {
         "bets": 31,
         "wins": 21,
@@ -93,7 +93,7 @@
         "pnl": 6074.3,
         "wagered": 20750.0
       },
-      "latest_check": "2026-04-02T16:44:02.937839+00:00",
+      "latest_check": "2026-04-02T16:58:06.518016+00:00",
       "post_stats": {
         "bets": 65,
         "wins": 49,
@@ -119,7 +119,7 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-02T16:44:02.937839+00:00",
+      "latest_check": "2026-04-02T16:58:06.518016+00:00",
       "post_stats": {
         "bets": 47,
         "wins": 37,
@@ -145,7 +145,7 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-02T16:44:02.937839+00:00",
+      "latest_check": "2026-04-02T16:58:06.518016+00:00",
       "post_stats": {
         "bets": 47,
         "wins": 37,
@@ -171,7 +171,7 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-02T16:44:02.937839+00:00",
+      "latest_check": "2026-04-02T16:58:06.518016+00:00",
       "post_stats": {
         "bets": 47,
         "wins": 37,
@@ -197,7 +197,7 @@
         "pnl": 2269.5,
         "wagered": 6875.0
       },
-      "latest_check": "2026-04-02T16:44:02.937839+00:00",
+      "latest_check": "2026-04-02T16:58:06.518016+00:00",
       "post_stats": {
         "bets": 5,
         "wins": 4,
@@ -223,8 +223,14 @@
         "pnl": 120.35,
         "wagered": 1075.0
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
       "closed_at": null,
       "close_reason": null
     },
@@ -232,6 +238,32 @@
       "name": "eth_regime_recalibrate",
       "description": "ETH vol thresholds: LOW<0.10, HIGH>=0.20 (was 83% HIGH_VOL with BTC thresholds)",
       "registered_at": "2026-04-02T16:44:42.177384+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < 55",
+      "baseline": {
+        "bets": 280,
+        "wins": 194,
+        "wr": 69.3,
+        "pnl": 2364.53,
+        "wagered": 7000.0
+      },
+      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "dynamic_estimates",
+      "description": "Replace hardcoded 0.62/0.38 with strength_signal() \u2014 estimates vary by streak length + magnitude + vol",
+      "registered_at": "2026-04-02T16:59:53.820981+00:00",
       "pipeline": "5m",
       "status": "active",
       "min_sample": 50,

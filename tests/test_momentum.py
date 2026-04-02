@@ -64,7 +64,8 @@ def test_streak_3_up_with_compression():
 
     result = momentum_signal(candles)
     assert result["should_trade"] is True
-    assert result["estimate"] == 0.62  # ride UP → predict UP (momentum)
+    assert result["estimate"] > 0.50  # ride UP → predict UP (momentum)
+    assert result["estimate"] <= 0.65  # dynamic estimate, not hardcoded 0.62
     assert result["direction"] == "UP"
 
 
@@ -87,7 +88,8 @@ def test_streak_3_down_with_volume_spike():
 
     result = momentum_signal(candles)
     assert result["should_trade"] is True
-    assert result["estimate"] == 0.38  # ride DOWN → predict DOWN (momentum)
+    assert result["estimate"] < 0.50  # ride DOWN → predict DOWN (momentum)
+    assert result["estimate"] >= 0.35  # dynamic estimate, not hardcoded 0.38
     assert result["direction"] == "DOWN"
 
 
@@ -154,7 +156,7 @@ def test_streak_2_fires_with_min_streak_2():
 
     result = momentum_signal(candles, min_streak=2)
     assert result["should_trade"] is True
-    assert result["estimate"] == 0.62
+    assert result["estimate"] > 0.50
     assert result["direction"] == "UP"
 
 
@@ -195,3 +197,30 @@ def test_estimate_always_in_range():
     for candles in test_cases:
         result = momentum_signal(candles)
         assert 0 <= result["estimate"] <= 1, f"estimate {result['estimate']} out of range"
+
+
+def test_longer_streak_higher_estimate():
+    """Longer streaks should produce higher estimates (monotonicity)."""
+    short = _make_candles(["DOWN", "DOWN", "UP", "UP", "UP"])  # streak=3
+    long = _make_candles(["UP", "UP", "UP", "UP", "UP", "UP", "UP", "UP"])  # streak=8
+
+    short_result = momentum_signal(short)
+    long_result = momentum_signal(long)
+
+    assert short_result["should_trade"] and long_result["should_trade"]
+    assert long_result["estimate"] > short_result["estimate"], \
+        f"streak=8 est ({long_result['estimate']:.4f}) should exceed streak=3 est ({short_result['estimate']:.4f})"
+
+
+def test_dynamic_estimate_not_hardcoded():
+    """Estimates should vary with streak length, not be fixed at 0.62/0.38."""
+    streak3 = _make_candles(["DOWN", "DOWN", "UP", "UP", "UP"])
+    streak5 = _make_candles(["UP", "UP", "UP", "UP", "UP", "UP", "UP"])
+
+    r3 = momentum_signal(streak3)
+    r5 = momentum_signal(streak5)
+
+    assert r3["should_trade"] and r5["should_trade"]
+    # They should NOT be identical (the old hardcoded behavior)
+    assert r3["estimate"] != r5["estimate"], \
+        f"Both streaks produced identical estimate {r3['estimate']} — still hardcoded?"
