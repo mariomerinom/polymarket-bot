@@ -279,7 +279,7 @@ def _generate_dashboard():
     output = docs_dir / "kalshi.html"
     output.write_text(build_html(
         db_path=DB_PATH_KALSHI,
-        subtitle="Kalshi BTC signal transfer (paper)"
+        subtitle="Kalshi BTC (Phase 0 — Paper)"
     ))
     print(f"  Kalshi dashboard written to {output}")
 

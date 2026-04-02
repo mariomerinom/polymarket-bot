@@ -794,8 +794,9 @@ def check_decisions(db_5m_path, db_15m_path):
 def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None):
     """Format analysis data into markdown report."""
     decision_alerts = decision_alerts or []
+    era = "Live" if date_str >= LIVE_START_DATE else "Paper"
     lines = [
-        f"# Daily Report — {date_str}",
+        f"# BOTSY Daily Report — {date_str} ({era})",
         f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
         "",
     ]
@@ -928,14 +929,15 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
         if data["rolling"]:
             lines.extend([
                 "### Rolling 7-Day Trend",
-                "| Date | Bets | WR | P&L |",
-                "|------|------|----|-----|",
+                "| Date | Era | Bets | WR | P&L |",
+                "|------|-----|------|----|-----|",
             ])
             for day in data["rolling"]:
+                day_era = "Live" if day["date"] >= LIVE_START_DATE else "Paper"
                 if day["bets"] > 0:
-                    lines.append(f"| {day['date']} | {day['bets']} | {day['wr']}% | ${day['pnl']:+.2f} |")
+                    lines.append(f"| {day['date']} | {day_era} | {day['bets']} | {day['wr']}% | ${day['pnl']:+.2f} |")
                 else:
-                    lines.append(f"| {day['date']} | — | — | — |")
+                    lines.append(f"| {day['date']} | {day_era} | — | — | — |")
             lines.append("")
 
         # Alerts
@@ -1224,7 +1226,8 @@ def update_index(daily_dir, date_str):
 def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None):
     """Generate concise markdown for GitHub Actions Job Summary."""
     decision_alerts = decision_alerts or []
-    lines = [f"# Daily Report \u2014 {date_str}", ""]
+    era = "Live" if date_str >= LIVE_START_DATE else "Paper"
+    lines = [f"# BOTSY Daily Report \u2014 {date_str} ({era})", ""]
 
     for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth), ("Kalshi", data_kalshi)]:
         if data is None:

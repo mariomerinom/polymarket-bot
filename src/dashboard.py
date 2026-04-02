@@ -19,7 +19,7 @@ except ImportError:
     app = None
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
-EVOLUTION_LOG = None  # Legacy — evolution system removed in V3
+BOT_NAME = "BOTSY CASH MATERIALIZER"
 
 AGENT_COLORS = {
     "momentum_rule": "#3fb950",    # V4: regime-filtered momentum (ride streaks)
@@ -66,9 +66,6 @@ def get_db(db_path=None):
     return db
 
 
-def load_evolution_log():
-    """Legacy — evolution system removed in V3."""
-    return []
 
 
 # ---------------------------------------------------------------------------
@@ -102,14 +99,12 @@ def get_status(db):
         except ValueError:
             status = "Unknown"
 
-    evolutions = len(load_evolution_log())
     return {
         "last_prediction": last_prediction[:16].replace("T", " ") if last_prediction else "Never",
         "total_markets": total,
         "resolved_markets": resolved,
         "next_market_end": next_market_end,
         "status": status,
-        "evolutions": evolutions,
     }
 
 
@@ -1150,7 +1145,7 @@ def vs_market_color(vs):
     return "#4caf50" if vs < 0 else "#f44336"
 
 
-def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_links=None):
+def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=None):
     # Detect asset from subtitle
     sub_upper = (subtitle or "").upper()
     if "ETH" in sub_upper:
@@ -1172,22 +1167,51 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
         pipeline = get_pipeline_health(db)
         live_ctx = get_live_context(db, asset=asset)
         resolved = get_resolved_predictions(db)
-        agent_stats = compute_agent_stats(resolved)
-        ensemble = compute_ensemble(resolved)
-        agent_pnl = compute_pnl(resolved, asset=asset)
-        ensemble_pnl = compute_ensemble_pnl(resolved, asset=asset)
-        calibration = compute_confidence_calibration(resolved)
-        conviction_tiers = compute_conviction_breakdown(resolved, asset=asset)
-        rolling = compute_rolling_accuracy(resolved)
         scorecard = get_agent_scorecard(db)
         predictions = get_recent_predictions(db)
         markets = get_markets(db)
-        evolution = load_evolution_log()
         orders_data = get_orders_summary(db)
     finally:
         db.close()
 
     has_data = len(resolved) > 0
+
+    # -- Filter to active agents (predicted in last 7 days) --
+    cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    active_agents = set()
+    for r in resolved:
+        if (r.get("predicted_at") or "") >= cutoff_7d:
+            active_agents.add(r["agent"])
+    active_resolved = [r for r in resolved if r["agent"] in active_agents]
+
+    # -- Split live vs paper eras --
+    live_resolved = [r for r in active_resolved if (r.get("predicted_at") or "")[:10] >= LIVE_START_DATE]
+    paper_resolved = [r for r in active_resolved if (r.get("predicted_at") or "")[:10] < LIVE_START_DATE]
+    has_live = len(live_resolved) > 0
+    has_paper = len(paper_resolved) > 0
+
+    # Compute stats on active agents only
+    agent_stats = compute_agent_stats(active_resolved)
+    ensemble = compute_ensemble(active_resolved)
+    calibration = compute_confidence_calibration(active_resolved)
+    rolling = compute_rolling_accuracy(active_resolved)
+
+    # P&L: live era (hero) + paper era (secondary)
+    if has_live:
+        agent_pnl = compute_pnl(live_resolved, asset=asset)
+        ensemble_pnl = compute_ensemble_pnl(live_resolved, asset=asset)
+        conviction_tiers = compute_conviction_breakdown(live_resolved, asset=asset)
+    else:
+        agent_pnl = compute_pnl(active_resolved, asset=asset)
+        ensemble_pnl = compute_ensemble_pnl(active_resolved, asset=asset)
+        conviction_tiers = compute_conviction_breakdown(active_resolved, asset=asset)
+
+    if has_paper:
+        paper_agent_pnl = compute_pnl(paper_resolved, asset=asset)
+        paper_ensemble_pnl = compute_ensemble_pnl(paper_resolved, asset=asset)
+    else:
+        paper_agent_pnl = {}
+        paper_ensemble_pnl = {"total_pnl": 0, "pnl_series": []}
 
     # -- Status Header --
     status_color = {
@@ -1214,10 +1238,6 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
         <div class="status-item">
             <span class="status-label">Next Market</span>
             <span class="status-value" id="countdown" {next_market_js}>--</span>
-        </div>
-        <div class="status-item">
-            <span class="status-label">Evolutions</span>
-            <span class="status-value">{status["evolutions"]}</span>
         </div>
     </div>"""
 
@@ -1253,15 +1273,15 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
     elif asset == "ETH":
         obs_bg = "rgba(88,166,255,0.12)"
         obs_border = "#1f6feb"
-        obs_title = "&#128203; PAPER TRADING — ETH CONTRARIAN"
+        obs_title = "&#9889; ETH MOMENTUM"
         obs_color = "#58a6ff"
-        obs_detail = "Fade streaks on exhaustion. Phase 2 validated contrarian at 54.4% WR on 1,601 markets."
+        obs_detail = "Ride the streak. Medium confidence (streak 3-4) at conv=3 ($25). Phase 1 validated at 66.7% WR."
     else:
         obs_bg = "rgba(88,166,255,0.12)"
         obs_border = "#1f6feb"
-        obs_title = "&#128203; PAPER TRADING — V4 MOMENTUM"
+        obs_title = "&#128203; PAPER TRADING — MOMENTUM"
         obs_color = "#58a6ff"
-        obs_detail = "Ride the streak. Flat $25 production grind. Validating execution before going live."
+        obs_detail = "Ride the streak. Collecting data for validation."
     observation_html = f"""<div style="background:{obs_bg};border:1px solid {obs_border};border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
         <div style="font-size:18px;font-weight:700;color:{obs_color};letter-spacing:1px">{obs_title}</div>
         <div style="color:#8b949e;font-size:13px;margin-top:4px">{obs_detail}</div>
@@ -1555,8 +1575,10 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
                 </div>
             </div>"""
 
-        pnl_html = f"""<h2>Simulated P&amp;L</h2>
-        <p class="section-desc">Binary options: wins are variable (depends on entry price), losses are fixed ($75 or $200). Bets are discrete and sequential.</p>
+        pnl_title = "Trading P&amp;L" if has_live else "Paper Trading P&amp;L"
+        pnl_desc = "Flat $25 per bet. Wins variable (entry price dependent), losses fixed at bet size." if has_live else "Paper-era conviction-tiered sizing."
+        pnl_html = f"""<h2>{pnl_title}</h2>
+        <p class="section-desc">{pnl_desc}</p>
         {consolidated_html}
         {ev_html}
         <div class="perf-grid">{pnl_cards}</div>
@@ -1572,6 +1594,24 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
             <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Cumulative P&amp;L</h3>
             {build_pnl_svg(agent_pnl, ensemble_pnl)}
         </div>"""
+
+        # Paper era secondary section (only shown when live data exists)
+        if has_live and has_paper and paper_agent_pnl:
+            paper_total = paper_ensemble_pnl.get("total_pnl", 0)
+            paper_wagered = sum(p.get("wagered", 0) for p in paper_agent_pnl.values())
+            paper_bets = sum(p.get("num_wins", 0) + p.get("num_losses", 0) for p in paper_agent_pnl.values())
+            paper_c = "#3fb950" if paper_total >= 0 else "#f44336"
+            pnl_html += f"""
+            <details style="margin-top:24px">
+                <summary style="cursor:pointer;color:#8b949e;font-size:0.95rem">
+                    Paper Trading History (before {LIVE_START_DATE}) &mdash;
+                    <span style="color:{paper_c}">${paper_total:+,.0f}</span> on {paper_bets} bets
+                </summary>
+                <p style="color:#484f58;font-size:0.85rem;margin:8px 0">
+                    Paper-era used conviction-tiered sizing ($75/$200/$300). Not real money.
+                    Total wagered: ${paper_wagered:,.0f}
+                </p>
+            </details>"""
     else:
         pnl_html = ""
 
@@ -1588,7 +1628,12 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
                 "HIGH": "HIGH (4-5)", "MEDIUM": "MEDIUM (3)",
                 "LOW": "LOW (2)", "NO_BET": "NO BET (0-1)", "UNKNOWN": "N/A",
             }
-            tier_bets = {"NO_BET": "$0", "LOW": "$25", "MEDIUM": "$75", "HIGH": "$200", "UNKNOWN": "$0"}
+            # Derive bet sizes from live sizing constants
+            live_tiers = LIVE_ETH_CONVICTION_BETS if asset == "ETH" else LIVE_BTC_CONVICTION_BETS
+            tier_bets = {
+                "HIGH": f"${live_tiers.get(4, 0)}", "MEDIUM": f"${live_tiers.get(3, 0)}",
+                "LOW": "$0", "NO_BET": "$0", "UNKNOWN": "$0",
+            }
 
             conv_rows = ""
             total_conv_pnl = 0.0
@@ -1619,8 +1664,9 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
             total_roi = total_conv_pnl / total_conv_wagered * 100 if total_conv_wagered > 0 else 0
             total_c = "#3fb950" if total_conv_pnl >= 0 else "#f44336"
 
-            conviction_html = f"""<h2>Conviction Scoreboard</h2>
-            <p class="section-desc">Conviction measures agreement across 5 independent signal layers. Higher conviction = bigger bet. Only bet when conviction &ge; 2.</p>
+            conv_era = "Live Trading" if has_live else "Paper Trading"
+            conviction_html = f"""<h2>Conviction Scoreboard ({conv_era})</h2>
+            <p class="section-desc">Only bet when conviction &ge; 3. Flat ${live_tiers.get(3, 25)} per bet.</p>
             <div class="table-wrap"><table>
                 <thead><tr>
                     <th>Tier</th><th>Markets</th><th>Accuracy</th><th>W</th><th>L</th><th>Bet Size</th><th>P&amp;L</th><th>ROI</th>
@@ -1730,6 +1776,8 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
     liq_max_bets = []
     if predictions:
         for row in predictions:
+            if active_agents and row["agent"] not in active_agents:
+                continue
             if row["resolved"]:
                 correct = is_correct(row["estimate"], row["outcome"])
                 outcome_str = '<span class="badge badge-yes">UP</span>' if row["outcome"] == 1 else '<span class="badge badge-no">DOWN</span>'
@@ -1867,6 +1915,8 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
     if scorecard:
         for row in scorecard:
             agent = row["agent"]
+            if active_agents and agent not in active_agents:
+                continue
             avg_brier = row["avg_brier"]
             num = row["num_markets"]
             vs = row["vs_market"]
@@ -1907,57 +1957,6 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
     else:
         market_rows = '<tr><td colspan="6" class="empty">No markets tracked yet.</td></tr>'
 
-    # -- Evolution History --
-    evolution_items = ""
-    if evolution:
-        for entry in reversed(evolution):
-            cycle = entry.get("cycle", "?")
-            ts = entry.get("timestamp", "?")
-            if isinstance(ts, str) and len(ts) > 16:
-                ts = ts[:16].replace("T", " ")
-            agent = entry.get("agent", "?")
-            brier_before = entry.get("brier_before")
-            brier_after = entry.get("brier_after")
-            kept = entry.get("kept")
-            mod = entry.get("modification", "")
-            diagnosis = "N/A"
-            expected = ""
-            if isinstance(mod, dict):
-                diagnosis = mod.get("diagnosis", "N/A")
-                expected = mod.get("expected_effect", "")
-            elif isinstance(mod, str):
-                for line in mod.split("\n"):
-                    if line.startswith("Diagnosis: "):
-                        diagnosis = line[len("Diagnosis: "):]
-                    elif line.startswith("Expected effect: "):
-                        expected = line[len("Expected effect: "):]
-
-            kept_badge = ""
-            if kept is True:
-                kept_badge = '<span class="badge badge-yes">Kept</span>'
-            elif kept is False:
-                kept_badge = '<span class="badge badge-no">Reverted</span>'
-            else:
-                kept_badge = '<span class="badge badge-pending">Pending</span>'
-
-            brier_before_str = f"{brier_before:.4f}" if brier_before is not None else "N/A"
-            brier_after_str = f"{brier_after:.4f}" if brier_after is not None else "N/A"
-
-            evolution_items += f"""<div class="evo-card">
-                <div class="evo-header">
-                    <span class="evo-cycle">Cycle {cycle}</span>
-                    <span class="evo-agent agent-name">{agent}</span>
-                    <span class="evo-time">{ts}</span>
-                    {kept_badge}
-                </div>
-                <div class="evo-body">
-                    <p><strong>Diagnosis:</strong> {diagnosis}</p>
-                    {"<p><strong>Expected effect:</strong> " + expected + "</p>" if expected else ""}
-                    <p class="evo-scores">Brier: {brier_before_str} &rarr; {brier_after_str}</p>
-                </div>
-            </div>"""
-    else:
-        evolution_items = '<p class="empty">No evolution history yet.</p>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1965,7 +1964,7 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="300">
-<title>Polymarket Bot Dashboard</title>
+<title>{BOT_NAME}</title>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{
@@ -2365,40 +2364,6 @@ tr:hover {{
     display: inline-block;
 }}
 
-/* Evolution */
-.evo-card {{
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
-}}
-.evo-header {{
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
-}}
-.evo-cycle {{
-    color: #58a6ff;
-    font-weight: 700;
-    font-size: 0.95rem;
-}}
-.evo-time {{
-    color: #484f58;
-    font-size: 0.85rem;
-    margin-left: auto;
-}}
-.evo-body p {{
-    margin: 4px 0;
-    font-size: 0.9rem;
-}}
-.evo-scores {{
-    color: #8b949e;
-    font-size: 0.85rem;
-}}
-
 /* Pipeline Health Banner */
 .pipeline-banner {{
     background: #161b22;
@@ -2554,16 +2519,14 @@ tr:hover {{
     h1 {{ font-size: 1.4rem; }}
     td, th {{ padding: 6px 8px; font-size: 0.82rem; }}
     .perf-grid {{ grid-template-columns: repeat(2, 1fr); }}
-    .evo-header {{ flex-direction: column; align-items: flex-start; gap: 4px; }}
-    .evo-time {{ margin-left: 0; }}
 }}
 </style>
 </head>
 <body>
 <div class="container">
-    <h1>Polymarket Autoresearch Bot</h1>
+    <h1>{BOT_NAME}</h1>
     <nav class="dash-nav">{''.join(f'<a href="{l["href"]}" class="dash-nav-link">{l["label"]}</a>' for l in nav_links)}</nav>
-    <p class="subtitle">{subtitle} &mdash; autoresearch loop</p>
+    <p class="subtitle">{subtitle}</p>
 
     {status_html}
 
@@ -2638,8 +2601,7 @@ tr:hover {{
     </table>
     </div>
 
-    <h2>Evolution History</h2>
-    {evolution_items}
+
 </div>
 <script>
 (function() {{
