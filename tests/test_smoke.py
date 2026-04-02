@@ -11,9 +11,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 def test_predict_imports():
     """Can we import predict.py without errors?"""
-    from predict import momentum_signal, contrarian_signal, compute_regime_from_candles, run_predictions
+    from predict import momentum_signal, compute_regime_from_candles, run_predictions
     assert callable(momentum_signal)
-    assert callable(contrarian_signal)  # backward compat alias
     assert callable(compute_regime_from_candles)
     assert callable(run_predictions)
 

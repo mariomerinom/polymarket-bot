@@ -46,7 +46,7 @@ class TestMomentumSignalEth:
         sig = momentum_signal_eth(candles, min_streak=3)
         assert sig["should_trade"] is True
         assert sig["direction"] == "UP", "Should RIDE UP streak → predict UP"
-        assert sig["estimate"] == 0.62
+        assert sig["estimate"] > 0.50 and sig["estimate"] <= 0.60
 
     def test_ride_down_streak(self):
         """Streak of 4 DOWN candles → predict DOWN (ride it)."""
@@ -55,7 +55,7 @@ class TestMomentumSignalEth:
         sig = momentum_signal_eth(candles, min_streak=3)
         assert sig["should_trade"] is True
         assert sig["direction"] == "DOWN", "Should RIDE DOWN streak → predict DOWN"
-        assert sig["estimate"] == 0.38
+        assert sig["estimate"] < 0.50 and sig["estimate"] >= 0.40
 
     def test_no_signal_short_streak(self):
         """Streak of 2 (below min_streak=3) → no signal."""

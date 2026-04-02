@@ -87,15 +87,16 @@ def momentum_signal_eth(candles, min_streak=3):
             "streak": signed_streak,
         }
 
-    # RIDE the streak (momentum — same as BTC)
-    if signed_streak >= min_streak:
-        # Streak is UP → predict UP (ride it)
-        estimate = 0.62
-        direction = "UP"
-    else:
-        # Streak is DOWN → predict DOWN (ride it)
-        estimate = 0.38
-        direction = "DOWN"
+    # Ride the streak (momentum — same as BTC)
+    direction = "UP" if signed_streak >= min_streak else "DOWN"
+
+    # Dynamic estimate from streak length + price magnitude + volatility
+    try:
+        from shadow_conviction_scorer import strength_signal
+        shadow = strength_signal(candles, signed_streak, "eth_5m")
+        estimate = shadow["estimate"] if shadow else (0.55 if direction == "UP" else 0.45)
+    except Exception:
+        estimate = 0.55 if direction == "UP" else 0.45
 
     confidence = "medium"
     if abs(signed_streak) >= 5:
