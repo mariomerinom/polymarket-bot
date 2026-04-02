@@ -429,23 +429,39 @@ def compute_ensemble(resolved):
     }
 
 
-BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
-ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 50, 5: 75}
+# Paper-era tiered sizing (historical, before live trading)
+PAPER_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
+PAPER_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 50, 5: 75}
+# Live-era: flat $25 for all qualifying bets (conviction >= 3)
+LIVE_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
+LIVE_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
+# Cutover: first real order filled from Amsterdam VPS
+LIVE_START_DATE = "2026-04-01"
+# Back-compat aliases
+BTC_CONVICTION_BETS = LIVE_BTC_CONVICTION_BETS
+ETH_CONVICTION_BETS = LIVE_ETH_CONVICTION_BETS
 
 
-def compute_pnl(resolved, unit_bet=100, conviction_bets=None):
-    """Simulate P&L using conviction-tier bet sizing.
+def _get_bet_size(conv, predicted_at, asset="BTC"):
+    """Return bet size based on date: paper tiers before LIVE_START_DATE, flat $25 after."""
+    date_str = (predicted_at or "")[:10]
+    if date_str >= LIVE_START_DATE:
+        tiers = LIVE_BTC_CONVICTION_BETS if asset == "BTC" else LIVE_ETH_CONVICTION_BETS
+    else:
+        tiers = PAPER_BTC_CONVICTION_BETS if asset == "BTC" else PAPER_ETH_CONVICTION_BETS
+    return tiers.get(conv, 0)
 
-    Conviction tiers determine bet size:
-    - MEDIUM (score 3): $75
-    - HIGH (score 4+): $200
-    - Everything else: $0 (skip)
+
+def compute_pnl(resolved, unit_bet=100, conviction_bets=None, asset="BTC"):
+    """Simulate P&L using date-aware bet sizing.
+
+    Before LIVE_START_DATE: paper-era conviction tiers ($75/$200/$300).
+    After LIVE_START_DATE: flat $25 for all qualifying bets (conviction >= 3).
 
     Tracks per-bet detail to show the asymmetry:
     - Wins are variable: profit = bet × (1/price - 1)
     - Losses are fixed: always exactly -bet_size
     """
-    CONVICTION_BETS = conviction_bets or BTC_CONVICTION_BETS
 
     agents = defaultdict(lambda: {
         "total_pnl": 0.0,
@@ -469,7 +485,7 @@ def compute_pnl(resolved, unit_bet=100, conviction_bets=None):
         outcome = row["outcome"]
         price_yes = row["price_yes"]
         conv = row.get("conviction_score") or 0
-        bet_size = CONVICTION_BETS.get(conv, 0)
+        bet_size = _get_bet_size(conv, row.get("predicted_at"), asset)
 
         if bet_size == 0:
             a["skipped"] += 1
@@ -526,12 +542,11 @@ def compute_pnl(resolved, unit_bet=100, conviction_bets=None):
     return dict(agents)
 
 
-def compute_ensemble_pnl(resolved, unit_bet=100, conviction_bets=None):
-    """Ensemble P&L using conviction-tier bet sizing. Only bets on MEDIUM+ conviction."""
-    CONVICTION_BETS = conviction_bets or BTC_CONVICTION_BETS
+def compute_ensemble_pnl(resolved, unit_bet=100, conviction_bets=None, asset="BTC"):
+    """Ensemble P&L using date-aware bet sizing. Only bets on MEDIUM+ conviction."""
     WEIGHTS = {"momentum_rule": 1.0, "contrarian_rule": 1.0, "contrarian": 0.55, "volume_wick": 0.45}
 
-    market_data = defaultdict(lambda: {"agents": [], "outcome": None, "price_yes": None, "conviction": 0})
+    market_data = defaultdict(lambda: {"agents": [], "outcome": None, "price_yes": None, "conviction": 0, "predicted_at": ""})
     for row in resolved:
         md = market_data[row["market_id"]]
         md["agents"].append({"agent": row["agent"], "estimate": row["estimate"]})
@@ -539,6 +554,8 @@ def compute_ensemble_pnl(resolved, unit_bet=100, conviction_bets=None):
         md["price_yes"] = row["price_yes"]
         if row.get("conviction_score") is not None:
             md["conviction"] = row["conviction_score"]
+        if row.get("predicted_at"):
+            md["predicted_at"] = row["predicted_at"]
 
     total_pnl = 0.0
     total_wagered = 0.0
@@ -548,7 +565,7 @@ def compute_ensemble_pnl(resolved, unit_bet=100, conviction_bets=None):
 
     for mid, md in market_data.items():
         conv = md["conviction"] or 0
-        bet_size = CONVICTION_BETS.get(conv, 0)
+        bet_size = _get_bet_size(conv, md["predicted_at"], asset)
 
         # Weighted ensemble estimate
         total_w = 0
@@ -1150,9 +1167,8 @@ def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_link
         resolved = get_resolved_predictions(db)
         agent_stats = compute_agent_stats(resolved)
         ensemble = compute_ensemble(resolved)
-        sizing = ETH_CONVICTION_BETS if asset == "ETH" else BTC_CONVICTION_BETS
-        agent_pnl = compute_pnl(resolved, conviction_bets=sizing)
-        ensemble_pnl = compute_ensemble_pnl(resolved, conviction_bets=sizing)
+        agent_pnl = compute_pnl(resolved, asset=asset)
+        ensemble_pnl = compute_ensemble_pnl(resolved, asset=asset)
         calibration = compute_confidence_calibration(resolved)
         conviction_tiers = compute_conviction_breakdown(resolved)
         rolling = compute_rolling_accuracy(resolved)

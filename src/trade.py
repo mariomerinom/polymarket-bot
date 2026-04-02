@@ -201,15 +201,16 @@ def compute_order(prediction_row, market_row, liquidity=None):
     direction = "UP" if estimate > 0.5 else "DOWN"
 
     # We buy YES tokens for UP, NO tokens for DOWN
+    # On 5-minute markets, being filled matters more than saving a few cents.
+    # Price at estimate (our fair value) to aggressively cross the spread.
     if direction == "UP":
         side = "buy"
         token = "yes"
-        # Limit price: we'll pay up to slightly above market
-        price_limit = min(estimate, market_row.get("price_yes", 0.5) + 0.02)
+        price_limit = estimate
     else:
         side = "buy"
         token = "no"
-        price_limit = min(1 - estimate, market_row.get("price_no", 0.5) + 0.02)
+        price_limit = 1 - estimate
 
     # Asset-aware sizing: BTC flat $25, ETH tiered by conviction
     size = get_bet_size(prediction_row, liquidity)
@@ -375,8 +376,13 @@ def _submit_clob_order(token_id, side, size, price):
 
 def settle_orders(db):
     """
-    Check submitted orders and update fill status.
-    Called each cycle to track what actually happened.
+    Check submitted orders and update fill status using get_trades().
+
+    get_order() returns 404 for resolved 5-minute markets, so we use
+    get_trades() which returns all historical fills for our wallet.
+    We match trades to our pending orders by order_id.
+
+    Orders not found in trades after the market has resolved are marked expired.
 
     Returns number of orders settled.
     """
@@ -384,7 +390,7 @@ def settle_orders(db):
         return 0
 
     cursor = db.execute("""
-        SELECT id, order_id FROM orders
+        SELECT id, order_id, market_id FROM orders
         WHERE status = 'submitted' AND order_id IS NOT NULL
     """)
     pending = cursor.fetchall()
@@ -408,28 +414,55 @@ def settle_orders(db):
         creds = client.create_or_derive_api_creds()
         client.set_api_creds(creds)
 
-        for row in pending:
-            order_db_id, order_id = row
-            try:
-                order_status = client.get_order(order_id)
-                status = order_status.get("status", "unknown")
+        # Fetch all our trades from the CLOB
+        try:
+            trades = client.get_trades() or []
+        except Exception as e:
+            print(f"  [TRADE] get_trades() failed: {e}")
+            trades = []
 
-                if status in ("MATCHED", "FILLED"):
-                    fill_price = float(order_status.get("associate_trades", [{}])[0].get("price", 0))
-                    now = datetime.now(timezone.utc).isoformat()
-                    db.execute("""
-                        UPDATE orders SET status = 'filled', price_filled = ?,
-                        filled_at = ? WHERE id = ?
-                    """, (fill_price, now, order_db_id))
-                    settled += 1
-                elif status in ("CANCELLED", "EXPIRED"):
-                    db.execute("""
-                        UPDATE orders SET status = ? WHERE id = ?
-                    """, (status.lower(), order_db_id))
-                    settled += 1
+        # Build a lookup: order_id -> trade info
+        # Trades reference our orders in two ways:
+        # 1. taker_order_id (we were the taker)
+        # 2. maker_orders[].order_id (we were the maker)
+        filled_orders = {}  # order_id -> fill_price
+        for trade in trades:
+            # Check if we were the taker
+            taker_oid = trade.get("taker_order_id", "")
+            if taker_oid:
+                filled_orders[taker_oid] = float(trade.get("price", 0))
+            # Check if our order appears in maker_orders
+            for maker in trade.get("maker_orders", []):
+                moid = maker.get("order_id", "")
+                if moid:
+                    filled_orders[moid] = float(maker.get("price", 0))
 
-            except Exception as e:
-                print(f"  [TRADE] Order {order_id} status check failed: {e}")
+        # Check which markets have resolved (to mark unfilled orders as expired)
+        resolved_markets = set()
+        market_ids = list(set(r[2] for r in pending))
+        for mid in market_ids:
+            row = db.execute(
+                "SELECT resolved FROM markets WHERE id = ?", (mid,)
+            ).fetchone()
+            if row and row[0]:
+                resolved_markets.add(mid)
+
+        now = datetime.now(timezone.utc).isoformat()
+        for order_db_id, order_id, market_id in pending:
+            if order_id in filled_orders:
+                fill_price = filled_orders[order_id]
+                db.execute("""
+                    UPDATE orders SET status = 'filled', price_filled = ?,
+                    filled_at = ? WHERE id = ?
+                """, (fill_price, now, order_db_id))
+                settled += 1
+                print(f"  [TRADE] Order {order_id[:12]}... FILLED @ {fill_price:.3f}")
+            elif market_id in resolved_markets:
+                db.execute("""
+                    UPDATE orders SET status = 'expired' WHERE id = ?
+                """, (order_db_id,))
+                settled += 1
+                print(f"  [TRADE] Order {order_id[:12]}... EXPIRED (market resolved, no fill)")
 
         db.commit()
     except ImportError:
