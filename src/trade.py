@@ -35,6 +35,7 @@ MAX_DRAWDOWN_PCT = float(_env("MAX_DRAWDOWN_PCT", "15"))  # 15% from peak equity
 MIN_CONVICTION = int(_env("MIN_CONVICTION", "3"))
 MAX_SLIPPAGE_PCT = float(_env("MAX_SLIPPAGE_PCT", "2.0"))  # 2% max
 EDGE_THRESHOLD = float(_env("EDGE_THRESHOLD", "0.05"))  # 5% min edge
+MAX_SLIPPAGE_SPREAD = float(_env("MAX_SLIPPAGE_SPREAD", "0.05"))  # 5¢ max above market mid
 
 # ETH sizing — thinner book requires smaller bets
 # ETH avg spread: 3.98%, max bet @2% slippage: $149
@@ -201,16 +202,25 @@ def compute_order(prediction_row, market_row, liquidity=None):
     direction = "UP" if estimate > 0.5 else "DOWN"
 
     # We buy YES tokens for UP, NO tokens for DOWN
-    # On 5-minute markets, being filled matters more than saving a few cents.
-    # Price at estimate (our fair value) to aggressively cross the spread.
+    # Cap limit price at market + MAX_SPREAD to avoid overpaying.
+    # Without this cap, the fixed 0.62 estimate causes 12-28¢ slippage
+    # when the market is at 34-49¢.
+    market_price_yes = market_row.get("price_yes") or 0.5
     if direction == "UP":
         side = "buy"
         token = "yes"
-        price_limit = estimate
+        price_limit = min(estimate, market_price_yes + MAX_SLIPPAGE_SPREAD)
     else:
         side = "buy"
         token = "no"
-        price_limit = 1 - estimate
+        market_price_no = 1 - market_price_yes
+        price_limit = min(1 - estimate, market_price_no + MAX_SLIPPAGE_SPREAD)
+
+    # Compute slippage vs market mid
+    if direction == "UP":
+        slippage = price_limit - market_price_yes
+    else:
+        slippage = price_limit - (1 - market_price_yes)
 
     # Asset-aware sizing: BTC flat $25, ETH tiered by conviction
     size = get_bet_size(prediction_row, liquidity)
@@ -227,6 +237,8 @@ def compute_order(prediction_row, market_row, liquidity=None):
         "token": token,
         "size": round(size, 2),
         "price_limit": round(price_limit, 4),
+        "slippage": round(slippage, 4),
+        "market_price": round(market_price_yes, 4),
     }, "ok"
 
 
@@ -247,6 +259,7 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         "direction": order_params["direction"],
         "size": order_params["size"],
         "price_limit": order_params["price_limit"],
+        "slippage_pct": order_params.get("slippage", 0) * 100,  # store as percentage
         "status": "pending",
         "order_id": None,
         "mode": mode,
@@ -597,8 +610,11 @@ def execute_trades(db, cycle):
         )
 
         symbol = ">" if TRADING_ENABLED else "~"
+        slip_cents = order_params.get('slippage', 0) * 100
+        mkt_price = order_params.get('market_price', 0)
         print(f"    [{mode_label}] {symbol} {order_params['direction']} "
               f"${order_params['size']:.0f} @ {order_params['price_limit']:.2f} "
+              f"(mkt={mkt_price:.2f}, slip={slip_cents:+.0f}¢) "
               f"— {order['status']}")
         orders.append(order)
 
@@ -621,6 +637,16 @@ def execute_trades(db, cycle):
             print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
     except Exception as e:
         print(f"    [SHADOW] skipped: {e}")
+
+    # Shadow conviction scorer — continuous strength signal for BTC 5m
+    try:
+        from shadow_conviction_scorer import shadow_log_cycle
+        from btc_data import fetch_btc_candles
+        btc = fetch_btc_candles(limit=20)
+        if btc and btc.get("candles"):
+            shadow_log_cycle(db, cycle, btc["candles"], "btc_5m")
+    except Exception as e:
+        print(f"    [shadow] skipped: {e}")
 
     return orders
 

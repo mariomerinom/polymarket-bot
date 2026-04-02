@@ -192,6 +192,50 @@ class TestComputeOrder:
         assert "book_too_thin" in reason
 
 
+    def test_price_cap_limits_slippage_up(self):
+        """When market is far below estimate, limit price is capped at market + 5¢."""
+        from trade import compute_order, MAX_SLIPPAGE_SPREAD
+        pred = {"estimate": 0.62, "conviction_score": 4}
+        market = {"price_yes": 0.34}  # Market at 34¢, estimate at 62¢
+        order, reason = compute_order(pred, market)
+        assert order is not None
+        # Should be capped at 0.34 + 0.05 = 0.39, not 0.62
+        assert order["price_limit"] <= 0.34 + MAX_SLIPPAGE_SPREAD + 0.001
+        assert order["price_limit"] < 0.62  # Much less than raw estimate
+
+    def test_price_cap_limits_slippage_down(self):
+        """DOWN prediction: limit price capped at market_no + 5¢."""
+        from trade import compute_order, MAX_SLIPPAGE_SPREAD
+        pred = {"estimate": 0.38, "conviction_score": 3}  # DOWN
+        market = {"price_yes": 0.55}  # market_no = 0.45, 1-estimate = 0.62
+        order, reason = compute_order(pred, market)
+        assert order is not None
+        market_no = 1 - 0.55
+        assert order["price_limit"] <= market_no + MAX_SLIPPAGE_SPREAD + 0.001
+
+    def test_price_cap_no_effect_when_estimate_close(self):
+        """When estimate is within spread of market, estimate wins."""
+        from trade import compute_order, MAX_SLIPPAGE_SPREAD
+        pred = {"estimate": 0.52, "conviction_score": 4}
+        market = {"price_yes": 0.50}  # estimate 0.52 < 0.50 + 0.05
+        order, reason = compute_order(pred, market)
+        assert order is not None
+        assert abs(order["price_limit"] - 0.52) < 0.001
+
+    def test_slippage_computed_and_returned(self):
+        """compute_order returns slippage and market_price."""
+        from trade import compute_order
+        pred = {"estimate": 0.62, "conviction_score": 4}
+        market = {"price_yes": 0.49}
+        order, reason = compute_order(pred, market)
+        assert order is not None
+        assert "slippage" in order
+        assert "market_price" in order
+        assert order["market_price"] == 0.49
+        # Slippage should be price_limit - market_price
+        assert order["slippage"] == round(order["price_limit"] - 0.49, 4)
+
+
 class TestPlaceOrder:
     """Order placement in paper mode."""
 
