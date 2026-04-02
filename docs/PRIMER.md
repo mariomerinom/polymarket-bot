@@ -73,6 +73,15 @@ Every 5 minutes, GitHub Actions triggers the bot. The bot fetches 20 BTC candles
 | `optimization_tracker.py` | Registers, monitors, and flags active optimizations. |
 | `clob_depth.py` | Queries Polymarket CLOB for liquidity/spread data. |
 
+### Kalshi Pipeline (src/)
+
+| File | What It Does |
+|------|-------------|
+| `ci_run_kalshi.py` | Entry point for Kalshi BTC pipeline. Paper trading, 15-min cycles. |
+| `kalshi_markets.py` | Fetches active Kalshi BTC markets via REST API. HMAC auth + mock mode. |
+| `kalshi_data.py` | BTC candle wrapper (delegates to `btc_data.py` — BTC is BTC). |
+| `kalshi_score.py` | Resolves Kalshi predictions via settlement API. |
+
 ### Data (data/)
 
 | File | What It Holds |
@@ -80,6 +89,7 @@ Every 5 minutes, GitHub Actions triggers the bot. The bot fetches 20 BTC candles
 | `predictions.db` | Live BTC 5-min predictions — the source of truth. CI auto-commits this. |
 | `predictions_15m.db` | Live BTC 15-min predictions. Fully isolated from 5m. |
 | `predictions_eth.db` | Live ETH 5-min predictions. Fully isolated from BTC. |
+| `predictions_kalshi.db` | Kalshi BTC predictions. Phase 0 signal transfer test. |
 
 ### CI/CD (.github/workflows/)
 
@@ -88,6 +98,7 @@ Every 5 minutes, GitHub Actions triggers the bot. The bot fetches 20 BTC candles
 | `predict-and-score.yml` | Every 5 min | Fetch markets → predict → resolve → trade → dashboard → commit |
 | `predict-15m.yml` | Every 15 min | Same, but for 15-min BTC markets with relaxed thresholds |
 | `predict-eth-5m.yml` | Every 5 min | ETH pipeline: fetch → predict → resolve → dashboard → commit |
+| `predict-kalshi.yml` | Every 15 min | Kalshi BTC pipeline: fetch → predict → resolve → dashboard → commit |
 | `daily-report.yml` | 06:00 CST daily | Performance report, optimization alerts, decision monitoring |
 
 **Important:** CI auto-commits constantly. Always `git pull --rebase` before pushing. If the DB conflicts, your code changes win — CI regenerates the DB.

@@ -1,7 +1,7 @@
 # Kalshi Integration — Parallel Venue & Cross-Market Arbitrage
 
-> **Status**: DRAFT
-> **Date**: March 31, 2026
+> **Status**: ACTIVE — Phase 0 infrastructure complete, collecting predictions
+> **Date**: March 31, 2026 (plan) / April 2, 2026 (Phase 0 built)
 > **Goal**: Add Kalshi as a parallel BTC trading venue and cross-market arbitrage counterparty against Polymarket.
 
 ---
@@ -243,14 +243,16 @@ Pick whichever is ready first. The codebase is identical — the persistent proc
 
 The cheapest possible experiment. No new math, no WebSockets, no arb logic. Run the proven momentum signal against Kalshi markets and see if it transfers.
 
-**Build:**
+**Build:** _(completed 2026-04-02)_
 
-1. `src/kalshi_data.py` — Fetch BTC candle data from Kalshi REST API. Match candle timestamps to Kalshi market windows.
-2. `src/kalshi_markets.py` — Fetch active Kalshi BTC markets. Map market IDs to strike/expiry.
-3. `src/ci_run_kalshi.py` — CI entry point. Fetches candles → runs `predict.py` (unchanged) → logs prediction to `predictions_kalshi.db`. No orders.
-4. `.github/workflows/predict-kalshi.yml` — Runs every 15 minutes (Kalshi's shortest BTC window). Self-rescheduling.
-5. `src/kalshi_score.py` — Query Kalshi settlement API, resolve predictions, compute WR/P&L.
-6. `docs/kalshi.html` — Dashboard. Same template as existing pipelines, pointed at new DB.
+1. [x] `src/kalshi_data.py` — Thin wrapper over `btc_data.fetch_btc_candles(interval="15m")`. BTC is BTC regardless of venue.
+2. [x] `src/kalshi_markets.py` — Fetch active Kalshi BTC markets via REST API. HMAC-SHA256 auth. Mock mode fallback.
+3. [x] `src/ci_run_kalshi.py` — CI entry point. Fetches candles → runs `predict.py` (unchanged) → logs prediction to `predictions_kalshi.db`. No orders.
+4. [x] `.github/workflows/predict-kalshi.yml` — Runs every 15 minutes. Self-rescheduling via `next-cycle-kalshi` dispatch.
+5. [x] `src/kalshi_score.py` — Query Kalshi settlement API, resolve predictions. Mock mode: deterministic hash resolution.
+6. [x] `docs/kalshi.html` — Dashboard. Same template as existing pipelines, cross-linked via nav bar.
+7. [x] `tests/test_kalshi.py` — 12 tests covering all Kalshi modules. All passing.
+8. [x] `src/daily_report.py` — Extended to include Kalshi as 4th pipeline in daily reports.
 
 **What we learn:**
 

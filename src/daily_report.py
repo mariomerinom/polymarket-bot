@@ -1221,12 +1221,12 @@ def update_index(daily_dir, date_str):
     index_path.write_text("\n".join(lines))
 
 
-def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None):
+def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None):
     """Generate concise markdown for GitHub Actions Job Summary."""
     decision_alerts = decision_alerts or []
     lines = [f"# Daily Report \u2014 {date_str}", ""]
 
-    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth)]:
+    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth), ("Kalshi", data_kalshi)]:
         if data is None:
             lines.append(f"**{label}:** No data")
             lines.append("")
@@ -1282,7 +1282,7 @@ def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None, data_
 
 
 def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir=None,
-                    summary_path=None, db_eth_path=None):
+                    summary_path=None, db_eth_path=None, db_kalshi_path=None):
     """
     Main entry point. Generates daily report for the given date.
     Defaults to yesterday (UTC).
@@ -1294,21 +1294,23 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
     db_5m = db_5m_path or DB_5M
     db_15m = db_15m_path or DB_15M
     db_eth = db_eth_path or DB_ETH
+    db_kalshi = db_kalshi_path or DB_KALSHI
     daily_dir = Path(output_dir) if output_dir else DAILY_DIR
 
     print(f"Daily Report for {date_str}")
     print("=" * 40)
 
-    # Analyze all 3 pipelines
+    # Analyze all 4 pipelines
     data_5m = analyze_pipeline(db_5m, date_str)
     data_15m = analyze_pipeline(db_15m, date_str)
     data_eth = analyze_pipeline(db_eth, date_str)
+    data_kalshi = analyze_pipeline(db_kalshi, date_str)
 
-    if data_5m is None and data_15m is None and data_eth is None:
+    if data_5m is None and data_15m is None and data_eth is None and data_kalshi is None:
         print(f"  No predictions found for {date_str}")
         return None
 
-    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth)]:
+    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth), ("Kalshi", data_kalshi)]:
         if data:
             s = data["summary"]
             print(f"  {label}: {s['total_predictions']} predictions, {s['resolved_bets']} resolved bets, "
@@ -1327,7 +1329,8 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
 
     # Generate markdown
     report = format_report(date_str, data_5m, data_15m,
-                           decision_alerts=decision_alerts, data_eth=data_eth)
+                           decision_alerts=decision_alerts, data_eth=data_eth,
+                           data_kalshi=data_kalshi)
 
     # Write report file
     daily_dir.mkdir(parents=True, exist_ok=True)
@@ -1341,13 +1344,14 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
 
     # Generate CI summary (for GitHub Actions Job Summary)
     ci_summary = generate_ci_summary(date_str, data_5m, data_15m,
-                                     decision_alerts=decision_alerts, data_eth=data_eth)
+                                     decision_alerts=decision_alerts, data_eth=data_eth,
+                                     data_kalshi=data_kalshi)
     if summary_path:
         Path(summary_path).write_text(ci_summary)
         print(f"  CI summary: {summary_path}")
 
     # Print alerts
-    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth)]:
+    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth), ("Kalshi", data_kalshi)]:
         if data and data["alerts"]:
             print(f"\n  {label} Alerts:")
             for alert in data["alerts"]:

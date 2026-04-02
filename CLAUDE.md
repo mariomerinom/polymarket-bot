@@ -26,13 +26,14 @@
 
 ## Multi-Pipeline Architecture
 
-Three independent pipelines run in parallel, each with its own workflow, database, and dashboard:
+Four independent pipelines run in parallel, each with its own workflow, database, and dashboard:
 
 | Pipeline | Workflow | DB | Dashboard | Signal | Status |
 |----------|----------|----|-----------|--------|--------|
 | BTC 5m | `predict-and-score.yml` | `predictions.db` | `docs/index.html` | Momentum | **Production** |
 | BTC 15m | `predict-15m.yml` | `predictions_15m.db` | `docs/15m.html` | Momentum | Paper |
 | ETH 5m | `predict-eth-5m.yml` | `predictions_eth.db` | `docs/eth.html` | Momentum | Paper |
+| Kalshi BTC | `predict-kalshi.yml` | `predictions_kalshi.db` | `docs/kalshi.html` | Momentum | Paper (Phase 0) |
 
 All three dashboards are cross-linked via a nav bar on GitHub Pages.
 
