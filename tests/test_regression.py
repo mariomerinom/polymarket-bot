@@ -128,13 +128,13 @@ def test_price_gate_prevents_extreme_bets():
     predict_path = os.path.join(ROOT, "src", "predict.py")
     content = open(predict_path).read()
 
-    # The price gate must exist in run_predictions
+    # The price gate must exist in run_predictions (via config constants)
     assert "price_gate" in content, \
         "predict.py must have a price gate for extreme market prices"
-    assert "0.85" in content, \
-        "predict.py must gate prices above 0.85"
-    assert "0.15" in content, \
-        "predict.py must gate prices below 0.15"
+    assert "PRICE_GATE_UPPER" in content, \
+        "predict.py must use PRICE_GATE_UPPER from config"
+    assert "PRICE_GATE_LOWER" in content, \
+        "predict.py must use PRICE_GATE_LOWER from config"
 
 
 def test_tiered_conviction_ride_up_sweet_spot():
@@ -307,10 +307,11 @@ def test_dead_hour_gate_is_data_driven():
 
 
 def test_dead_hour_fallback():
-    """When DB has no data, falls back to hardcoded set."""
-    from predict import compute_dead_hours, _FALLBACK_DEAD_HOURS
+    """When DB has no data, falls back to config set."""
+    from predict import compute_dead_hours
+    from config import FALLBACK_DEAD_HOURS
     dead, stats = compute_dead_hours("/nonexistent/path.db")
-    assert dead == _FALLBACK_DEAD_HOURS
+    assert dead == FALLBACK_DEAD_HOURS
     assert 3 in dead and 21 in dead
 
 
@@ -357,6 +358,68 @@ def test_workflows_have_git_stash():
         content = open(fpath).read()
         assert "git stash" in content, \
             f"{fname} must use 'git stash' before 'git pull --rebase' to handle concurrent CI pushes"
+
+
+# ── Incident 6: 53% fill rate — $165 missed profit ────────────────────────
+
+def test_fill_priority_spread_widens_limit_price():
+    """Limit orders must be widened by FILL_PRIORITY_SPREAD for better fills.
+    Incident 6: 8/8 expired orders were correct predictions. 53% fill rate
+    on 2026-04-02 left $165 on the table. Fill-priority spread trades 2¢ of
+    edge for dramatically higher fill rate.
+    """
+    from trade import compute_order
+    from config import FILL_PRIORITY_SPREAD
+
+    assert FILL_PRIORITY_SPREAD > 0, "FILL_PRIORITY_SPREAD must be positive"
+
+    # UP bet: limit price should be wider than raw estimate
+    pred = {"estimate": 0.55, "conviction_score": 3, "agent": "momentum_rule"}
+    market = {"price_yes": 0.50}
+    order, reason = compute_order(pred, market)
+    assert order is not None
+    # Price should be estimate + spread (0.55 + 0.02 = 0.57), not just 0.55
+    assert order["price_limit"] > 0.55, \
+        f"UP limit price should exceed estimate by FILL_PRIORITY_SPREAD, got {order['price_limit']}"
+
+    # DOWN bet: same principle (buying NO tokens)
+    pred_down = {"estimate": 0.45, "conviction_score": 3, "agent": "momentum_rule"}
+    order_down, _ = compute_order(pred_down, market)
+    assert order_down is not None
+    raw_no_price = 1 - 0.45  # 0.55
+    assert order_down["price_limit"] > raw_no_price, \
+        f"DOWN limit price should exceed 1-estimate by FILL_PRIORITY_SPREAD, got {order_down['price_limit']}"
+
+
+def test_pnl_uses_actual_fill_size():
+    """P&L must be computed from actual fill size, not intended bet size.
+    Incident 6: DB recorded $25 intended but CLOB only filled $20.16 (thin book).
+    P&L was overstated by ~$10 on winning bets.
+    """
+    from trade import compute_order_pnl, ensure_orders_table
+    import sqlite3
+
+    db = sqlite3.connect(":memory:")
+    ensure_orders_table(db)
+    db.execute("""CREATE TABLE IF NOT EXISTS markets (
+        id TEXT PRIMARY KEY, resolved INTEGER DEFAULT 0, outcome INTEGER)""")
+
+    # Simulate: intended $25, but actual fill was $20 (thin book)
+    db.execute("INSERT INTO markets VALUES ('m1', 1, 1)")
+    db.execute("""INSERT INTO orders
+        (market_id, prediction_id, direction, size, price_limit, price_filled,
+         status, mode, placed_at, cycle)
+        VALUES ('m1', 1, 'UP', 20.0, 0.50, 0.50, 'filled', 'live',
+                '2026-04-02T10:00:00', 1)""")
+    db.commit()
+
+    updated = compute_order_pnl(db)
+    assert updated == 1
+    pnl = db.execute("SELECT pnl FROM orders WHERE market_id='m1'").fetchone()[0]
+    # With size=20, price=0.50: pnl = 20 * (1/0.5 - 1) * 0.985 = 20 * 1 * 0.985 = $19.70
+    # NOT $24.63 (which would be wrong if size were still $25)
+    assert abs(pnl - 19.70) < 0.01, f"P&L should use actual fill size ($20), got pnl={pnl}"
+    db.close()
 
 
 def test_no_evolve_imports():

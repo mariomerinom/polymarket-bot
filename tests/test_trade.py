@@ -193,34 +193,38 @@ class TestComputeOrder:
 
 
     def test_price_cap_limits_slippage_up(self):
-        """When market is far below estimate, limit price is capped at market + 5¢."""
-        from trade import compute_order, MAX_SLIPPAGE_SPREAD
+        """When market is far below estimate, limit price is capped at market + spread + fill priority."""
+        from trade import compute_order, MAX_SLIPPAGE_SPREAD, FILL_PRIORITY_SPREAD
         pred = {"estimate": 0.62, "conviction_score": 4}
         market = {"price_yes": 0.34}  # Market at 34¢, estimate at 62¢
         order, reason = compute_order(pred, market)
         assert order is not None
-        # Should be capped at 0.34 + 0.05 = 0.39, not 0.62
-        assert order["price_limit"] <= 0.34 + MAX_SLIPPAGE_SPREAD + 0.001
+        # Should be capped at 0.34 + 0.05 + 0.02 = 0.41, not 0.64
+        max_allowed = 0.34 + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
+        assert order["price_limit"] <= max_allowed + 0.001
         assert order["price_limit"] < 0.62  # Much less than raw estimate
 
     def test_price_cap_limits_slippage_down(self):
-        """DOWN prediction: limit price capped at market_no + 5¢."""
-        from trade import compute_order, MAX_SLIPPAGE_SPREAD
+        """DOWN prediction: limit price capped at market_no + spread + fill priority."""
+        from trade import compute_order, MAX_SLIPPAGE_SPREAD, FILL_PRIORITY_SPREAD
         pred = {"estimate": 0.38, "conviction_score": 3}  # DOWN
         market = {"price_yes": 0.55}  # market_no = 0.45, 1-estimate = 0.62
         order, reason = compute_order(pred, market)
         assert order is not None
         market_no = 1 - 0.55
-        assert order["price_limit"] <= market_no + MAX_SLIPPAGE_SPREAD + 0.001
+        max_allowed = market_no + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
+        assert order["price_limit"] <= max_allowed + 0.001
 
     def test_price_cap_no_effect_when_estimate_close(self):
-        """When estimate is within spread of market, estimate wins."""
-        from trade import compute_order, MAX_SLIPPAGE_SPREAD
+        """When estimate is close to market, fill priority spread still applies."""
+        from trade import compute_order, FILL_PRIORITY_SPREAD
         pred = {"estimate": 0.52, "conviction_score": 4}
-        market = {"price_yes": 0.50}  # estimate 0.52 < 0.50 + 0.05
+        market = {"price_yes": 0.50}  # estimate 0.52, fill-adjusted = 0.54
         order, reason = compute_order(pred, market)
         assert order is not None
-        assert abs(order["price_limit"] - 0.52) < 0.001
+        # Price should be estimate + FILL_PRIORITY_SPREAD
+        expected = 0.52 + FILL_PRIORITY_SPREAD
+        assert abs(order["price_limit"] - expected) < 0.001
 
     def test_slippage_computed_and_returned(self):
         """compute_order returns slippage and market_price."""

@@ -21,13 +21,12 @@ DB_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 DB_KALSHI = Path(__file__).parent.parent / "data" / "predictions_kalshi.db"
 DAILY_DIR = Path(__file__).parent.parent / "docs" / "daily"
 
-# Date-aware sizing: paper-era tiers before live, flat $25 after
-PAPER_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
-PAPER_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 50, 5: 75}
-LIVE_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
-LIVE_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
-LIVE_KALSHI_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
-LIVE_START_DATE = "2026-04-01"
+# Date-aware sizing: imported from centralized config.py
+from config import (
+    PAPER_BTC_CONVICTION_BETS, PAPER_ETH_CONVICTION_BETS,
+    LIVE_BTC_CONVICTION_BETS, LIVE_ETH_CONVICTION_BETS,
+    LIVE_KALSHI_CONVICTION_BETS, LIVE_START_DATE,
+)
 BTC_CONVICTION_BETS = LIVE_BTC_CONVICTION_BETS
 ETH_CONVICTION_BETS = LIVE_ETH_CONVICTION_BETS
 CONVICTION_BETS = BTC_CONVICTION_BETS  # default for backward compat
@@ -519,6 +518,30 @@ def analyze_orders(db_path, date_str):
                     "pnl": sum(r["pnl"] for r in d_settled) if d_settled else 0,
                 }
 
+        # Fill rate: submitted orders that actually filled vs expired
+        # Excludes paper and failed (API bugs) — only counts orders that reached CLOB
+        submitted_statuses = ("submitted", "filled", "settled", "expired")
+        submitted = [r for r in rows if r["status"] in submitted_statuses]
+        filled = [r for r in rows if r["status"] in ("filled", "settled")]
+        expired = [r for r in rows if r["status"] == "expired"]
+        fill_rate = len(filled) / len(submitted) * 100 if submitted else 0
+
+        # Also check expired orders: would they have won? (missed profit indicator)
+        # This requires market outcome data, so query separately
+        expired_would_win = 0
+        try:
+            expired_rows = db.execute("""
+                SELECT o.direction, m.outcome
+                FROM orders o JOIN markets m ON o.market_id = m.id
+                WHERE date(o.placed_at) = ? AND o.status = 'expired' AND m.resolved = 1
+            """, (date_str,)).fetchall()
+            for er in expired_rows:
+                dirn, outcome = er
+                if (dirn == "UP" and outcome == 1) or (dirn == "DOWN" and outcome == 0):
+                    expired_would_win += 1
+        except Exception:
+            pass
+
         db.close()
 
         return {
@@ -534,6 +557,11 @@ def analyze_orders(db_path, date_str):
             "breaker_tripped": breaker_tripped,
             "by_direction": by_direction,
             "bet_size": BET_SIZE,
+            "fill_rate": fill_rate,
+            "submitted_count": len(submitted),
+            "filled_count": len(filled),
+            "expired_count": len(expired),
+            "expired_would_win": expired_would_win,
         }
     except Exception:
         return None
@@ -592,7 +620,7 @@ def generate_alerts(summary, rolling, orders=None):
 
 
 # ── Decision alert system ─────────────────────────────────────────────
-# Each decision has an id matching docs/decisions.md, a check function,
+# Each decision has an id matching docs/core/decisions.md, a check function,
 # and a human-readable description generator.
 
 def compute_decision_stats(db):
@@ -959,6 +987,19 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 else "✅ OK"
             )
             record = f"{orders['wins']}W / {orders['losses']}L" if (orders["wins"] + orders["losses"]) > 0 else "—"
+
+            # Fill rate line
+            fill_rate_str = ""
+            if orders.get("submitted_count", 0) > 0:
+                fr = orders["fill_rate"]
+                filled_c = orders["filled_count"]
+                submitted_c = orders["submitted_count"]
+                expired_c = orders["expired_count"]
+                fr_icon = "✅" if fr >= 80 else ("⚠️" if fr >= 60 else "🚨")
+                fill_rate_str = f"{fr_icon} {fr:.0f}% ({filled_c}/{submitted_c} submitted → filled, {expired_c} expired)"
+                if orders.get("expired_would_win", 0) > 0:
+                    fill_rate_str += f" — **{orders['expired_would_win']} expired orders would have WON**"
+
             lines.extend([
                 "### Trade Execution",
                 "",
@@ -970,6 +1011,10 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 f"| P&L (settled) | ${orders['total_pnl']:+.2f} |",
                 f"| Record | {record} |",
                 f"| Bet size | ${orders['bet_size']:.0f} |",
+            ])
+            if fill_rate_str:
+                lines.append(f"| Fill rate | {fill_rate_str} |")
+            lines.extend([
                 "",
                 f"**Circuit Breaker:** ${orders['daily_loss']:.0f} / ${orders['breaker_limit']:.0f} "
                 f"({orders['breaker_pct']:.0f}%) — {breaker_status}",
@@ -991,7 +1036,7 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
         lines.extend([
             "## Decision Alerts",
             "",
-            "Tracked in [`docs/decisions.md`](../decisions.md). "
+            "Tracked in [`docs/core/decisions.md`](../core/decisions.md). "
             "These fire when data crosses predefined thresholds.",
             "",
         ])
@@ -1043,6 +1088,45 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 f"{v['resolved']} resolved, {v['wr']}% WR ({v['wins']}W)",
                 "",
             ])
+
+    # Shadow conviction scorer
+    for label, data in pipelines:
+        if data is None:
+            continue
+        sc = data.get("shadow_conviction")
+        if not sc:
+            continue
+
+        lines.extend([
+            f"## Shadow Conviction Scorer ({label}, n={sc['total']})",
+            "",
+            "*Continuous strength signal — logged only, no trading decisions affected.*",
+            "",
+            "| Tier | Shadow WR | Prod WR | Shadow n | Prod n |",
+            "|------|-----------|---------|----------|--------|",
+        ])
+
+        all_tiers = sorted(set(list(sc["tier_data"].keys()) + list(sc["prod_data"].keys())))
+        for tier in all_tiers:
+            sd = sc["tier_data"].get(tier, {"wins": 0, "total": 0})
+            pd = sc["prod_data"].get(tier, {"wins": 0, "total": 0})
+            s_wr = f"{sd['wins']/sd['total']*100:.0f}%" if sd["total"] > 0 else "—"
+            p_wr = f"{pd['wins']/pd['total']*100:.0f}%" if pd["total"] > 0 else "—"
+            lines.append(f"| {tier} | {s_wr} | {p_wr} | {sd['total']} | {pd['total']} |")
+
+        lines.append("")
+
+        # Divergence
+        div = sc["divergence"]
+        sh = div["shadow_higher"]
+        sl = div["shadow_lower"]
+        sh_wr = f"{sh['wins']/sh['total']*100:.0f}%" if sh["total"] > 0 else "—"
+        sl_wr = f"{sl['wins']/sl['total']*100:.0f}%" if sl["total"] > 0 else "—"
+        lines.append(f"**Divergence:** shadow > prod: {sh['total']} bets → {sh_wr} WR | "
+                     f"shadow < prod: {sl['total']} bets → {sl_wr} WR")
+        lines.append(f"**Strength-WR correlation:** r={sc['correlation']}")
+        lines.append(f"**Avg strength:** wins={sc['avg_strength_win']} | losses={sc['avg_strength_loss']}")
+        lines.append("")
 
     lines.append("---")
     lines.append("*Generated by `src/daily_report.py`*")
@@ -1136,6 +1220,94 @@ def analyze_shadow_indicators(predictions, resolved):
     return result if result else None
 
 
+def analyze_shadow_conviction(resolved):
+    """Analyze shadow conviction scorer data from reasoning JSON.
+
+    Compares shadow tiers to production tiers on resolved predictions.
+    Returns dict with tier WRs and divergence analysis, or None if no data.
+    """
+    tier_data = {}     # shadow_tier → {wins, total}
+    prod_data = {}     # prod_tier → {wins, total}
+    divergence = {"shadow_higher": {"wins": 0, "total": 0},
+                  "shadow_lower": {"wins": 0, "total": 0},
+                  "same": {"wins": 0, "total": 0}}
+    strengths_win = []
+    strengths_loss = []
+
+    for p in resolved:
+        try:
+            reasoning = json.loads(p["reasoning"]) if p["reasoning"] else {}
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        shadow = reasoning.get("shadow_generic_scorer")
+        if not shadow:
+            continue
+
+        shadow_tier = shadow.get("conviction_tier", 0)
+        prod_tier = shadow.get("production_conviction", 0)
+        strength = shadow.get("strength", 0)
+
+        won = (p["estimate"] >= 0.5 and p["outcome"] == 1) or \
+              (p["estimate"] < 0.5 and p["outcome"] == 0)
+
+        # Per-tier WR
+        for tier, data_dict in [(shadow_tier, tier_data), (prod_tier, prod_data)]:
+            if tier not in data_dict:
+                data_dict[tier] = {"wins": 0, "total": 0}
+            data_dict[tier]["total"] += 1
+            if won:
+                data_dict[tier]["wins"] += 1
+
+        # Divergence analysis
+        if shadow_tier > prod_tier:
+            bucket = divergence["shadow_higher"]
+        elif shadow_tier < prod_tier:
+            bucket = divergence["shadow_lower"]
+        else:
+            bucket = divergence["same"]
+        bucket["total"] += 1
+        if won:
+            bucket["wins"] += 1
+
+        # Strength-WR correlation data
+        if won:
+            strengths_win.append(strength)
+        else:
+            strengths_loss.append(strength)
+
+    total = sum(d["total"] for d in tier_data.values())
+    if total < 5:
+        return None
+
+    # Compute correlation between strength and win (point-biserial approx)
+    all_strengths = strengths_win + strengths_loss
+    if len(all_strengths) >= 5 and strengths_win and strengths_loss:
+        avg_win = sum(strengths_win) / len(strengths_win)
+        avg_loss = sum(strengths_loss) / len(strengths_loss)
+        avg_all = sum(all_strengths) / len(all_strengths)
+        var = sum((s - avg_all) ** 2 for s in all_strengths) / len(all_strengths)
+        if var > 0:
+            n = len(all_strengths)
+            n1 = len(strengths_win)
+            n0 = len(strengths_loss)
+            correlation = (avg_win - avg_loss) * ((n1 * n0) / (n * n)) ** 0.5 / (var ** 0.5)
+        else:
+            correlation = 0.0
+    else:
+        correlation = 0.0
+
+    return {
+        "total": total,
+        "tier_data": tier_data,
+        "prod_data": prod_data,
+        "divergence": divergence,
+        "correlation": round(correlation, 3),
+        "avg_strength_win": round(sum(strengths_win) / len(strengths_win), 3) if strengths_win else 0,
+        "avg_strength_loss": round(sum(strengths_loss) / len(strengths_loss), 3) if strengths_loss else 0,
+    }
+
+
 def analyze_pipeline(db_path, date_str):
     """Run full analysis for one pipeline (5m, 15m, ETH, or Kalshi)."""
     global CONVICTION_BETS
@@ -1175,6 +1347,7 @@ def analyze_pipeline(db_path, date_str):
         orders = analyze_orders(db_path, date_str)
         alerts = generate_alerts(summary, rolling, orders=orders)
         shadow = analyze_shadow_indicators(predictions, resolved)
+        shadow_conviction = analyze_shadow_conviction(resolved)
     finally:
         db.close()
         CONVICTION_BETS = old_bets
@@ -1191,6 +1364,7 @@ def analyze_pipeline(db_path, date_str):
         "alerts": alerts,
         "filters": filters,
         "shadow": shadow,
+        "shadow_conviction": shadow_conviction,
     }
 
 

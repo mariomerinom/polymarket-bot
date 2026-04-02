@@ -20,28 +20,16 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 
-# ── Configuration (env vars, overridable) ─────────────────────────────────────
+# ── Configuration (from centralized config.py, env-overridable) ──────────────
 
-def _env(name, default):
-    """Get env var, treating empty string same as unset."""
-    val = os.getenv(name, "")
-    return val if val else default
+from config import (
+    BET_SIZE, DAILY_LOSS_LIMIT, CONSECUTIVE_LOSS_MAX, MAX_DRAWDOWN_PCT,
+    MIN_CONVICTION, MAX_SLIPPAGE_PCT, EDGE_THRESHOLD, MAX_SLIPPAGE_SPREAD,
+    ETH_BET_SIZES, ETH_MAX_BET_CEILING_PCT, POLYMARKET_FEE_FACTOR,
+    BOOK_DEPTH_SAFETY_MARGIN, MIN_BET_SIZE, FILL_PRIORITY_SPREAD, _env,
+)
 
 TRADING_ENABLED = _env("TRADING_ENABLED", "false").lower() == "true"
-BET_SIZE = float(_env("BET_SIZE", "25"))  # Flat $25 medium grind
-DAILY_LOSS_LIMIT = float(_env("DAILY_LOSS_LIMIT", "300"))
-CONSECUTIVE_LOSS_MAX = int(_env("CONSECUTIVE_LOSS_MAX", "5"))  # Halt after 5 in a row
-MAX_DRAWDOWN_PCT = float(_env("MAX_DRAWDOWN_PCT", "15"))  # 15% from peak equity
-MIN_CONVICTION = int(_env("MIN_CONVICTION", "3"))
-MAX_SLIPPAGE_PCT = float(_env("MAX_SLIPPAGE_PCT", "2.0"))  # 2% max
-EDGE_THRESHOLD = float(_env("EDGE_THRESHOLD", "0.05"))  # 5% min edge
-MAX_SLIPPAGE_SPREAD = float(_env("MAX_SLIPPAGE_SPREAD", "0.05"))  # 5¢ max above market mid
-
-# ETH sizing — thinner book requires smaller bets
-# ETH avg spread: 3.98%, max bet @2% slippage: $149
-# Activates when trade.py handles ETH markets (conv≥3)
-ETH_BET_SIZES = {3: 25, 4: 50, 5: 75}
-ETH_MAX_BET_CEILING_PCT = 0.50  # Never exceed 50% of available liquidity @2%
 
 # ── Startup validation ───────────────────────────────────────────────────────
 
@@ -205,16 +193,24 @@ def compute_order(prediction_row, market_row, liquidity=None):
     # Cap limit price at market + MAX_SPREAD to avoid overpaying.
     # Without this cap, the fixed 0.62 estimate causes 12-28¢ slippage
     # when the market is at 34-49¢.
+    #
+    # FILL_PRIORITY_SPREAD (2¢ default): widen limit price to improve fill rate.
+    # Reconciliation 2026-04-02: 53% fill rate, 8/8 expired orders were winners.
+    # $165 missed profit. Trading 2¢ edge for dramatically higher fill rate is +EV.
     market_price_yes = market_row.get("price_yes") or 0.5
     if direction == "UP":
         side = "buy"
         token = "yes"
-        price_limit = min(estimate, market_price_yes + MAX_SLIPPAGE_SPREAD)
+        fill_adjusted = estimate + FILL_PRIORITY_SPREAD
+        max_price = market_price_yes + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
+        price_limit = min(fill_adjusted, max_price)
     else:
         side = "buy"
         token = "no"
         market_price_no = 1 - market_price_yes
-        price_limit = min(1 - estimate, market_price_no + MAX_SLIPPAGE_SPREAD)
+        fill_adjusted = (1 - estimate) + FILL_PRIORITY_SPREAD
+        max_price = market_price_no + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
+        price_limit = min(fill_adjusted, max_price)
 
     # Compute slippage vs market mid
     if direction == "UP":
@@ -227,8 +223,8 @@ def compute_order(prediction_row, market_row, liquidity=None):
     if liquidity and not liquidity.get("error"):
         max_book = liquidity.get("max_bet_2pct", float("inf"))
         if max_book < size:
-            size = max(0, max_book * 0.9)  # 90% of max to leave margin
-            if size < 5:  # Not worth it below $5
+            size = max(0, max_book * BOOK_DEPTH_SAFETY_MARGIN)
+            if size < MIN_BET_SIZE:
                 return None, f"book_too_thin (max@2%=${max_book:.0f})"
 
     return {
@@ -434,21 +430,49 @@ def settle_orders(db):
             print(f"  [TRADE] get_trades() failed: {e}")
             trades = []
 
-        # Build a lookup: order_id -> trade info
+        # Build a lookup: order_id -> {price, actual_size}
         # Trades reference our orders in two ways:
         # 1. taker_order_id (we were the taker)
         # 2. maker_orders[].order_id (we were the maker)
-        filled_orders = {}  # order_id -> fill_price
+        # Multiple fills per order are aggregated (order splitting is normal).
+        filled_orders = {}  # order_id -> {price: float, actual_size: float}
         for trade in trades:
+            trade_price = float(trade.get("price", 0))
+            trade_size = float(trade.get("size", 0))  # shares filled
+            trade_usdc = trade_size * trade_price if trade_size and trade_price else 0
+
             # Check if we were the taker
             taker_oid = trade.get("taker_order_id", "")
             if taker_oid:
-                filled_orders[taker_oid] = float(trade.get("price", 0))
+                if taker_oid in filled_orders:
+                    # Aggregate multiple fills: weighted avg price, sum size
+                    prev = filled_orders[taker_oid]
+                    total_usdc = prev["actual_size"] + trade_usdc
+                    total_shares = (prev["actual_size"] / prev["price"] if prev["price"] else 0) + trade_size
+                    filled_orders[taker_oid] = {
+                        "price": total_usdc / total_shares if total_shares else trade_price,
+                        "actual_size": total_usdc,
+                    }
+                else:
+                    filled_orders[taker_oid] = {"price": trade_price, "actual_size": trade_usdc}
+
             # Check if our order appears in maker_orders
             for maker in trade.get("maker_orders", []):
                 moid = maker.get("order_id", "")
                 if moid:
-                    filled_orders[moid] = float(maker.get("price", 0))
+                    maker_price = float(maker.get("price", trade_price))
+                    maker_size = float(maker.get("matched_amount", trade_size))
+                    maker_usdc = maker_size * maker_price if maker_size and maker_price else 0
+                    if moid in filled_orders:
+                        prev = filled_orders[moid]
+                        total_usdc = prev["actual_size"] + maker_usdc
+                        total_shares = (prev["actual_size"] / prev["price"] if prev["price"] else 0) + maker_size
+                        filled_orders[moid] = {
+                            "price": total_usdc / total_shares if total_shares else maker_price,
+                            "actual_size": total_usdc,
+                        }
+                    else:
+                        filled_orders[moid] = {"price": maker_price, "actual_size": maker_usdc}
 
         # Check which markets have resolved (to mark unfilled orders as expired)
         resolved_markets = set()
@@ -463,13 +487,24 @@ def settle_orders(db):
         now = datetime.now(timezone.utc).isoformat()
         for order_db_id, order_id, market_id in pending:
             if order_id in filled_orders:
-                fill_price = filled_orders[order_id]
-                db.execute("""
-                    UPDATE orders SET status = 'filled', price_filled = ?,
-                    filled_at = ? WHERE id = ?
-                """, (fill_price, now, order_db_id))
+                fill_info = filled_orders[order_id]
+                fill_price = fill_info["price"]
+                actual_size = fill_info.get("actual_size", 0)
+                # Update size to actual USDC spent (fixes P&L for partial fills)
+                update_size = actual_size > 0
+                if update_size:
+                    db.execute("""
+                        UPDATE orders SET status = 'filled', price_filled = ?,
+                        filled_at = ?, size = ? WHERE id = ?
+                    """, (fill_price, now, round(actual_size, 2), order_db_id))
+                else:
+                    db.execute("""
+                        UPDATE orders SET status = 'filled', price_filled = ?,
+                        filled_at = ? WHERE id = ?
+                    """, (fill_price, now, order_db_id))
                 settled += 1
-                print(f"  [TRADE] Order {order_id[:12]}... FILLED @ {fill_price:.3f}")
+                size_note = f", actual=${actual_size:.2f}" if update_size else ""
+                print(f"  [TRADE] Order {order_id[:12]}... FILLED @ {fill_price:.3f}{size_note}")
             elif market_id in resolved_markets:
                 db.execute("""
                     UPDATE orders SET status = 'expired' WHERE id = ?
@@ -512,7 +547,7 @@ def compute_order_pnl(db):
         if won:
             # Payout is $1 per share. Profit = (1/price - 1) * size * (1 - fee)
             price = price_filled or 0.5
-            pnl = size * (1.0 / price - 1) * 0.985  # 1.5% round-trip fee
+            pnl = size * (1.0 / price - 1) * POLYMARKET_FEE_FACTOR
         else:
             pnl = -size
 
@@ -542,6 +577,12 @@ def execute_trades(db, cycle):
         list of order dicts
     """
     ensure_orders_table(db)
+
+    # VWAP mean-reversion: DISABLED (Decision #23 reverted 2026-04-02).
+    # Shadow data showed 29.4% WR on 17 resolved ETH bets (5W-12L).
+    # BTC had zero shadow predictions. Promotion was based on misread
+    # daily report stat (78.6% was RSI/OBV aggregate, not VWAP-specific).
+    # Shadow continues collecting via shadow_log_indicators below.
 
     # Find predictions from this cycle that qualify
     cursor = db.execute("""

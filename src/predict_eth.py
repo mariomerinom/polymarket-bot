@@ -22,17 +22,13 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from config import ETH_VOL_LOW, ETH_VOL_HIGH, PRICE_GATE_UPPER, PRICE_GATE_LOWER
+
 # Import regime computation from BTC predict
 from predict import compute_regime_from_candles as _btc_regime
 
 # Import data-driven dead hours from predict.py (shared logic)
 from predict import compute_dead_hours
-
-# ETH volatility thresholds (Decision #16): BTC thresholds put 83% of ETH in HIGH_VOL.
-# ETH baseline vol is higher. Thresholds derived from 99 historical predictions:
-# P25=0.096, median=0.111, P75=0.195. This gives ~31/46/22 LOW/MED/HIGH split.
-ETH_VOL_LOW = 0.10
-ETH_VOL_HIGH = 0.20
 
 
 def compute_regime_eth(candles, autocorr_threshold=-0.15):
@@ -231,7 +227,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
             continue
 
         # Price gate: skip extreme prices
-        if mkt_price > 0.85 or mkt_price < 0.15:
+        if mkt_price > PRICE_GATE_UPPER or mkt_price < PRICE_GATE_LOWER:
             skip_signal = {
                 "estimate": mkt_price,
                 "should_trade": False,
