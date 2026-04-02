@@ -86,6 +86,17 @@ def main():
         except Exception as e:
             print(f"  Prediction error: {e}")
         db = sqlite3.connect(DB_PATH_15M)
+
+        # Decision #20: Demote 15m conv=4/5 to conv=3
+        # 15m conv=4 WR: 59.3% on 27 bets — no better than conv=3.
+        # predict.py is frozen, so cap conviction post-prediction.
+        demoted = db.execute("""
+            UPDATE predictions SET conviction_score = 3
+            WHERE cycle = ? AND conviction_score > 3
+        """, (cycle,)).rowcount
+        db.commit()
+        if demoted:
+            print(f"  [15m cap] Demoted {demoted} prediction(s) from conv>3 to conv=3")
     else:
         print("  No unpredicted markets")
 
@@ -99,6 +110,14 @@ def main():
                 print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
     except Exception as e:
         print(f"    [SHADOW] skipped: {e}")
+
+    # Shadow conviction scorer — continuous strength signal
+    try:
+        from shadow_conviction_scorer import shadow_log_cycle
+        if btc_data and btc_data.get("candles"):
+            shadow_log_cycle(db, cycle, btc_data["candles"], "btc_15m")
+    except Exception as e:
+        print(f"    [shadow] skipped: {e}")
 
     # 4. Score
     print("[15M 4/5] Scoring...")

@@ -22,12 +22,34 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Import regime computation from BTC predict (generic, asset-agnostic)
-from predict import compute_regime_from_candles
+# Import regime computation from BTC predict
+from predict import compute_regime_from_candles as _btc_regime
 
 # ETH-specific dead hours — EMPTY until calibrated from ETH paper trading data.
 # BTC uses {3, 21} UTC but those are BTC-specific. ETH may differ.
 DEAD_HOURS_UTC = set()
+
+# ETH volatility thresholds (Decision #16): BTC thresholds put 83% of ETH in HIGH_VOL.
+# ETH baseline vol is higher. Thresholds derived from 99 historical predictions:
+# P25=0.096, median=0.111, P75=0.195. This gives ~31/46/22 LOW/MED/HIGH split.
+ETH_VOL_LOW = 0.10
+ETH_VOL_HIGH = 0.20
+
+
+def compute_regime_eth(candles, autocorr_threshold=-0.15):
+    """ETH-specific regime with recalibrated volatility thresholds."""
+    regime = _btc_regime(candles, autocorr_threshold=autocorr_threshold)
+    vol = regime["volatility"]
+    if vol < ETH_VOL_LOW:
+        vol_label = "LOW_VOL"
+    elif vol < ETH_VOL_HIGH:
+        vol_label = "MEDIUM_VOL"
+    else:
+        vol_label = "HIGH_VOL"
+    # Preserve trend label from BTC function, only override vol
+    trend_label = regime["label"].split(" / ")[-1] if " / " in regime["label"] else "NEUTRAL"
+    regime["label"] = f"{vol_label} / {trend_label}"
+    return regime
 
 DB_PATH_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 
@@ -204,8 +226,8 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
         db.close()
         return
 
-    # Compute regime (same generic function as BTC)
-    regime = compute_regime_from_candles(candles, autocorr_threshold=autocorr_threshold)
+    # Compute regime with ETH-calibrated volatility thresholds (Decision #16)
+    regime = compute_regime_eth(candles, autocorr_threshold=autocorr_threshold)
     print(f"  Regime: {regime['label']} (autocorr: {regime['autocorrelation']:+.4f})")
 
     if regime["is_mean_reverting"]:
