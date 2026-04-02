@@ -223,3 +223,29 @@ def format_liquidity_log(summary: dict) -> str:
         f"max@2%=${max2:,.0f} | "
         f"levels={summary.get('depth_levels', 0)}"
     )
+
+
+def get_clob_tokens(market_id):
+    """
+    Look up CLOB token IDs for a Polymarket market.
+    Queries Gamma API by condition ID. Returns {"yes": ..., "no": ...} or None.
+    """
+    try:
+        resp = requests.get(
+            f"https://gamma-api.polymarket.com/markets/{market_id}",
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        raw_clob = data.get("clobTokenIds", "[]")
+        if isinstance(raw_clob, str):
+            import json
+            clob_ids = json.loads(raw_clob)
+        else:
+            clob_ids = raw_clob
+        if len(clob_ids) >= 2:
+            return {"yes": clob_ids[0], "no": clob_ids[1]}
+    except Exception:
+        pass
+    return None

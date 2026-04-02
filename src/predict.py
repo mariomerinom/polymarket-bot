@@ -138,16 +138,14 @@ def compute_regime_from_candles(candles, autocorr_threshold=-0.15):
     }
 
 
-def momentum_signal(candles, min_streak=3):
+def momentum_signal(candles, min_streak=3, config_key="btc_5m"):
     """
-    Momentum signal: ride BTC streaks.
+    Asset-agnostic momentum signal: ride streaks.
     1. streak >= min_streak same direction (default 3 for 5m, 2 for 15m)
     2. RIDE the streak (bet WITH it, not against it)
+    3. Dynamic estimate from streak length + price magnitude + volatility
 
-    History: V3 "contrarian" faded streaks and lost at 37% WR on live Polymarket.
-    Inverting to momentum (ride) validated at 63% WR. Do NOT revert to fade.
-    Exhaustion gate removed 2026-03-31 — it was a contrarian filter that rejected
-    healthy trends (85% WR on 100 filtered predictions vs 67% on kept ones).
+    config_key: shadow scorer config ("btc_5m", "btc_15m", "eth_5m", "kalshi")
 
     Returns dict with estimate, confidence, should_trade, and signal details.
     """
@@ -173,14 +171,12 @@ def momentum_signal(candles, min_streak=3):
             "streak": signed_streak,
         }
 
-    # Ride the streak (momentum — V3 contrarian lost at 37% WR, momentum at 63%)
     direction = "UP" if signed_streak >= min_streak else "DOWN"
 
     # Dynamic estimate from streak length + price magnitude + volatility
-    # Replaces hardcoded 0.62/0.38 — longer/stronger streaks produce higher edge
     try:
         from shadow_conviction_scorer import strength_signal
-        shadow = strength_signal(candles, signed_streak, "btc_5m")
+        shadow = strength_signal(candles, signed_streak, config_key)
         estimate = shadow["estimate"] if shadow else (0.55 if direction == "UP" else 0.45)
     except Exception:
         estimate = 0.55 if direction == "UP" else 0.45
@@ -285,30 +281,12 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
 
 
 def _get_clob_tokens(market_id):
-    """
-    Look up CLOB token IDs for a Polymarket market.
-    Queries Gamma API by condition ID. Returns {"yes": ..., "no": ...} or None.
-    """
+    """Wrapper — delegates to shared clob_depth.get_clob_tokens."""
     try:
-        import requests
-        resp = requests.get(
-            f"https://gamma-api.polymarket.com/markets/{market_id}",
-            timeout=5,
-        )
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        raw_clob = data.get("clobTokenIds", "[]")
-        if isinstance(raw_clob, str):
-            import json as _json
-            clob_ids = _json.loads(raw_clob)
-        else:
-            clob_ids = raw_clob
-        if len(clob_ids) >= 2:
-            return {"yes": clob_ids[0], "no": clob_ids[1]}
-    except Exception:
-        pass
-    return None
+        from clob_depth import get_clob_tokens
+        return get_clob_tokens(market_id)
+    except ImportError:
+        return None
 
 
 def get_5m_context(lookback_minutes=60):

@@ -54,61 +54,9 @@ DB_PATH_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 
 
 def momentum_signal_eth(candles, min_streak=3):
-    """
-    Momentum signal for ETH: RIDE streaks.
-    1. streak >= min_streak same direction (default 3)
-    2. RIDE the streak (bet WITH it)
-
-    Flipped from contrarian 2026-04-01:
-    - Contrarian: 33.3% WR on 54 resolved live predictions
-    - Momentum counterfactual: 66.7% on same bets
-    - Exhaustion gate removed (contradicts momentum, same as BTC)
-    """
-    if len(candles) < 5:
-        return {"estimate": 0.5, "should_trade": False, "reason": "insufficient_data"}
-
-    # Count consecutive streak (from most recent candle backward)
-    last_dir = "UP" if candles[-1]["close"] >= candles[-1]["open"] else "DOWN"
-    streak = 1
-    for i in range(len(candles) - 2, -1, -1):
-        d = "UP" if candles[i]["close"] >= candles[i]["open"] else "DOWN"
-        if d == last_dir:
-            streak += 1
-        else:
-            break
-
-    signed_streak = streak if last_dir == "UP" else -streak
-
-    if abs(signed_streak) < min_streak:
-        return {
-            "estimate": 0.5, "should_trade": False,
-            "reason": f"streak_too_short ({signed_streak})",
-            "streak": signed_streak,
-        }
-
-    # Ride the streak (momentum — same as BTC)
-    direction = "UP" if signed_streak >= min_streak else "DOWN"
-
-    # Dynamic estimate from streak length + price magnitude + volatility
-    try:
-        from shadow_conviction_scorer import strength_signal
-        shadow = strength_signal(candles, signed_streak, "eth_5m")
-        estimate = shadow["estimate"] if shadow else (0.55 if direction == "UP" else 0.45)
-    except Exception:
-        estimate = 0.55 if direction == "UP" else 0.45
-
-    confidence = "medium"
-    if abs(signed_streak) >= 5:
-        confidence = "high"
-
-    return {
-        "estimate": estimate,
-        "should_trade": True,
-        "direction": direction,
-        "confidence": confidence,
-        "streak": signed_streak,
-        "reason": f"ride_streak_{direction}",
-    }
+    """ETH momentum signal — delegates to shared momentum_signal with ETH config."""
+    from predict import momentum_signal
+    return momentum_signal(candles, min_streak=min_streak, config_key="eth_5m")
 
 
 def ensure_schema(db):
@@ -344,27 +292,12 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
 
 
 def _get_clob_tokens(market_id):
-    """Look up CLOB token IDs for a Polymarket market."""
+    """Wrapper — delegates to shared clob_depth.get_clob_tokens."""
     try:
-        import requests
-        resp = requests.get(
-            f"https://gamma-api.polymarket.com/markets/{market_id}",
-            timeout=5,
-        )
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        raw_clob = data.get("clobTokenIds", "[]")
-        if isinstance(raw_clob, str):
-            import json as _json
-            clob_ids = _json.loads(raw_clob)
-        else:
-            clob_ids = raw_clob
-        if len(clob_ids) >= 2:
-            return {"yes": clob_ids[0], "no": clob_ids[1]}
-    except Exception:
-        pass
-    return None
+        from clob_depth import get_clob_tokens
+        return get_clob_tokens(market_id)
+    except ImportError:
+        return None
 
 
 if __name__ == "__main__":
