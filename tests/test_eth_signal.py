@@ -119,11 +119,11 @@ class TestMomentumSignalEth:
 
         row = db.execute("SELECT agent, conviction_score FROM predictions").fetchone()
         assert row[0] == "momentum_eth", f"Expected agent='momentum_eth', got '{row[0]}'"
-        assert row[1] == 2, f"Paper trading conviction should be 2, got {row[1]}"
+        assert row[1] == 3, f"Medium confidence conviction should be 3, got {row[1]}"
         db.close()
 
-    def test_conviction_always_2_paper_trading(self):
-        """All ETH predictions should have conviction=2 during paper trading."""
+    def test_high_confidence_stays_paper(self):
+        """High confidence (streak >= 5) stays conv=2 — 20% WR on 5 bets."""
         import sqlite3
         from predict_eth import store_prediction_eth
 
@@ -134,7 +134,6 @@ class TestMomentumSignalEth:
             predicted_at TEXT, cycle INTEGER, conviction_score INTEGER, regime TEXT
         )""")
 
-        # High confidence signal
         signal = {"estimate": 0.62, "should_trade": True, "direction": "UP",
                   "confidence": "high", "streak": 5,
                   "reason": "ride_streak_UP"}
@@ -145,5 +144,30 @@ class TestMomentumSignalEth:
                              mkt_price=0.45)
 
         row = db.execute("SELECT conviction_score FROM predictions").fetchone()
-        assert row[0] == 2, f"Paper trading: even high confidence should be conv=2, got {row[0]}"
+        assert row[0] == 2, f"High confidence should stay conv=2 (paper), got {row[0]}"
+        db.close()
+
+    def test_medium_confidence_fires_live(self):
+        """Medium confidence (streak 3-4) → conv=3 ($25 bets)."""
+        import sqlite3
+        from predict_eth import store_prediction_eth
+
+        db = sqlite3.connect(":memory:")
+        db.execute("""CREATE TABLE predictions (
+            id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT,
+            estimate REAL, edge REAL, confidence TEXT, reasoning TEXT,
+            predicted_at TEXT, cycle INTEGER, conviction_score INTEGER, regime TEXT
+        )""")
+
+        signal = {"estimate": 0.62, "should_trade": True, "direction": "UP",
+                  "confidence": "medium", "streak": 3,
+                  "reason": "ride_streak_UP"}
+        regime = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.05,
+                  "volatility": 0.15, "is_mean_reverting": False}
+
+        store_prediction_eth(db, "test_market_3", signal, regime, cycle=1,
+                             mkt_price=0.50)
+
+        row = db.execute("SELECT conviction_score FROM predictions").fetchone()
+        assert row[0] == 3, f"Medium confidence should be conv=3, got {row[0]}"
         db.close()

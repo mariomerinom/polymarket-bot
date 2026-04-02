@@ -1152,14 +1152,19 @@ def vs_market_color(vs):
 
 def build_html(db_path=None, subtitle="BTC 5-minute candle prediction", nav_links=None):
     # Detect asset from subtitle
-    asset = "ETH" if "ETH" in (subtitle or "").upper() else "BTC"
+    sub_upper = (subtitle or "").upper()
+    if "ETH" in sub_upper:
+        asset = "ETH"
+    else:
+        asset = "BTC"  # Kalshi BTC and all BTC pipelines
 
-    # Default nav links — both dashboards are siblings in docs/
+    # Default nav links — all dashboards are siblings in docs/
     if nav_links is None:
         nav_links = [
             {"label": "BTC 5m", "href": "index.html"},
             {"label": "BTC 15m", "href": "15m.html"},
             {"label": "ETH 5m", "href": "eth.html"},
+            {"label": "Kalshi", "href": "kalshi.html"},
         ]
     db = get_db(db_path)
     try:
