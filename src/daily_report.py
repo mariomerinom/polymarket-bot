@@ -20,10 +20,25 @@ DB_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
 DB_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 DAILY_DIR = Path(__file__).parent.parent / "docs" / "daily"
 
-# Conviction tier → bet size (must match dashboard.py)
-BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
-ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 50, 5: 75}
+# Date-aware sizing: paper-era tiers before live, flat $25 after
+PAPER_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
+PAPER_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 50, 5: 75}
+LIVE_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
+LIVE_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
+LIVE_START_DATE = "2026-04-01"
+BTC_CONVICTION_BETS = LIVE_BTC_CONVICTION_BETS
+ETH_CONVICTION_BETS = LIVE_ETH_CONVICTION_BETS
 CONVICTION_BETS = BTC_CONVICTION_BETS  # default for backward compat
+
+
+def _get_bet_size_dr(conv, predicted_at, asset="BTC"):
+    """Return bet size based on date: paper tiers before LIVE_START_DATE, flat $25 after."""
+    date_str = (predicted_at or "")[:10]
+    if date_str >= LIVE_START_DATE:
+        tiers = LIVE_BTC_CONVICTION_BETS if asset == "BTC" else LIVE_ETH_CONVICTION_BETS
+    else:
+        tiers = PAPER_BTC_CONVICTION_BETS if asset == "BTC" else PAPER_ETH_CONVICTION_BETS
+    return tiers.get(conv, 0)
 
 # Trade execution constants (safe import from trade.py)
 try:
@@ -84,12 +99,12 @@ def analyze_summary(predictions, resolved):
 
     wr = (wins / resolved_bets * 100) if resolved_bets > 0 else 0
 
-    # P&L
+    # P&L (date-aware sizing)
     total_pnl = 0.0
     total_wagered = 0.0
     for r in resolved:
         conv = r.get("conviction_score") or 0
-        bet_size = CONVICTION_BETS.get(conv, 0)
+        bet_size = _get_bet_size_dr(conv, r.get("predicted_at"))
         if bet_size == 0:
             continue
         estimate = r["estimate"]
@@ -153,7 +168,7 @@ def analyze_direction(resolved):
         else:
             d["losses"] += 1
 
-        bet_size = CONVICTION_BETS.get(conv, 0)
+        bet_size = _get_bet_size_dr(conv, r.get("predicted_at"))
         if r["estimate"] >= 0.5:
             if 0 < r["price_yes"] < 1:
                 d["pnl"] += bet_size * (1.0 / r["price_yes"] - 1.0) if r["outcome"] == 1 else -bet_size
@@ -182,7 +197,7 @@ def analyze_price_buckets(resolved):
         if conv < 3:
             continue
         price = r["price_yes"]
-        bet_size = CONVICTION_BETS.get(conv, 0)
+        bet_size = _get_bet_size_dr(conv, r.get("predicted_at"))
 
         for label, b in buckets.items():
             lo, hi = b["range"]
@@ -220,7 +235,7 @@ def analyze_conviction_tiers(resolved):
     tiers = defaultdict(lambda: {"wins": 0, "losses": 0, "total": 0, "pnl": 0.0, "wagered": 0.0})
     for r in resolved:
         conv = r.get("conviction_score") or 0
-        bet_size = CONVICTION_BETS.get(conv, 0)
+        bet_size = _get_bet_size_dr(conv, r.get("predicted_at"))
         label = f"conv={conv} (${bet_size})"
 
         correct = is_correct(r["estimate"], r["outcome"])
@@ -380,7 +395,7 @@ def analyze_liquidity(predictions):
     exceeded_count = 0
     for p in predictions:
         conv = p.get("conviction_score") or 0
-        bet_size = CONVICTION_BETS.get(conv, 0)
+        bet_size = _get_bet_size_dr(conv, p.get("predicted_at"))
         if bet_size == 0:
             continue
         reasoning_raw = p.get("reasoning")
@@ -603,7 +618,7 @@ def compute_decision_stats(db):
     for r in rows:
         estimate, conv, regime, predicted_at, outcome, price_yes, resolved = r
         correct = is_correct(estimate, outcome)
-        bet_size = CONVICTION_BETS.get(conv, 0)
+        bet_size = _get_bet_size_dr(conv, predicted_at)
         direction = "UP" if estimate >= 0.5 else "DOWN"
 
         stats["total_bets"] += 1
