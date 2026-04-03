@@ -4,6 +4,28 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## Incident 6: Missing Config Dependencies During CI Sequence 
+**Date:** April 3, 2026 | **Duration:** < 1 hour | **Severity:** Degraded UI & CI Breaks
+
+**Symptom:** 
+1. The **Kalshi CI runner** threw fatal `NameError: name 'SETTLEMENT_DELAY_S' is not defined` crashes inside auto-resolve procedures. 
+2. The core GitHub Actions effectively skipped rendering Realized P&L matrices on the dashboard with a soft warning block: `[DASHBOARD] Real P&L fetch: name 'API_TIMEOUT_GAMMA' is not defined`.
+
+**Root cause:** 
+During the massive `config.py` refactoring eliminating legacy `limit=` and `timeout=` magic variables globally, the execution logic properties were systematically swapped sequentially. However, actual `from config import ...` references were not identically piped to the top of all operational controllers. 
+
+**Data (2026-04-03, 3 isolated crash locations):**
+- **Test 1:** `ci_run.py`, `ci_run_eth.py`, `ci_run_15m.py`, and `ci_run_kalshi.py` all referenced `<CANDLE_LIMIT>` loops correctly but did not append the python pointer fetching it.
+- **Test 2:** `kalshi_score.py` correctly abstracted logic waits to `SETTLEMENT_DELAY_S` but didn't import it.
+- **Test 3:** The user's dashboard generator internally caught a `NameError` crash natively inside the `polymarket_pnl.py` request module due to `API_TIMEOUT_GAMMA` omitting dependencies, safely degrading instead of killing the entire pipeline script execution!
+
+**Fix:** Appended missing explicit `from config import ...` dependencies respectively at the top of all affected script interfaces and forcibly ran CI cycle 1 loops to assert completely green outputs locally. Restored broken files mapping over database and tracking commits!
+
+**Lesson:**
+When substituting variable scopes comprehensively across a distributed environment (especially into files not natively triggered actively during localized testing phases), running global `grep` audits tracking string mapping definitions strictly against localized Python IDE import logs avoids these structural syntax `NameError` explosions. Always dry-run **EVERY** component (`ci_run.py`, `ci_run_eth.py`, etc.) not just the core.
+
+---
+
 ## ETH Signal Flip: Contrarian → Momentum
 **Date:** April 1, 2026 | **Approved by:** User | **Severity:** Planned
 
