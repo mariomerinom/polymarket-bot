@@ -1,0 +1,16 @@
+- `[x]` Refactor `predict.py`
+  - `[x]` Replace `print()` with Python `logging`
+  - `[x]` Isolate DB connection logic using context managers
+  - `[x]` Move strategy gates into standalone boolean functions
+  - `[x]` Clean up math loops and dependency imports
+- `[x]` Synchronize `predict.py` hardwired constants with `config.py`
+- `[x]` Address `conviction.py` and `trade.py` hardwired constants
+  - `[x]` Move conviction threshold defaults and agent map to `config.py`
+  - `[x]` Convert `trade.py` generic loops to map dynamically from config
+  - `[x]` Patch `dashboard.py` parameters to use config variables instead of hardcoded numbers
+- `[x]` Run CI testing flows (`ci_run.py`, `ci_run_eth.py`, etc.) against the refactored code
+- `[x]` Verify executions and document the results in `walkthrough.md`
+- `[x]` Step 5: Replace hardcoded `timeout=` using centralized config variables in `clob_depth.py`, `polymarket_pnl.py`, `kalshi_score.py`, `kalshi_markets.py`, `backtest.py`, and `bybit_data.py`
+- `[x]` Step 6: Replace `busy_timeout` and settlement delay with f-strings and mapping in `trade.py`, `bybit_markets.py`, `kalshi_score.py`, and `bybit_score.py`
+- `[x]` Step 7: Substitute hardcoded `limit=` (20 vs 30) for `DEFAULT` vs `SHADOW_CANDLE_LIMIT` throughout pipeline drivers and data layers.
+- `[x]` Verify: Run verification grep tests and automated 300+ pytest suite to ensure no imported module reference limits or `NameError` block executions.

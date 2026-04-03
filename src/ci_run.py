@@ -1,3 +1,4 @@
+from config import SHADOW_CANDLE_LIMIT
 """
 ci_run.py — One-shot cycle for GitHub Actions.
 
@@ -69,7 +70,7 @@ def main():
     # 3. Predict using momentum rule (no API calls)
     cycle = get_next_cycle(db)
     print(f"[3/6] Predictions — momentum rule (cycle {cycle})...")
-    btc_data = fetch_btc_candles(limit=20)
+    btc_data = fetch_btc_candles(limit=DEFAULT_CANDLE_LIMIT)
     if btc_data:
         print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}% | Trend: {btc_data['trend']}")
     else:

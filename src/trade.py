@@ -1,3 +1,6 @@
+from config import DEFAULT_CANDLE_LIMIT
+from config import DB_BUSY_TIMEOUT_MS
+from config import SHADOW_CANDLE_LIMIT
 """
 trade.py — Order execution for Polymarket CLOB.
 
@@ -46,7 +49,7 @@ if TRADING_ENABLED and not _env("POLYMARKET_PRIVATE_KEY", ""):
 def ensure_orders_table(db):
     """Create orders table if it doesn't exist. Enables WAL mode for concurrency."""
     db.execute("PRAGMA journal_mode=WAL")
-    db.execute("PRAGMA busy_timeout=5000")
+    db.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
     db.execute("""
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,12 +166,10 @@ def _check_drawdown_pct(db):
 def _agent_to_pipeline(agent: str) -> str:
     """Map prediction agent name to pipeline config key."""
     agent_lower = agent.lower()
-    if "eth" in agent_lower:
-        return "eth_5m"
-    if "bybit" in agent_lower:
-        return "bybit"
-    if "kalshi" in agent_lower:
-        return "kalshi"
+    from config import AGENT_PIPELINE_MAP
+    for key, pipeline in AGENT_PIPELINE_MAP.items():
+        if key in agent_lower:
+            return pipeline
     return "btc_5m"
 
 
@@ -640,7 +641,7 @@ def execute_trades(db, cycle):
     try:
         from shadow_conviction_scorer import shadow_log_cycle
         from btc_data import fetch_btc_candles
-        btc = fetch_btc_candles(limit=20)
+        btc = fetch_btc_candles(limit=DEFAULT_CANDLE_LIMIT)
         if btc and btc.get("candles"):
             shadow_log_cycle(db, cycle, btc["candles"], "btc_5m")
     except Exception as e:

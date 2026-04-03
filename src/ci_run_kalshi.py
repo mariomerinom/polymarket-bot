@@ -1,3 +1,4 @@
+from config import SHADOW_CANDLE_LIMIT
 """
 ci_run_kalshi.py — One-shot Kalshi cycle for GitHub Actions.
 
@@ -137,7 +138,7 @@ def main():
 
     # Fetch first market's ticker for orderbook logging
     first_ticker = markets[0]["id"] if markets else None
-    kalshi_data = fetch_kalshi_candles(interval="15m", limit=20, kalshi_ticker=first_ticker)
+    kalshi_data = fetch_kalshi_candles(interval="15m", limit=DEFAULT_CANDLE_LIMIT, kalshi_ticker=first_ticker)
 
     if kalshi_data:
         print(f"  BTC: ${kalshi_data['current_price']:,.2f} | 1h: {kalshi_data['1h_change_pct']:+.3f}% | Trend: {kalshi_data['trend']}")
@@ -188,7 +189,7 @@ def _run_predictions(cycle, kalshi_data, market_limit=5, min_streak=2,
     db.row_factory = sqlite3.Row
 
     if kalshi_data is None:
-        kalshi_data = fetch_kalshi_candles(interval="15m", limit=20)
+        kalshi_data = fetch_kalshi_candles(interval="15m", limit=DEFAULT_CANDLE_LIMIT)
 
     if not kalshi_data:
         print("  WARNING: No BTC data available — skipping predictions")

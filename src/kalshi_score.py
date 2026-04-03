@@ -61,7 +61,7 @@ def _live_resolve(market_id):
         path = f"/markets/{market_id}"
         headers = _sign_request("GET", path)
         url = f"{KALSHI_BASE_URL}{path}"
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(url, headers=headers, timeout=API_TIMEOUT_KALSHI)
         resp.raise_for_status()
         market = resp.json()
 
@@ -90,7 +90,7 @@ def _mock_resolve(market_id, end_date):
     try:
         expiry = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
         # Only resolve if at least 2 minutes past expiry (simulate settlement delay)
-        if (now - expiry).total_seconds() < 120:
+        if (now - expiry).total_seconds() < SETTLEMENT_DELAY_S:
             return None
     except (ValueError, TypeError):
         pass

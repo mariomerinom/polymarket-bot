@@ -424,14 +424,11 @@ def compute_ensemble(resolved):
     }
 
 
-# Paper-era tiered sizing (historical, before live trading)
-PAPER_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
-PAPER_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 50, 5: 75}
-# Live-era: flat $25 for all qualifying bets (conviction >= 3)
-LIVE_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
-LIVE_ETH_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 25, 4: 25, 5: 25}
-# Cutover: first real order filled from Amsterdam VPS
-LIVE_START_DATE = "2026-04-01"
+from config import (
+    PAPER_BTC_CONVICTION_BETS, PAPER_ETH_CONVICTION_BETS,
+    LIVE_BTC_CONVICTION_BETS, LIVE_ETH_CONVICTION_BETS,
+    LIVE_START_DATE, CONVICTION_WEIGHT_CONTRARIAN, CONVICTION_WEIGHT_VOLUME
+)
 # Back-compat aliases
 BTC_CONVICTION_BETS = LIVE_BTC_CONVICTION_BETS
 ETH_CONVICTION_BETS = LIVE_ETH_CONVICTION_BETS
@@ -539,7 +536,7 @@ def compute_pnl(resolved, unit_bet=100, conviction_bets=None, asset="BTC"):
 
 def compute_ensemble_pnl(resolved, unit_bet=100, conviction_bets=None, asset="BTC"):
     """Ensemble P&L using date-aware bet sizing. Only bets on MEDIUM+ conviction."""
-    WEIGHTS = {"momentum_rule": 1.0, "contrarian_rule": 1.0, "contrarian": 0.55, "volume_wick": 0.45}
+    WEIGHTS = {"momentum_rule": 1.0, "contrarian_rule": 1.0, "contrarian": CONVICTION_WEIGHT_CONTRARIAN, "volume_wick": CONVICTION_WEIGHT_VOLUME}
 
     market_data = defaultdict(lambda: {"agents": [], "outcome": None, "price_yes": None, "conviction": 0, "predicted_at": ""})
     for row in resolved:
@@ -630,7 +627,7 @@ def compute_conviction_breakdown(resolved, asset="BTC"):
         else:
             return "HIGH"
 
-    weights = {"momentum_rule": 1.0, "contrarian_rule": 1.0, "contrarian": 0.55, "volume_wick": 0.45}
+    weights = {"momentum_rule": 1.0, "contrarian_rule": 1.0, "contrarian": CONVICTION_WEIGHT_CONTRARIAN, "volume_wick": CONVICTION_WEIGHT_VOLUME}
 
     tiers = defaultdict(lambda: {"wins": 0, "losses": 0, "total": 0, "pnl": 0.0, "wagered": 0.0})
 

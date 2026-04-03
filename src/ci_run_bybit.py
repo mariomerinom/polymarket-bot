@@ -1,3 +1,5 @@
+from config import DEFAULT_CANDLE_LIMIT
+from config import SHADOW_CANDLE_LIMIT
 """
 ci_run_bybit.py — One-shot Bybit cycle for GitHub Actions.
 
@@ -137,7 +139,7 @@ def main():
     cycle = get_next_cycle(db)
     print(f"[3/7] Predictions — Bybit momentum (cycle {cycle})...")
 
-    bybit_data = fetch_bybit_candles(interval="5", limit=20)
+    bybit_data = fetch_bybit_candles(interval="5", limit=DEFAULT_CANDLE_LIMIT)
 
     if not bybit_data:
         print("  WARNING: No BTC data available — skipping cycle")

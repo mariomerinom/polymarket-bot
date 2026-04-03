@@ -1,3 +1,6 @@
+from config import DEFAULT_CANDLE_LIMIT
+from config import API_TIMEOUT_BYBIT
+from config import SHADOW_CANDLE_LIMIT
 """
 bybit_data.py — BTC candle data for Bybit perpetual futures pipeline.
 
@@ -23,7 +26,7 @@ BYBIT_TICKERS = f"{BYBIT_BASE_URL}/v5/market/tickers"
 BYBIT_FUNDING = f"{BYBIT_BASE_URL}/v5/market/funding/history"
 
 
-def fetch_bybit_candles(symbol="BTCUSDT", interval="5", limit=20):
+def fetch_bybit_candles(symbol="BTCUSDT", interval="5", limit=DEFAULT_CANDLE_LIMIT):
     """
     Fetch BTC candles for the Bybit pipeline.
 
@@ -51,7 +54,7 @@ def _fetch_bybit_kline(symbol, interval, limit):
         "symbol": symbol,
         "interval": interval,
         "limit": limit,
-    }, timeout=10)
+    }, timeout=API_TIMEOUT_BYBIT)
     resp.raise_for_status()
     data = resp.json()
 
@@ -107,7 +110,7 @@ def fetch_bybit_mark_price(symbol="BTCUSDT"):
         resp = requests.get(BYBIT_TICKERS, params={
             "category": "linear",
             "symbol": symbol,
-        }, timeout=10)
+        }, timeout=API_TIMEOUT_BYBIT)
         resp.raise_for_status()
         data = resp.json()
         if data.get("retCode") != 0:
@@ -127,7 +130,7 @@ def fetch_bybit_funding_rate(symbol="BTCUSDT"):
             "category": "linear",
             "symbol": symbol,
             "limit": 1,
-        }, timeout=10)
+        }, timeout=API_TIMEOUT_BYBIT)
         resp.raise_for_status()
         data = resp.json()
         if data.get("retCode") != 0:
@@ -145,7 +148,7 @@ def fetch_bybit_funding_rate(symbol="BTCUSDT"):
 
 if __name__ == "__main__":
     print("Bybit Data — candle fetch test")
-    data = fetch_bybit_candles(interval="5", limit=12)
+    data = fetch_bybit_candles(interval="5", limit=DEFAULT_CANDLE_LIMIT)
     if data:
         print(f"  BTC: ${data['current_price']:,.2f}")
         print(f"  1h change: {data['1h_change_pct']:+.3f}%")

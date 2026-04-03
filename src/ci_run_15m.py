@@ -74,7 +74,7 @@ def main():
     # 3. Predict using momentum rule with 15-min candles
     cycle = get_next_cycle(db)
     print(f"[15M 3/5] Predictions — momentum rule 15m (cycle {cycle})...")
-    btc_data = fetch_btc_candles(interval="15m", limit=20)
+    btc_data = fetch_btc_candles(interval="15m", limit=DEFAULT_CANDLE_LIMIT)
     if btc_data:
         print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}% | Trend: {btc_data['trend']}")
     else:
@@ -111,7 +111,7 @@ def main():
     # Shadow indicators — log RSI/OBV/VWAP for BTC 15m predictions
     try:
         from shadow_indicators import shadow_log_indicators
-        btc_15m_shadow = fetch_btc_candles(limit=30, interval="15m")
+        btc_15m_shadow = fetch_btc_candles(limit=SHADOW_CANDLE_LIMIT, interval="15m")
         if btc_15m_shadow and btc_15m_shadow.get("candles"):
             shadow = shadow_log_indicators(db, cycle, candles=btc_15m_shadow["candles"])
             if shadow:

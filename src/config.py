@@ -99,6 +99,20 @@ CONFIDENCE_HIGH_STREAK = 5      # abs(streak) >= 5 → "high" confidence
 
 # Max conviction with consensus boost
 MAX_CONVICTION = 5
+ESTIMATE_FALLBACK_UP = 0.55
+ESTIMATE_FALLBACK_DOWN = 0.45
+
+CONVICTION_WEIGHT_CONTRARIAN = 0.55
+CONVICTION_WEIGHT_VOLUME = 0.45
+CONVICTION_BLENDED_UP = 0.52
+CONVICTION_BLENDED_DN = 0.48
+CONVICTION_MAGNITUDE = 0.04
+
+AGENT_PIPELINE_MAP = {
+    "eth": "eth_5m",
+    "bybit": "bybit",
+    "kalshi": "kalshi",
+}
 
 # ── Shadow conviction scorer configs ─────────────────────────────────────────
 # CRITICAL: max_edge MUST produce edge > EDGE_THRESHOLD at min_streak.
@@ -203,6 +217,14 @@ API_TIMEOUT_CLOB = 5            # CLOB book depth queries
 API_TIMEOUT_SUBMIT = 10         # CLOB order submission timeout
 API_TIMEOUT_GAMMA = 5           # Polymarket Gamma API
 API_TIMEOUT_BULK = 15           # Multi-interval rolling bias fetches
+API_TIMEOUT_KALSHI = 10
+API_TIMEOUT_BYBIT = 10
+DEFAULT_CANDLE_LIMIT = 20
+SHADOW_CANDLE_LIMIT = 30
+CONTEXT_LOOKBACK_MINUTES = 60
+DB_BUSY_TIMEOUT_MS = 5000
+SETTLEMENT_DELAY_S = 120
+DASHBOARD_RECENT_LIMIT = 50
 
 
 # ══════════════════════════════════════════════════════════════════════════════

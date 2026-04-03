@@ -1,3 +1,4 @@
+from config import SHADOW_CANDLE_LIMIT, SETTLEMENT_DELAY_S, DEFAULT_CANDLE_LIMIT
 """
 bybit_score.py — Auto-resolution for Bybit synthetic markets.
 
@@ -65,7 +66,7 @@ def _resolve_from_candle(market_id, end_date):
         market_start = datetime.fromisoformat(time_part.replace("Z", "+00:00"))
 
         # Fetch recent candles (enough to cover the market window)
-        data = fetch_bybit_candles(interval="5", limit=20)
+        data = fetch_bybit_candles(interval="5", limit=DEFAULT_CANDLE_LIMIT)
         if not data or not data.get("candles"):
             return None
 
@@ -96,7 +97,7 @@ def _mock_resolve(market_id, end_date):
         return None
 
     now = datetime.now(timezone.utc)
-    if (now - end_dt).total_seconds() < 120:
+    if (now - end_dt).total_seconds() < SETTLEMENT_DELAY_S:
         return None  # Too soon after expiry
 
     # Deterministic: hash of market_id

@@ -1,3 +1,5 @@
+from config import DEFAULT_CANDLE_LIMIT
+from config import SHADOW_CANDLE_LIMIT
 """
 predict_eth.py — Regime-filtered MOMENTUM predictions for ETH.
 
@@ -159,7 +161,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
 
     # Fetch ETH candles
     if eth_data is None:
-        eth_data = fetch_eth_candles(limit=20)
+        eth_data = fetch_eth_candles(limit=DEFAULT_CANDLE_LIMIT)
 
     if eth_data:
         candles = eth_data["candles"]

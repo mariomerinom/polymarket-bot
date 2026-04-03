@@ -163,10 +163,10 @@ def test_store_prediction_accepts_liquidity():
 
 
 def test_get_clob_tokens_function_exists():
-    """_get_clob_tokens is importable and callable."""
-    from predict import _get_clob_tokens
+    """_get_clob_tokens_safe is importable and callable."""
+    from predict import _get_clob_tokens_safe
     # Don't actually call it (would hit API), just verify it exists
-    assert callable(_get_clob_tokens)
+    assert callable(_get_clob_tokens_safe)
 
 
 def test_analyze_liquidity_with_data():

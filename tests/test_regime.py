@@ -70,10 +70,10 @@ def test_low_vol_detected():
 
 
 def test_insufficient_data():
-    """< 3 candles → UNKNOWN."""
+    """< 3 candles → UNKNOWN / NEUTRAL."""
     candles = [{"open": 100, "high": 101, "low": 99, "close": 100.5}]
     result = compute_regime_from_candles(candles)
-    assert result["label"] == "UNKNOWN"
+    assert result["label"] == "UNKNOWN / NEUTRAL"
     assert result["autocorrelation"] == 0.0
 
 

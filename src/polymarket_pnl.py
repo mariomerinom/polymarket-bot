@@ -31,7 +31,7 @@ def fetch_activity(wallet=None, limit=500):
 
     url = f"{DATA_API}/activity?user={wallet}&limit={limit}"
     req = Request(url, headers={"User-Agent": "polymarket-bot/1.0"})
-    with urlopen(req, timeout=10) as resp:
+    with urlopen(req, timeout=API_TIMEOUT_GAMMA) as resp:
         return json.loads(resp.read())
 
 

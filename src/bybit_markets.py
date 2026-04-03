@@ -12,6 +12,7 @@ infrastructure works unchanged.
 import os
 import sqlite3
 from datetime import datetime, timezone
+from config import DB_BUSY_TIMEOUT_MS
 from pathlib import Path
 
 DB_PATH_BYBIT = Path(__file__).parent.parent / "data" / "predictions_bybit.db"
@@ -23,7 +24,7 @@ def init_db_bybit():
     db = sqlite3.connect(DB_PATH_BYBIT)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
-    db.execute("PRAGMA busy_timeout=5000")
+    db.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
 
     # Markets table — identical schema to other pipelines
     db.execute("""

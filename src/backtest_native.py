@@ -34,7 +34,7 @@ GAMMA_API = "https://gamma-api.polymarket.com"
 DB_PATH = Path(__file__).parent.parent / "data" / "backtest.db"
 
 # Conviction tier → bet size (must match live pipeline)
-CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
+from config import PAPER_BTC_CONVICTION_BETS as CONVICTION_BETS, API_TIMEOUT_BULK
 
 # Regex to capture time range in market titles
 TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2}[AP]M)\s*-\s*(\d{1,2}:\d{2}[AP]M)")
@@ -124,7 +124,7 @@ def fetch_resolved_markets(start_date, end_date, window="5m", db=None, asset="Bi
         }
 
         try:
-            resp = requests.get(f"{GAMMA_API}/markets", params=params, timeout=30)
+            resp = requests.get(f"{GAMMA_API}/markets", params=params, timeout=API_TIMEOUT_BULK)
             resp.raise_for_status()
             markets = resp.json()
         except Exception as e:

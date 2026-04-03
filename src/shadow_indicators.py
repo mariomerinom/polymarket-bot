@@ -1,3 +1,5 @@
+from config import SHADOW_CANDLE_LIMIT
+from config import DEFAULT_CANDLE_LIMIT
 """
 shadow_indicators.py — Shadow logging of technical indicators alongside predictions.
 
@@ -127,7 +129,7 @@ def shadow_log_indicators(db, cycle, candles=None):
         return {}
 
 
-def _fetch_candles(limit=30):
+def _fetch_candles(limit=SHADOW_CANDLE_LIMIT):
     """Lazy import to avoid circular imports and allow test mocking."""
     from btc_data import fetch_btc_candles
     return fetch_btc_candles(limit=limit)
@@ -135,7 +137,7 @@ def _fetch_candles(limit=30):
 
 def _shadow_log_impl(db, cycle, candles=None):
     if candles is None:
-        btc = _fetch_candles(limit=30)
+        btc = _fetch_candles(limit=SHADOW_CANDLE_LIMIT)
         if not btc or not btc.get("candles"):
             return {"summary": "no candle data"}
         candles = btc["candles"]

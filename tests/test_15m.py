@@ -151,9 +151,9 @@ def test_run_predictions_accepts_threshold_params():
     sig = inspect.signature(run_predictions)
     assert "min_streak" in sig.parameters
     assert "autocorr_threshold" in sig.parameters
-    # Verify defaults preserve 5m behavior
-    assert sig.parameters["min_streak"].default == 3
-    assert sig.parameters["autocorr_threshold"].default == -0.15
+    assert sig.parameters["min_streak"].default is None
+    from config import AUTOCORR_MEAN_REVERTING_5M
+    assert sig.parameters["autocorr_threshold"].default == AUTOCORR_MEAN_REVERTING_5M
 
 
 def test_15m_uses_loose_mode():

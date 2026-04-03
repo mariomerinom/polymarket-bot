@@ -81,7 +81,7 @@ def main():
     # 3. Predict using MOMENTUM rule (no API calls)
     cycle = get_next_cycle(db)
     print(f"[3/5] Predictions — ETH momentum rule (cycle {cycle})...")
-    eth_data = fetch_eth_candles(limit=20)
+    eth_data = fetch_eth_candles(limit=DEFAULT_CANDLE_LIMIT)
     if eth_data:
         print(f"  ETH: ${eth_data['current_price']:,.2f} | 1h: {eth_data['1h_change_pct']:+.3f}% | Trend: {eth_data['trend']}")
     else:
@@ -101,7 +101,7 @@ def main():
     # Shadow indicators — log RSI/OBV/VWAP for ETH predictions
     try:
         from shadow_indicators import shadow_log_indicators
-        eth_candles_shadow = fetch_eth_candles(limit=30)
+        eth_candles_shadow = fetch_eth_candles(limit=SHADOW_CANDLE_LIMIT)
         if eth_candles_shadow and eth_candles_shadow.get("candles"):
             shadow = shadow_log_indicators(db, cycle, candles=eth_candles_shadow["candles"])
             if shadow:

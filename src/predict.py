@@ -22,7 +22,8 @@ from config import (
     PRICE_GATE_UPPER, PRICE_GATE_LOWER, PRICE_SWEET_SPOT_LOW,
     PRICE_SWEET_SPOT_HIGH, CONFIDENCE_HIGH_STREAK, MAX_CONVICTION,
     AUTOCORR_MEAN_REVERTING_5M, AUTOCORR_MEAN_REVERTING_15M,
-    SHADOW_CONFIGS
+    SHADOW_CONFIGS, ESTIMATE_FALLBACK_UP, ESTIMATE_FALLBACK_DOWN,
+    DEFAULT_CANDLE_LIMIT, CONTEXT_LOOKBACK_MINUTES
 )
 
 # Optional dependencies handled gracefully
@@ -186,11 +187,11 @@ def momentum_signal(candles, min_streak=None, config_key="btc_5m"):
     try:
         if strength_signal is not None:
             shadow = strength_signal(candles, signed_streak, config_key)
-            estimate = shadow["estimate"] if shadow else (0.55 if direction == "UP" else 0.45)
+            estimate = shadow["estimate"] if shadow else (ESTIMATE_FALLBACK_UP if direction == "UP" else ESTIMATE_FALLBACK_DOWN)
         else:
-            estimate = 0.55 if direction == "UP" else 0.45
+            estimate = ESTIMATE_FALLBACK_UP if direction == "UP" else ESTIMATE_FALLBACK_DOWN
     except Exception:
-        estimate = 0.55 if direction == "UP" else 0.45
+        estimate = ESTIMATE_FALLBACK_UP if direction == "UP" else ESTIMATE_FALLBACK_DOWN
 
     confidence = "high" if abs(signed_streak) >= CONFIDENCE_HIGH_STREAK else "medium"
 
@@ -264,7 +265,7 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
     db.commit()
 
 
-def get_5m_context(lookback_minutes=60):
+def get_5m_context(lookback_minutes=CONTEXT_LOOKBACK_MINUTES):
     """Query the 5m DB for recent signal activity."""
     if not DB_PATH.exists():
         return None
@@ -338,7 +339,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
         if btc_data is None:
             if fetch_btc_candles:
-                btc_data = fetch_btc_candles(limit=20)
+                btc_data = fetch_btc_candles(limit=DEFAULT_CANDLE_LIMIT)
             else:
                 logger.error("No BTC data provider available (fetch_btc_candles failed to import)")
                 return
@@ -365,7 +366,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
         sibling_context = None
         if loose_mode:
-            sibling_context = get_5m_context(lookback_minutes=60)
+            sibling_context = get_5m_context(lookback_minutes=CONTEXT_LOOKBACK_MINUTES)
             if sibling_context and sibling_context["bets"] > 0:
                 logger.info(f"5m sibling: {sibling_context['message']}")
 

@@ -1,3 +1,4 @@
+from config import SHADOW_CANDLE_LIMIT, DEFAULT_CANDLE_LIMIT
 """
 kalshi_data.py — BTC candle data for Kalshi pipeline.
 
@@ -13,7 +14,7 @@ from btc_data import fetch_btc_candles
 from kalshi_markets import fetch_kalshi_orderbook, _is_mock_mode
 
 
-def fetch_kalshi_candles(interval="15m", limit=20, kalshi_ticker=None):
+def fetch_kalshi_candles(interval="15m", limit=DEFAULT_CANDLE_LIMIT, kalshi_ticker=None):
     """
     Fetch BTC candles for the Kalshi pipeline.
 
@@ -35,7 +36,7 @@ def fetch_kalshi_candles(interval="15m", limit=20, kalshi_ticker=None):
 
 if __name__ == "__main__":
     print("Kalshi Data — candle fetch test")
-    data = fetch_kalshi_candles(interval="15m", limit=12)
+    data = fetch_kalshi_candles(interval="15m", limit=DEFAULT_CANDLE_LIMIT)
     if data:
         print(f"  BTC: ${data['current_price']:,.2f}")
         print(f"  1h change: {data['1h_change_pct']:+.3f}%")

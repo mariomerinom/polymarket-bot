@@ -176,7 +176,7 @@ def fetch_active_kalshi_markets(mock_mode=None):
             headers = _sign_request("GET", path)
             params = {"series_ticker": "BTCUSD", "status": "active"}
             url = f"{KALSHI_BASE_URL}{path}"
-            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            resp = requests.get(url, headers=headers, params=params, timeout=API_TIMEOUT_KALSHI)
             resp.raise_for_status()
             raw_markets = resp.json().get("markets", [])
         except Exception as e:
@@ -227,7 +227,7 @@ def fetch_kalshi_orderbook(ticker, mock_mode=None):
             path = f"/markets/{ticker}/orderbook"
             headers = _sign_request("GET", path)
             url = f"{KALSHI_BASE_URL}{path}"
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = requests.get(url, headers=headers, timeout=API_TIMEOUT_KALSHI)
             resp.raise_for_status()
             raw = resp.json()
         except Exception as e:

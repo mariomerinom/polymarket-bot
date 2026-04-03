@@ -27,7 +27,7 @@ def get_order_book(token_id: str) -> Optional[dict]:
         resp = requests.get(
             f"{CLOB_BASE}/book",
             params={"token_id": token_id},
-            timeout=5,
+            timeout=API_TIMEOUT_CLOB,
         )
         resp.raise_for_status()
         return resp.json()
@@ -233,7 +233,7 @@ def get_clob_tokens(market_id):
     try:
         resp = requests.get(
             f"https://gamma-api.polymarket.com/markets/{market_id}",
-            timeout=5,
+            timeout=API_TIMEOUT_CLOB,
         )
         if resp.status_code != 200:
             return None

@@ -52,7 +52,7 @@ def fetch_historical_candles(start_dt, end_dt, interval="5m"):
             "startTime": start_ms,
             "endTime": end_ms,
             "limit": 1000,
-        }, timeout=15)
+        }, timeout=API_TIMEOUT_BULK)
         resp.raise_for_status()
         raw = resp.json()
         if not raw:
