@@ -119,13 +119,13 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-03T12:19:41.298571+00:00",
+      "latest_check": "2026-04-03T21:49:12.686406+00:00",
       "post_stats": {
-        "bets": 73,
-        "wins": 55,
-        "wr": 75.3,
-        "pnl": 1068.37,
-        "wagered": 1775.0
+        "bets": 181,
+        "wins": 119,
+        "wr": 65.7,
+        "pnl": 1173.03,
+        "wagered": 1925.0
       },
       "closed_at": null,
       "close_reason": null
@@ -145,13 +145,13 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-03T12:19:41.298571+00:00",
+      "latest_check": "2026-04-03T21:49:12.686406+00:00",
       "post_stats": {
-        "bets": 27,
-        "wins": 22,
-        "wr": 81.5,
-        "pnl": 382.74,
-        "wagered": 675.0
+        "bets": 34,
+        "wins": 26,
+        "wr": 76.5,
+        "pnl": 396.12,
+        "wagered": 800.0
       },
       "closed_at": null,
       "close_reason": null
@@ -197,13 +197,13 @@
         "pnl": 2269.5,
         "wagered": 6875.0
       },
-      "latest_check": "2026-04-03T12:19:41.298571+00:00",
+      "latest_check": "2026-04-03T21:49:12.686406+00:00",
       "post_stats": {
-        "bets": 29,
-        "wins": 22,
-        "wr": 75.9,
-        "pnl": 414.61,
-        "wagered": 725.0
+        "bets": 35,
+        "wins": 26,
+        "wr": 74.3,
+        "pnl": 519.26,
+        "wagered": 875.0
       },
       "closed_at": null,
       "close_reason": null
@@ -249,13 +249,13 @@
         "pnl": 2364.53,
         "wagered": 7000.0
       },
-      "latest_check": "2026-04-03T12:19:41.298571+00:00",
+      "latest_check": "2026-04-03T21:49:12.686406+00:00",
       "post_stats": {
-        "bets": 23,
-        "wins": 17,
-        "wr": 73.9,
-        "pnl": 291.95,
-        "wagered": 575.0
+        "bets": 29,
+        "wins": 21,
+        "wr": 72.4,
+        "pnl": 396.61,
+        "wagered": 725.0
       },
       "closed_at": null,
       "close_reason": null
@@ -275,13 +275,13 @@
         "pnl": 2364.53,
         "wagered": 7000.0
       },
-      "latest_check": "2026-04-03T12:19:41.298571+00:00",
+      "latest_check": "2026-04-03T21:49:12.686406+00:00",
       "post_stats": {
-        "bets": 22,
-        "wins": 16,
-        "wr": 72.7,
-        "pnl": 263.19,
-        "wagered": 550.0
+        "bets": 28,
+        "wins": 20,
+        "wr": 71.4,
+        "pnl": 367.85,
+        "wagered": 700.0
       },
       "closed_at": null,
       "close_reason": null
@@ -301,8 +301,14 @@
         "pnl": 2789.76,
         "wagered": 7650.0
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-04-03T21:49:12.686406+00:00",
+      "post_stats": {
+        "bets": 4,
+        "wins": 2,
+        "wr": 50.0,
+        "pnl": -0.99,
+        "wagered": 100.0
+      },
       "closed_at": null,
       "close_reason": null
     },
@@ -321,8 +327,66 @@
         "pnl": 2789.76,
         "wagered": 7650.0
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-04-03T21:49:12.686406+00:00",
+      "post_stats": {
+        "bets": 4,
+        "wins": 2,
+        "wr": 50.0,
+        "pnl": -0.99,
+        "wagered": 100.0
+      },
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "down_neutral_volsplit",
+      "description": "Allow HIGH_VOL/NEUTRAL+DOWN through (64% WR on 50 bets). Only demote MEDIUM_VOL/NEUTRAL+DOWN.",
+      "registered_at": "2026-04-03T21:49:06.516414+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < 55",
+      "baseline": {
+        "bets": 310,
+        "wins": 216,
+        "wr": 69.7,
+        "pnl": 2788.77,
+        "wagered": 7750.0
+      },
+      "latest_check": "2026-04-03T21:49:12.686406+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "mr_shadow_extreme",
+      "description": "MR shadow mode: extreme estimates (>0.65/<0.35) tracked at conv=2. Coin-flip zone skipped.",
+      "registered_at": "2026-04-03T21:49:07.647281+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < 55",
+      "baseline": {
+        "bets": 310,
+        "wins": 216,
+        "wr": 69.7,
+        "pnl": 2788.77,
+        "wagered": 7750.0
+      },
+      "latest_check": "2026-04-03T21:49:12.686406+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
       "closed_at": null,
       "close_reason": null
     }

@@ -425,10 +425,10 @@ def test_pnl_uses_actual_fill_size():
 # ── Incident 7: 15m DOWN+NEUTRAL asymmetry — 48% WR on 27 bets ─────────
 
 def test_down_neutral_demoted_even_in_loose_mode():
-    """DOWN+NEUTRAL filter must apply to 15m too (via ci_run_15m.py post-prediction).
+    """DOWN+MEDIUM_VOL/NEUTRAL filter applies to 15m too (via ci_run_15m.py post-prediction).
     Incident 7: 15m used loose_mode=True which bypassed DOWN+NEUTRAL filter.
-    15m DOWN was 48% WR on 27 bets — same no-edge pattern as 5m (52% on 25 bets).
-    Momentum is direction-agnostic; filter must be symmetric.
+    Volatility split: MEDIUM_VOL/NEUTRAL+DOWN demoted (56.1% WR on 41 bets),
+    HIGH_VOL/NEUTRAL+DOWN allowed through (64.0% WR on 50 bets).
     """
     import sqlite3
     import json
@@ -443,30 +443,37 @@ def test_down_neutral_demoted_even_in_loose_mode():
         id TEXT PRIMARY KEY, resolved INTEGER, outcome INTEGER
     )""")
 
-    # Simulate a DOWN+NEUTRAL prediction at conv=3 (what loose_mode produces)
-    reasoning = json.dumps({"signal": {"direction": "DOWN", "should_trade": True}})
+    # DOWN+MEDIUM_VOL/NEUTRAL: should be demoted (56.1% WR, no edge)
+    reasoning_med = json.dumps({"signal": {"direction": "DOWN", "should_trade": True}})
     db.execute("""INSERT INTO predictions VALUES
         (1, 'm1', 'momentum_rule', 0.38, 0.12, 'medium', ?, '2026-04-03T10:00:00',
-         1, 3, 'HIGH_VOL / NEUTRAL')""", (reasoning,))
+         1, 3, 'MEDIUM_VOL / NEUTRAL')""", (reasoning_med,))
 
-    # Simulate an UP+NEUTRAL prediction at conv=4 (should NOT be demoted)
+    # UP+NEUTRAL: should NOT be demoted
     reasoning_up = json.dumps({"signal": {"direction": "UP", "should_trade": True}})
     db.execute("""INSERT INTO predictions VALUES
         (2, 'm2', 'momentum_rule', 0.62, 0.12, 'medium', ?, '2026-04-03T10:00:00',
          1, 4, 'MEDIUM_VOL / NEUTRAL')""", (reasoning_up,))
 
-    # Simulate a DOWN+TRENDING prediction at conv=3 (should NOT be demoted)
+    # DOWN+TRENDING: should NOT be demoted
     reasoning_trend = json.dumps({"signal": {"direction": "DOWN", "should_trade": True}})
     db.execute("""INSERT INTO predictions VALUES
         (3, 'm3', 'momentum_rule', 0.38, 0.12, 'medium', ?, '2026-04-03T10:00:00',
          1, 3, 'HIGH_VOL / TRENDING')""", (reasoning_trend,))
+
+    # DOWN+HIGH_VOL/NEUTRAL: should NOT be demoted (64% WR on 50 bets)
+    reasoning_hv = json.dumps({"signal": {"direction": "DOWN", "should_trade": True}})
+    db.execute("""INSERT INTO predictions VALUES
+        (4, 'm4', 'momentum_rule', 0.38, 0.12, 'medium', ?, '2026-04-03T10:00:00',
+         1, 3, 'HIGH_VOL / NEUTRAL')""", (reasoning_hv,))
     db.commit()
 
-    # Apply the same demotion query that ci_run_15m.py uses
+    # Apply the same demotion query that ci_run_15m.py uses (volatility-aware)
     demoted = db.execute("""
         UPDATE predictions SET conviction_score = 2
         WHERE cycle = 1 AND conviction_score >= 3
         AND regime LIKE '%NEUTRAL%'
+        AND regime NOT LIKE 'HIGH_VOL%'
         AND json_extract(reasoning, '$.signal.direction') = 'DOWN'
     """).rowcount
     db.commit()
@@ -476,10 +483,61 @@ def test_down_neutral_demoted_even_in_loose_mode():
     ).fetchall()
     db.close()
 
-    assert demoted == 1, f"Should demote exactly 1 DOWN+NEUTRAL prediction, got {demoted}"
-    assert rows[0] == ("m1", 2), f"DOWN+NEUTRAL should be conv=2, got {rows[0]}"
+    assert demoted == 1, f"Should demote exactly 1 DOWN+MEDIUM_VOL/NEUTRAL prediction, got {demoted}"
+    assert rows[0] == ("m1", 2), f"DOWN+MEDIUM_VOL/NEUTRAL should be conv=2, got {rows[0]}"
     assert rows[1] == ("m2", 4), f"UP+NEUTRAL should stay conv=4, got {rows[1]}"
     assert rows[2] == ("m3", 3), f"DOWN+TRENDING should stay conv=3, got {rows[2]}"
+    assert rows[3] == ("m4", 3), f"DOWN+HIGH_VOL/NEUTRAL should stay conv=3, got {rows[3]}"
+
+
+def test_mr_shadow_extreme_estimate():
+    """MR shadow mode: extreme estimates (>0.65/<0.35) tracked at conv=2,
+    coin-flip zone skipped at conv=0.
+    Optimization: mr_shadow_extreme (2026-04-03).
+    """
+    import sqlite3, json
+    from predict import store_prediction
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE predictions (
+        id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT, estimate REAL,
+        edge REAL, confidence TEXT, reasoning TEXT, predicted_at TEXT,
+        cycle INTEGER, conviction_score INTEGER, regime TEXT
+    )""")
+    db.execute("""CREATE TABLE markets (
+        id TEXT PRIMARY KEY, question TEXT, end_date TEXT, resolved INTEGER DEFAULT 0,
+        outcome TEXT, slug TEXT
+    )""")
+    db.execute("INSERT INTO markets VALUES ('mr1','Q1','2099-01-01',0,NULL,NULL)")
+    db.execute("INSERT INTO markets VALUES ('mr2','Q2','2099-01-01',0,NULL,NULL)")
+    db.commit()
+
+    regime_mr = {"label": "HIGH_VOL / MEAN_REVERTING", "is_mean_reverting": True}
+
+    # Case 1: extreme estimate (0.72) in MR → stored, then demoted to conv=2
+    signal_extreme = {"estimate": 0.72, "should_trade": True, "confidence": "medium",
+                      "direction": "UP", "reason": "mr_shadow_extreme_estimate"}
+    store_prediction(db, "mr1", signal_extreme, regime_mr, cycle=99, mkt_price=0.45)
+    # Simulate the post-store demotion from predict.py line 418-422
+    db.execute("""
+        UPDATE predictions SET conviction_score = 2
+        WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
+        AND regime LIKE '%MEAN_REVERTING%'
+    """, ("mr1", 99))
+    db.commit()
+
+    # Case 2: coin-flip estimate (0.50) in MR → skip at conv=0
+    signal_coinflip = {"estimate": 0.50, "should_trade": False, "confidence": "skip",
+                       "reason": "regime_skip_mean_reverting"}
+    store_prediction(db, "mr2", signal_coinflip, regime_mr, cycle=99)
+
+    rows = db.execute(
+        "SELECT market_id, conviction_score, confidence FROM predictions ORDER BY market_id"
+    ).fetchall()
+    db.close()
+
+    assert rows[0] == ("mr1", 2, "medium"), f"Extreme MR should be shadow conv=2, got {rows[0]}"
+    assert rows[1] == ("mr2", 0, "skip"), f"Coin-flip MR should be skip conv=0, got {rows[1]}"
 
 
 def test_no_evolve_imports():

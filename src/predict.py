@@ -227,7 +227,7 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         direction = signal.get("direction", "")
         regime_label = regime.get("label", "") if regime else ""
 
-        if not loose_mode and direction == "DOWN" and "NEUTRAL" in regime_label:
+        if not loose_mode and direction == "DOWN" and "NEUTRAL" in regime_label and "HIGH_VOL" not in regime_label:
             conviction = 2
         elif direction == "UP" and mkt_price is not None and PRICE_SWEET_SPOT_LOW <= mkt_price <= PRICE_SWEET_SPOT_HIGH:
             conviction = 4
@@ -408,8 +408,23 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
                 continue
 
             if regime["is_mean_reverting"]:
-                logger.info("  -> SKIP (mean-reverting regime)")
-                store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": "regime_skip_mean_reverting"}, regime, cycle)
+                # Shadow mode: extreme estimates in MR have 82.5% WR on 303 bets (Phase 1 analysis).
+                # Track them at conv=2 for forward validation. Coin-flip zone (0.35-0.65) is 46% WR — skip.
+                if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+                    mr_signal = dict(signal, confidence="medium", reason="mr_shadow_extreme_estimate")
+                    store_prediction(db, market["id"], mr_signal, regime, cycle, mkt_price=mkt_price)
+                    # Force conv=2 (shadow) — store_prediction sets conv=3 for medium+should_trade,
+                    # so override it after the fact
+                    db.execute("""
+                        UPDATE predictions SET conviction_score = 2
+                        WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
+                        AND regime LIKE '%MEAN_REVERTING%'
+                    """, (market["id"], cycle))
+                    db.commit()
+                    logger.info(f"  -> MR SHADOW: {signal['direction']} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+                else:
+                    logger.info("  -> SKIP (mean-reverting regime)")
+                    store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": "regime_skip_mean_reverting"}, regime, cycle)
                 continue
 
             if signal["should_trade"]:

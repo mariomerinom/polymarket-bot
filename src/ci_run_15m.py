@@ -96,16 +96,18 @@ def main():
         db = sqlite3.connect(DB_PATH_15M)
 
         # DOWN+NEUTRAL has no edge on 15m (48% WR on 27 bets, Apr 2026).
-        # predict.py is frozen, so demote post-prediction. Symmetric with 5m.
+        # Demote post-prediction. Symmetric with 5m.
+        # HIGH_VOL/NEUTRAL+DOWN allowed through (64% WR on 50 bets on 5m).
         demoted = db.execute("""
             UPDATE predictions SET conviction_score = 2
             WHERE cycle = ? AND conviction_score >= 3
             AND regime LIKE '%NEUTRAL%'
+            AND regime NOT LIKE 'HIGH_VOL%'
             AND json_extract(reasoning, '$.signal.direction') = 'DOWN'
         """, (cycle,)).rowcount
         db.commit()
         if demoted:
-            print(f"  [15m] Demoted {demoted} DOWN+NEUTRAL prediction(s) to conv=2")
+            print(f"  [15m] Demoted {demoted} DOWN+MEDIUM_VOL/NEUTRAL prediction(s) to conv=2")
     else:
         print("  No unpredicted markets")
 
