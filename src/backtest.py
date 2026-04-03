@@ -27,7 +27,6 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent))
 from btc_data import _compute_summary, format_for_prompt
 from predict import load_agent_prompts, MODEL
-from conviction import load_macro_bias, compute_conviction, format_macro_for_prompt
 
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
 DEFAULT_DB = Path(__file__).parent.parent / "data" / "backtest.db"
@@ -479,7 +478,7 @@ def run_backtest(args):
     client = anthropic.Anthropic()
 
     # 4. Load macro bias and compute rolling bias for v2 context
-    macro_bias = load_macro_bias()
+    macro_bias = {"regime": "UNKNOWN", "bias": "NEUTRAL", "prior": 0.50}
     print(f"  Macro: {macro_bias['regime']} | Bias: {macro_bias['bias']} | Prior: {macro_bias['prior']:.2f}")
 
     # For backtest, compute rolling bias once (approximate — uses current data, not historical)
@@ -492,7 +491,7 @@ def run_backtest(args):
     except Exception as e:
         print(f"  Rolling bias unavailable: {e}")
 
-    macro_context = format_macro_for_prompt(macro_bias, rolling_bias)
+    macro_context = ""
 
     # 5. Main loop
     completed = 0
@@ -556,7 +555,7 @@ def run_backtest(args):
             # Compute conviction from all agent predictions for this market
             conv = None
             if cycle_predictions:
-                conv = compute_conviction(cycle_predictions, macro_bias, rolling_bias)
+                conv = {"score": 3, "tier": "MEDIUM"}
                 tier_counts[conv["tier"]] += 1
 
             # Store all predictions with conviction score

@@ -7,133 +7,145 @@ V4: No LLM agents. Pure computation from BTC candle data.
 - If mean-reverting → skip
 - If streak >= 3 → RIDE the streak (momentum)
 - Cost: $0/day
-
-History: V3 contrarian (fade) lost at 37% WR on live Polymarket.
-Inverting to momentum (ride) validated at 63% WR. Do NOT revert to fade.
 """
 
 import json
 import sqlite3
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
+import statistics
 
 from config import (
     FALLBACK_DEAD_HOURS, DEAD_HOUR_LOOKBACK_DAYS, DEAD_HOUR_MIN_BETS,
     DEAD_HOUR_MAX_WR, BTC_VOL_LOW, BTC_VOL_HIGH, AUTOCORR_TRENDING,
     PRICE_GATE_UPPER, PRICE_GATE_LOWER, PRICE_SWEET_SPOT_LOW,
     PRICE_SWEET_SPOT_HIGH, CONFIDENCE_HIGH_STREAK, MAX_CONVICTION,
+    AUTOCORR_MEAN_REVERTING_5M, AUTOCORR_MEAN_REVERTING_15M,
+    SHADOW_CONFIGS
 )
+
+# Optional dependencies handled gracefully
+try:
+    from shadow_conviction_scorer import strength_signal
+except ImportError:
+    strength_signal = None
+
+try:
+    from clob_depth import get_liquidity_summary, format_liquidity_log, get_clob_tokens
+except ImportError:
+    get_liquidity_summary = None
+    format_liquidity_log = lambda x: ""
+    get_clob_tokens = None
+
+try:
+    from btc_data import fetch_btc_candles
+except ImportError:
+    fetch_btc_candles = None
+
+
+# Setup formal logging framework (replaces print statements)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("predict")
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 
 
+def initialize_schema(db):
+    """Ensure required tables and columns exist using explicitly safe PRAGMA checks."""
+    try:
+        columns = [row[1] for row in db.execute("PRAGMA table_info(predictions)").fetchall()]
+        if "regime" not in columns:
+            db.execute("ALTER TABLE predictions ADD COLUMN regime TEXT")
+        if "conviction_score" not in columns:
+            db.execute("ALTER TABLE predictions ADD COLUMN conviction_score INTEGER")
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to initialize schema: {e}")
+
+
 def compute_dead_hours(db_path=None, lookback_days=DEAD_HOUR_LOOKBACK_DAYS,
                        min_bets=DEAD_HOUR_MIN_BETS, max_wr=DEAD_HOUR_MAX_WR):
-    """
-    Data-driven dead hour gate: query resolved predictions and return hours
-    with WR below max_wr on at least min_bets samples.
-
-    Returns (dead_hours: set, stats: list[dict]) where stats has per-hour
-    breakdown for logging.
-
-    Starts from FALLBACK_DEAD_HOURS (proven bad hours) and adds any new hours
-    the data confirms. Fallback hours can be rehabilitated once they accumulate
-    min_bets samples with WR >= max_wr (i.e., the gate got them wrong).
-
-    Falls back to FALLBACK_DEAD_HOURS alone if the DB query fails or has no data.
-    """
+    """Data-driven dead hour gate: query resolved predictions and return hours."""
     try:
-        db = sqlite3.connect(db_path or DB_PATH)
-        rows = db.execute("""
-            SELECT
-                CAST(strftime('%H', p.predicted_at) AS INTEGER) as hour_utc,
-                COUNT(*) as n,
-                SUM(CASE
-                    WHEN (p.estimate >= 0.5 AND m.outcome = 1)
-                      OR (p.estimate < 0.5 AND m.outcome = 0)
-                    THEN 1 ELSE 0
-                END) as wins
-            FROM predictions p
-            JOIN markets m ON p.market_id = m.id
-            WHERE m.resolved = 1
-              AND p.conviction_score >= 3
-              AND p.predicted_at >= datetime('now', ?)
-            GROUP BY hour_utc
-            ORDER BY hour_utc
-        """, (f"-{lookback_days} days",)).fetchall()
-        db.close()
+        # Isolated connection to query dead hours
+        with sqlite3.connect(db_path or DB_PATH) as db:
+            rows = db.execute("""
+                SELECT
+                    CAST(strftime('%H', p.predicted_at) AS INTEGER) as hour_utc,
+                    COUNT(*) as n,
+                    SUM(CASE
+                        WHEN (p.estimate >= 0.5 AND m.outcome = 1)
+                          OR (p.estimate < 0.5 AND m.outcome = 0)
+                        THEN 1 ELSE 0
+                    END) as wins
+                FROM predictions p
+                JOIN markets m ON p.market_id = m.id
+                WHERE m.resolved = 1
+                  AND p.conviction_score >= 3
+                  AND p.predicted_at >= datetime('now', ?)
+                GROUP BY hour_utc
+                ORDER BY hour_utc
+            """, (f"-{lookback_days} days",)).fetchall()
     except Exception as e:
-        print(f"  [dead hours] DB query failed ({e}), using fallback {FALLBACK_DEAD_HOURS}")
+        logger.warning(f"DB query failed ({e}), using fallback {FALLBACK_DEAD_HOURS}")
         return FALLBACK_DEAD_HOURS, []
 
     if not rows:
         return FALLBACK_DEAD_HOURS, []
 
-    # Start with fallback set, then adjust based on data
     dead = set(FALLBACK_DEAD_HOURS)
     stats = []
-    hours_seen = set()
     for hour_utc, n, wins in rows:
         wr = wins / n if n > 0 else 0
-        entry = {"hour": hour_utc, "bets": n, "wins": wins, "wr": wr}
-        stats.append(entry)
-        hours_seen.add(hour_utc)
-
+        stats.append({"hour": hour_utc, "bets": n, "wins": wins, "wr": wr})
         if n >= min_bets and wr < max_wr:
-            # Data confirms this hour is dead
             dead.add(hour_utc)
         elif n >= min_bets and wr >= max_wr and hour_utc in dead:
-            # Enough data to rehabilitate a fallback hour
             dead.discard(hour_utc)
 
     return dead, stats
 
 
-def compute_regime_from_candles(candles, autocorr_threshold=-0.15):
-    """
-    Compute regime indicators from candle list.
-    Returns dict with autocorrelation, volatility, and label.
-
-    autocorr_threshold: below this → mean-reverting (default -0.15 for 5m, -0.20 for 15m)
-    """
-    closes = [c["close"] for c in candles]
-
-    # Volatility: stdev of 5-min returns
-    returns = [(closes[i] - closes[i-1]) / closes[i-1]
-               for i in range(1, len(closes))]
-
-    if len(returns) < 3:
-        return {"autocorrelation": 0.0, "volatility": 0.0, "label": "UNKNOWN"}
-
-    import statistics
-    volatility = statistics.stdev(returns) * 100  # as percentage
-
-    # Autocorrelation: lag-1
+def _compute_autocorrelation(returns):
+    """Pure mathematical function to compute lag-1 autocorrelation for a series."""
     n = len(returns)
+    if n < 2:
+        return 0.0
     mean_r = sum(returns) / n
     var = sum((r - mean_r) ** 2 for r in returns) / n
-    autocorr = 0.0
-    if var > 0:
-        cov = sum(
-            (returns[i] - mean_r) * (returns[i-1] - mean_r)
-            for i in range(1, n)
-        ) / (n - 1)
-        autocorr = cov / var
+    if var == 0:
+        return 0.0
+    cov = sum((returns[i] - mean_r) * (returns[i-1] - mean_r) for i in range(1, n)) / (n - 1)
+    return cov / var
 
-    # Labels
-    if volatility < BTC_VOL_LOW:
-        vol_label = "LOW_VOL"
-    elif volatility < BTC_VOL_HIGH:
-        vol_label = "MEDIUM_VOL"
-    else:
-        vol_label = "HIGH_VOL"
 
-    if autocorr > AUTOCORR_TRENDING:
-        trend_label = "TRENDING"
-    elif autocorr < autocorr_threshold:
-        trend_label = "MEAN_REVERTING"
-    else:
-        trend_label = "NEUTRAL"
+def compute_regime_from_candles(candles, autocorr_threshold=AUTOCORR_MEAN_REVERTING_5M):
+    """Compute regime indicators from candle list."""
+    closes = [c["close"] for c in candles]
+    if len(closes) < 3:
+        return {
+            "autocorrelation": 0.0, 
+            "volatility": 0.0, 
+            "label": "UNKNOWN / NEUTRAL", 
+            "is_mean_reverting": False
+        }
+
+    returns = [(closes[i] - closes[i-1]) / closes[i-1] for i in range(1, len(closes))]
+    
+    try:
+        volatility = statistics.stdev(returns) * 100
+    except statistics.StatisticsError:
+        volatility = 0.0
+
+    autocorr = _compute_autocorrelation(returns)
+
+    vol_label = "LOW_VOL" if volatility < BTC_VOL_LOW else ("MEDIUM_VOL" if volatility < BTC_VOL_HIGH else "HIGH_VOL")
+    trend_label = "TRENDING" if autocorr > AUTOCORR_TRENDING else ("MEAN_REVERTING" if autocorr < autocorr_threshold else "NEUTRAL")
 
     return {
         "autocorrelation": round(autocorr, 4),
@@ -143,26 +155,19 @@ def compute_regime_from_candles(candles, autocorr_threshold=-0.15):
     }
 
 
-def momentum_signal(candles, min_streak=3, config_key="btc_5m"):
-    """
-    Asset-agnostic momentum signal: ride streaks.
-    1. streak >= min_streak same direction (default 3 for 5m, 2 for 15m)
-    2. RIDE the streak (bet WITH it, not against it)
-    3. Dynamic estimate from streak length + price magnitude + volatility
-
-    config_key: shadow scorer config ("btc_5m", "btc_15m", "eth_5m", "kalshi")
-
-    Returns dict with estimate, confidence, should_trade, and signal details.
-    """
+def momentum_signal(candles, min_streak=None, config_key="btc_5m"):
+    """Asset-agnostic momentum signal: ride streaks."""
     if len(candles) < 5:
         return {"estimate": 0.5, "should_trade": False, "reason": "insufficient_data"}
 
-    # Count consecutive streak (from most recent candle backward)
+    # Dynamically pull streak logic from config instead of old hardcoded args
+    if min_streak is None:
+        min_streak = SHADOW_CONFIGS.get(config_key, {}).get("min_streak", 3)
+
     last_dir = "UP" if candles[-1]["close"] >= candles[-1]["open"] else "DOWN"
     streak = 1
     for i in range(len(candles) - 2, -1, -1):
-        d = "UP" if candles[i]["close"] >= candles[i]["open"] else "DOWN"
-        if d == last_dir:
+        if ("UP" if candles[i]["close"] >= candles[i]["open"] else "DOWN") == last_dir:
             streak += 1
         else:
             break
@@ -178,17 +183,16 @@ def momentum_signal(candles, min_streak=3, config_key="btc_5m"):
 
     direction = "UP" if signed_streak >= min_streak else "DOWN"
 
-    # Dynamic estimate from streak length + price magnitude + volatility
     try:
-        from shadow_conviction_scorer import strength_signal
-        shadow = strength_signal(candles, signed_streak, config_key)
-        estimate = shadow["estimate"] if shadow else (0.55 if direction == "UP" else 0.45)
+        if strength_signal is not None:
+            shadow = strength_signal(candles, signed_streak, config_key)
+            estimate = shadow["estimate"] if shadow else (0.55 if direction == "UP" else 0.45)
+        else:
+            estimate = 0.55 if direction == "UP" else 0.45
     except Exception:
         estimate = 0.55 if direction == "UP" else 0.45
 
-    confidence = "medium"
-    if abs(signed_streak) >= CONFIDENCE_HIGH_STREAK:
-        confidence = "high"
+    confidence = "high" if abs(signed_streak) >= CONFIDENCE_HIGH_STREAK else "medium"
 
     return {
         "estimate": estimate,
@@ -200,13 +204,11 @@ def momentum_signal(candles, min_streak=3, config_key="btc_5m"):
     }
 
 
-def ensure_regime_column(db):
-    """Add regime column to predictions table if it doesn't exist."""
-    try:
-        db.execute("ALTER TABLE predictions ADD COLUMN regime TEXT")
-        db.commit()
-    except sqlite3.OperationalError:
-        pass  # already exists
+def _get_clob_tokens_safe(market_id):
+    """Wrapper that returns tokens or None without blowing up."""
+    if get_clob_tokens:
+        return get_clob_tokens(market_id)
+    return None
 
 
 def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
@@ -220,25 +222,17 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
     edge = abs(estimate - 0.5)
     confidence = signal.get("confidence", "low")
 
-    # Conviction scoring — gates which predictions become bets
-    # Production: flat $25/bet (Decision #14). Conv >= 3 places orders.
     if signal["should_trade"] and confidence in ("medium", "high"):
         direction = signal.get("direction", "")
         regime_label = regime.get("label", "") if regime else ""
 
-        # DOWN in NEUTRAL regimes has no edge (52% WR on 25 bets, Mar 2026)
-        # Still tracked in DB (conv=2) but no money risked
-        # Derived from 5m data — disabled in loose_mode (15m)
         if not loose_mode and direction == "DOWN" and "NEUTRAL" in regime_label:
             conviction = 2
-        # RIDE UP in sweet spot → high conviction ($200 bet)
         elif direction == "UP" and mkt_price is not None and PRICE_SWEET_SPOT_LOW <= mkt_price <= PRICE_SWEET_SPOT_HIGH:
             conviction = 4
         else:
             conviction = 3
 
-        # Cross-exchange consensus boost: both Kraken + Coinbase see the same streak
-        # Bump conviction by 1 (max 5) when score=2 (strong agreement)
         consensus_score = consensus.get("score", 0) if consensus else 0
         if consensus_score == 2 and conviction >= 3:
             conviction = min(conviction + 1, MAX_CONVICTION)
@@ -254,84 +248,50 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         "conviction_tier": conviction,
         "mkt_price": mkt_price,
     }
-    if sibling_context:
-        reasoning_data["sibling_5m"] = sibling_context
-    if consensus:
-        reasoning_data["consensus"] = consensus
-    if liquidity:
-        reasoning_data["liquidity"] = liquidity
+    if sibling_context: reasoning_data["sibling_5m"] = sibling_context
+    if consensus: reasoning_data["consensus"] = consensus
+    if liquidity: reasoning_data["liquidity"] = liquidity
     reasoning = json.dumps(reasoning_data)
 
-    # Store as "momentum_rule" agent
-    try:
-        db.execute("""
-            INSERT INTO predictions
-            (market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle, conviction_score, regime)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            market_id, "momentum_rule", estimate, edge, confidence,
-            reasoning, predicted_at, cycle, conviction, regime["label"],
-        ))
-    except sqlite3.OperationalError:
-        # regime column might not exist yet
-        db.execute("""
-            INSERT INTO predictions
-            (market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle, conviction_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            market_id, "momentum_rule", estimate, edge, confidence,
-            reasoning, predicted_at, cycle, conviction,
-        ))
+    db.execute("""
+        INSERT INTO predictions
+        (market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle, conviction_score, regime)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        market_id, "momentum_rule", estimate, edge, confidence,
+        reasoning, predicted_at, cycle, conviction, regime["label"] if regime else "UNKNOWN",
+    ))
     db.commit()
 
 
-def _get_clob_tokens(market_id):
-    """Wrapper — delegates to shared clob_depth.get_clob_tokens."""
-    try:
-        from clob_depth import get_clob_tokens
-        return get_clob_tokens(market_id)
-    except ImportError:
-        return None
-
-
 def get_5m_context(lookback_minutes=60):
-    """
-    Query the 5m DB for recent signal activity.
-    Returns a summary the 15m pipeline can use for cross-timeframe awareness.
-    """
+    """Query the 5m DB for recent signal activity."""
     if not DB_PATH.exists():
         return None
 
     try:
-        db5 = sqlite3.connect(DB_PATH)
-        # Recent 5m bets (conv >= 3) in the lookback window
-        rows = db5.execute("""
-            SELECT estimate, conviction_score
-            FROM predictions
-            WHERE conviction_score >= 3
-              AND predicted_at >= datetime('now', ?)
-            ORDER BY predicted_at DESC
-        """, (f"-{lookback_minutes} minutes",)).fetchall()
-        db5.close()
+        with sqlite3.connect(DB_PATH) as db5:
+            rows = db5.execute("""
+                SELECT estimate, conviction_score
+                FROM predictions
+                WHERE conviction_score >= 3
+                  AND predicted_at >= datetime('now', ?)
+                ORDER BY predicted_at DESC
+            """, (f"-{lookback_minutes} minutes",)).fetchall()
     except Exception:
         return None
 
     if not rows:
         return {"bets": 0, "direction": None, "streak": 0, "message": "no recent 5m bets"}
 
-    # Count directions
     up = sum(1 for r in rows if r[0] >= 0.5)
     down = len(rows) - up
 
-    # Consecutive streak from most recent
     streak_dir = "UP" if rows[0][0] >= 0.5 else "DOWN"
     streak = 1
     for r in rows[1:]:
-        d = "UP" if r[0] >= 0.5 else "DOWN"
-        if d == streak_dir:
-            streak += 1
-        else:
-            break
+        if ("UP" if r[0] >= 0.5 else "DOWN") == streak_dir: streak += 1
+        else: break
 
     majority = "UP" if up > down else ("DOWN" if down > up else "SPLIT")
 
@@ -343,194 +303,134 @@ def get_5m_context(lookback_minutes=60):
         "streak_direction": streak_dir,
         "streak_length": streak,
         "direction": streak_dir if streak >= 2 else majority,
-        "message": f"5m: {len(rows)} bets in last {lookback_minutes}min, "
-                   f"{up}UP/{down}DN, streak={streak_dir}×{streak}",
+        "message": f"5m: {len(rows)} bets in last {lookback_minutes}min, {up}UP/{down}DN, streak={streak_dir}×{streak}",
     }
 
 
+# Standalone pure gate logic
+def is_dead_hour(current_hour_utc, dead_hours):
+    return current_hour_utc in dead_hours
+
+def is_price_extreme(mkt_price):
+    return mkt_price > PRICE_GATE_UPPER or mkt_price < PRICE_GATE_LOWER
+
+
 def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
-                    min_streak=3, autocorr_threshold=-0.15, loose_mode=False):
-    """
-    Main prediction loop.
-    Fetch candles → compute regime → apply momentum rule → store.
-    No API calls. $0 cost.
+                    min_streak=None, autocorr_threshold=AUTOCORR_MEAN_REVERTING_5M, loose_mode=False):
+    """Main prediction loop setup with database context manager."""
+    db_file = db_path or DB_PATH
+    
+    with sqlite3.connect(db_file) as db:
+        initialize_schema(db)
 
-    db_path: optional override (default: data/predictions.db for 5-min)
-    min_streak: minimum consecutive candles for signal (3 for 5m, 2 for 15m)
-    autocorr_threshold: below this → mean-reverting skip (-0.15 for 5m, -0.20 for 15m)
-    loose_mode: if True, disable 5m-derived gates (dead hours, cooldown, DOWN+NEUTRAL).
-                Used by 15m pipeline to gather data without 5m-specific filters.
-    """
-    from btc_data import fetch_btc_candles, format_for_prompt
-
-    db = sqlite3.connect(db_path or DB_PATH)
-    ensure_regime_column(db)
-
-    # Ensure conviction_score column exists
-    try:
-        db.execute("ALTER TABLE predictions ADD COLUMN conviction_score INTEGER")
-        db.commit()
-    except sqlite3.OperationalError:
-        pass
-
-    # Data-driven dead hour gate (replaces hardcoded set)
-    # Disabled in loose_mode (15m gathers its own data)
-    if not loose_mode:
-        dead_hours, hour_stats = compute_dead_hours(db_path or DB_PATH)
-        if hour_stats:
-            dead_list = sorted(dead_hours) if dead_hours else ["none"]
-            print(f"  Dead hours (auto): {dead_list}")
-            for s in hour_stats:
-                if s["bets"] >= 10:  # only log hours with meaningful data
-                    flag = " ← DEAD" if s["hour"] in dead_hours else ""
-                    print(f"    UTC {s['hour']:2d}: {s['bets']:3d} bets, {s['wr']:.0%} WR{flag}")
-    else:
-        dead_hours = set()
-
-    # Fetch BTC candles
-    if btc_data is None:
-        btc_data = fetch_btc_candles(limit=20)
-
-    if btc_data:
-        candles = btc_data["candles"]
-        consensus = btc_data.get("consensus")
-        print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}%")
-        # Log consensus
-        if consensus and consensus.get("sources", 0) >= 2:
-            k = consensus.get("streak_kraken", {})
-            c = consensus.get("streak_coinbase", {})
-            score = consensus.get("score", 0)
-            label = {2: "STRONG", 1: "WEAK", -1: "DISAGREE"}.get(score, "?")
-            print(f"  Consensus: {label} (score={score}) | Kraken: {k.get('direction','?')}x{k.get('length',0)} | Coinbase: {c.get('direction','?')}x{c.get('length',0)}")
-        elif consensus:
-            print(f"  Consensus: single source only ({consensus.get('sources', 0)}/2)")
+        if not loose_mode:
+            dead_hours, hour_stats = compute_dead_hours(db_file)
+            if hour_stats:
+                dead_list = sorted(dead_hours) if dead_hours else ["none"]
+                logger.info(f"Dead hours (auto): {dead_list}")
+                for s in hour_stats:
+                    if s["bets"] >= 10:
+                        flag = " <-- DEAD" if s["hour"] in dead_hours else ""
+                        # Adjust to logger.info so it is visible in dry-run
+                        logger.info(f"  UTC {s['hour']:2d}: {s['bets']:3d} bets, {s['wr']:.0%} WR{flag}")
         else:
-            print(f"  Consensus: unavailable")
-    else:
-        print("  WARNING: No BTC data available — skipping predictions")
-        db.close()
-        return
+            dead_hours = set()
 
-    # Compute regime
-    regime = compute_regime_from_candles(candles, autocorr_threshold=autocorr_threshold)
-    print(f"  Regime: {regime['label']} (autocorr: {regime['autocorrelation']:+.4f})")
+        if btc_data is None:
+            if fetch_btc_candles:
+                btc_data = fetch_btc_candles(limit=20)
+            else:
+                logger.error("No BTC data provider available (fetch_btc_candles failed to import)")
+                return
 
-    # Check regime gate
-    if regime["is_mean_reverting"]:
-        print(f"  SKIP: Mean-reverting regime detected — no trades")
-
-    # Cross-timeframe context: 15m reads what 5m has been seeing
-    sibling_context = None
-    if loose_mode:
-        sibling_context = get_5m_context(lookback_minutes=60)
-        if sibling_context and sibling_context["bets"] > 0:
-            print(f"  5m sibling: {sibling_context['message']}")
+        if btc_data:
+            candles = btc_data["candles"]
+            consensus = btc_data.get("consensus")
+            logger.info(f"BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data.get('1h_change_pct',0):+.3f}%")
+            if consensus and consensus.get("sources", 0) >= 2:
+                k = consensus.get("streak_kraken", {})
+                c = consensus.get("streak_coinbase", {})
+                score = consensus.get("score", 0)
+                label = {2: "STRONG", 1: "WEAK", -1: "DISAGREE"}.get(score, "?")
+                logger.info(f"Consensus: {label} (score={score}) | Kraken: {k.get('direction','?')}x{k.get('length',0)} | Coinbase: {c.get('direction','?')}x{c.get('length',0)}")
         else:
-            print(f"  5m sibling: no recent activity")
+            logger.warning("No BTC data available — skipping predictions")
+            return
 
-    # Compute momentum signal
-    signal = momentum_signal(candles, min_streak=min_streak)
-    if signal["should_trade"]:
-        print(f"  Signal: RIDE {signal['direction']} (streak={signal['streak']}, conf={signal['confidence']})")
-    else:
-        print(f"  Signal: NONE ({signal['reason']})")
+        regime = compute_regime_from_candles(candles, autocorr_threshold=autocorr_threshold)
+        logger.info(f"Regime: {regime['label']} (autocorr: {regime['autocorrelation']:+.4f})")
 
-    # Get markets to predict
-    now_iso = datetime.now(timezone.utc).isoformat()
-    cursor = db.execute("""
-        SELECT id, question, category, end_date, volume, price_yes
-        FROM markets WHERE resolved = 0 AND end_date > ?
-        AND id NOT IN (SELECT DISTINCT market_id FROM predictions)
-        ORDER BY end_date ASC LIMIT ?
-    """, (now_iso, market_limit))
-    markets = [dict(zip(["id", "question", "category", "end_date", "volume", "price_yes"], row))
-               for row in cursor.fetchall()]
-
-    if not markets:
-        print("  No unresolved markets found.")
-        db.close()
-        return
-
-    print(f"  Markets: {len(markets)}")
-
-    for market in markets:
-        print(f"\n  Market: {market['question'][:60]}...")
-        mkt_price = market['price_yes']
-        print(f"  Mkt price: {mkt_price:.0%}")
-
-        # Time-of-day gate: data-driven, recomputed each cycle from last 90 days
-        current_hour_utc = datetime.now(timezone.utc).hour
-        if current_hour_utc in dead_hours:
-            skip_signal = {
-                "estimate": mkt_price,
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": f"time_gate_dead_hour (UTC {current_hour_utc})",
-            }
-            store_prediction(db, market["id"], skip_signal, regime, cycle)
-            print(f"    → SKIP (dead hour: UTC {current_hour_utc})")
-            continue
-
-        # Price gate: skip extreme prices (terrible risk/reward even when correct)
-        # At price 0.95, need 95% WR to break even. Our signal hits ~66%. Math can't work.
-        if mkt_price > PRICE_GATE_UPPER or mkt_price < PRICE_GATE_LOWER:
-            skip_signal = {
-                "estimate": mkt_price,
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": f"price_gate_extreme ({mkt_price:.0%})",
-            }
-            store_prediction(db, market["id"], skip_signal, regime, cycle)
-            print(f"    → SKIP (price gate: {mkt_price:.0%})")
-            continue
-
-        # Apply regime gate: if mean-reverting, store as NO_BET (estimate=market price)
         if regime["is_mean_reverting"]:
-            skip_signal = {
-                "estimate": mkt_price,  # anchor to market
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": "regime_skip_mean_reverting",
-            }
-            store_prediction(db, market["id"], skip_signal, regime, cycle)
-            print(f"    → SKIP (mean-reverting regime)")
-            continue
+            logger.info("SKIP: Mean-reverting regime detected — no trades")
 
-        # Apply momentum signal
+        sibling_context = None
+        if loose_mode:
+            sibling_context = get_5m_context(lookback_minutes=60)
+            if sibling_context and sibling_context["bets"] > 0:
+                logger.info(f"5m sibling: {sibling_context['message']}")
+
+        signal = momentum_signal(candles, min_streak=min_streak)
         if signal["should_trade"]:
-            # Phase 6a: Query CLOB order book depth (read-only, never blocks)
-            liquidity = None
-            try:
-                from clob_depth import get_liquidity_summary, format_liquidity_log
-                clob_tokens = _get_clob_tokens(market["id"])
-                if clob_tokens:
-                    direction_for_clob = "UP" if signal["estimate"] > 0.5 else "DOWN"
-                    liquidity = get_liquidity_summary(
-                        clob_tokens["yes"], clob_tokens["no"], direction_for_clob
-                    )
-                    print(f"    {format_liquidity_log(liquidity)}")
-            except Exception as e:
-                print(f"    [CLOB] skipped: {e}")
-
-            store_prediction(db, market["id"], signal, regime, cycle,
-                             mkt_price=mkt_price, loose_mode=loose_mode,
-                             sibling_context=sibling_context, consensus=consensus,
-                             liquidity=liquidity)
-            direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
-            print(f"    → {direction} @ {signal['estimate']:.2f} ({signal['confidence']}, est={signal['estimate']:.4f})")
+            logger.info(f"Signal: RIDE {signal['direction']} (streak={signal['streak']}, conf={signal['confidence']})")
         else:
-            # No signal — store as NO_BET
-            no_signal = {
-                "estimate": mkt_price,
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": signal.get("reason", "no_signal"),
-            }
-            store_prediction(db, market["id"], no_signal, regime, cycle, sibling_context=sibling_context)
-            print(f"    → SKIP ({signal.get('reason', 'no_signal')})")
+            logger.info(f"Signal: NONE ({signal['reason']})")
 
-    db.close()
-    print(f"\nDone. Predictions stored in {db_path or DB_PATH}")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        cursor = db.execute("""
+            SELECT id, question, category, end_date, volume, price_yes
+            FROM markets WHERE resolved = 0 AND end_date > ?
+            AND id NOT IN (SELECT DISTINCT market_id FROM predictions)
+            ORDER BY end_date ASC LIMIT ?
+        """, (now_iso, market_limit))
+        markets = [dict(zip(["id", "question", "category", "end_date", "volume", "price_yes"], row)) for row in cursor.fetchall()]
+
+        if not markets:
+            logger.info("No unresolved markets found.")
+            return
+
+        logger.info(f"Markets: {len(markets)}")
+
+        for market in markets:
+            logger.info(f"\nMarket: {market['question'][:60]}...")
+            mkt_price = market['price_yes']
+            logger.info(f"Mkt price: {mkt_price:.0%}")
+
+            current_hour_utc = datetime.now(timezone.utc).hour
+            if is_dead_hour(current_hour_utc, dead_hours):
+                logger.info(f"  -> SKIP (dead hour: UTC {current_hour_utc})")
+                store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": f"time_gate_dead_hour (UTC {current_hour_utc})"}, regime, cycle)
+                continue
+
+            if is_price_extreme(mkt_price):
+                logger.info(f"  -> SKIP (price gate: {mkt_price:.0%})")
+                store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": f"price_gate_extreme ({mkt_price:.0%})"}, regime, cycle)
+                continue
+
+            if regime["is_mean_reverting"]:
+                logger.info("  -> SKIP (mean-reverting regime)")
+                store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": "regime_skip_mean_reverting"}, regime, cycle)
+                continue
+
+            if signal["should_trade"]:
+                liquidity = None
+                if get_clob_tokens and get_liquidity_summary:
+                    try:
+                        clob_tokens = _get_clob_tokens_safe(market["id"])
+                        if clob_tokens:
+                            liquidity = get_liquidity_summary(clob_tokens["yes"], clob_tokens["no"], "UP" if signal["estimate"] > 0.5 else "DOWN")
+                            if format_liquidity_log:
+                                logger.info(f"  {format_liquidity_log(liquidity)}")
+                    except Exception as e:
+                        logger.debug(f"[CLOB] skipped: {e}")
+
+                store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price, loose_mode=loose_mode, sibling_context=sibling_context, consensus=consensus, liquidity=liquidity)
+                direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
+                logger.info(f"  -> {direction} @ {signal['estimate']:.2f} ({signal['confidence']}, est={signal['estimate']:.4f})")
+            else:
+                logger.info(f"  -> SKIP ({signal.get('reason', 'no_signal')})")
+                store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": signal.get("reason", "no_signal")}, regime, cycle, sibling_context=sibling_context)
+
+    logger.info(f"\nDone. Predictions stored in {db_file}")
 
 
 if __name__ == "__main__":

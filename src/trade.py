@@ -27,6 +27,7 @@ from config import (
     MIN_CONVICTION, MAX_SLIPPAGE_PCT, EDGE_THRESHOLD, MAX_SLIPPAGE_SPREAD,
     ETH_BET_SIZES, ETH_MAX_BET_CEILING_PCT, POLYMARKET_FEE_FACTOR,
     BOOK_DEPTH_SAFETY_MARGIN, MIN_BET_SIZE, FILL_PRIORITY_SPREAD, _env,
+    MAX_LOSS_LOOKBACK, API_TIMEOUT_SUBMIT, POLYMARKET_CHAIN_ID,
 )
 
 TRADING_ENABLED = _env("TRADING_ENABLED", "false").lower() == "true"
@@ -124,8 +125,8 @@ def _check_consecutive_losses(db):
     rows = db.execute("""
         SELECT pnl FROM orders
         WHERE status = 'settled' AND pnl IS NOT NULL
-        ORDER BY settled_at DESC LIMIT 50
-    """).fetchall()
+        ORDER BY settled_at DESC LIMIT ?
+    """, (MAX_LOSS_LOOKBACK,)).fetchall()
     streak = 0
     for (pnl,) in rows:
         if pnl < 0:
@@ -366,7 +367,7 @@ def _submit_clob_order(token_id, side, size, price):
     client = ClobClient(
         "https://clob.polymarket.com",
         key=private_key,
-        chain_id=137,
+        chain_id=POLYMARKET_CHAIN_ID,
         signature_type=sig_type,
         funder=proxy_address if proxy_address else None,
     )
@@ -390,10 +391,10 @@ def _submit_clob_order(token_id, side, size, price):
     import signal as _signal
 
     def _timeout_handler(signum, frame):
-        raise TimeoutError("CLOB order submission timed out after 10s")
+        raise TimeoutError(f"CLOB order submission timed out after {API_TIMEOUT_SUBMIT}s")
 
     old_handler = _signal.signal(_signal.SIGALRM, _timeout_handler)
-    _signal.alarm(10)  # 10-second hard timeout
+    _signal.alarm(API_TIMEOUT_SUBMIT)  # timeout from config
     try:
         response = client.create_and_post_order(order_args)
     finally:
@@ -438,7 +439,7 @@ def settle_orders(db):
         client = ClobClient(
             "https://clob.polymarket.com",
             key=os.environ.get("POLYMARKET_PRIVATE_KEY"),
-            chain_id=137,
+            chain_id=POLYMARKET_CHAIN_ID,
             signature_type=sig_type,
             funder=proxy_address if proxy_address else None,
         )

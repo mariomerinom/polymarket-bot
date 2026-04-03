@@ -31,6 +31,7 @@ def _env(name, default):
 BET_SIZE = float(_env("BET_SIZE", "25"))              # Flat $25 medium grind (Phase 1)
 DAILY_LOSS_LIMIT = float(_env("DAILY_LOSS_LIMIT", "300"))  # Circuit breaker
 CONSECUTIVE_LOSS_MAX = int(_env("CONSECUTIVE_LOSS_MAX", "5"))
+MAX_LOSS_LOOKBACK = 50                                     # Orders history lookback
 MAX_DRAWDOWN_PCT = float(_env("MAX_DRAWDOWN_PCT", "15"))   # % from peak equity
 MIN_CONVICTION = int(_env("MIN_CONVICTION", "3"))          # Conv < 3 = paper only
 MAX_SLIPPAGE_PCT = float(_env("MAX_SLIPPAGE_PCT", "2.0"))  # 2% max
@@ -176,6 +177,7 @@ OBV_PRICE_BUCKET_HIGH = 0.70
 # ══════════════════════════════════════════════════════════════════════════════
 
 LIVE_START_DATE = "2026-04-01"  # Date boundary for paper→live bet sizing
+POLYMARKET_CHAIN_ID = 137       # Polygon mainnet
 
 # Date-aware bet sizing for P&L reporting (daily_report + optimization_tracker)
 PAPER_BTC_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 75, 4: 200, 5: 300}
@@ -198,6 +200,7 @@ LIVE_BYBIT_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 0.005, 4: 0.005, 5: 0.005}
 # API timeouts (seconds)
 API_TIMEOUT_EXCHANGE = 10       # Kraken, Coinbase candle fetches
 API_TIMEOUT_CLOB = 5            # CLOB book depth queries
+API_TIMEOUT_SUBMIT = 10         # CLOB order submission timeout
 API_TIMEOUT_GAMMA = 5           # Polymarket Gamma API
 API_TIMEOUT_BULK = 15           # Multi-interval rolling bias fetches
 
