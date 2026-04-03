@@ -105,12 +105,15 @@ def main():
     DB_PATH_BYBIT.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_bybit()
 
-    from pipeline_control import load_pipeline_config
+    from pipeline_control import load_pipeline_config, is_pipeline_live
     cfg = load_pipeline_config("bybit")
-    if not cfg["enabled"]:
+    if cfg["mode"] == "paused":
         print(f"Bybit pipeline PAUSED: {cfg['notes']}")
         db.close()
         return
+    # Override bybit_trade.py's BYBIT_TRADING_ENABLED based on pipeline config
+    import bybit_trade
+    bybit_trade.BYBIT_TRADING_ENABLED = is_pipeline_live("bybit")
 
     mode_label = "LIVE" if BYBIT_TRADING_ENABLED else "PAPER"
     print(f"=== Bybit BTCUSDT Perps ({mode_label}) ===\n")

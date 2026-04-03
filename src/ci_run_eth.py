@@ -46,12 +46,15 @@ def main():
     DB_PATH_ETH.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_eth()
 
-    from pipeline_control import load_pipeline_config
+    from pipeline_control import load_pipeline_config, is_pipeline_live
     cfg = load_pipeline_config("eth_5m")
-    if not cfg["enabled"]:
+    if cfg["mode"] == "paused":
         print(f"ETH 5m pipeline PAUSED: {cfg['notes']}")
         db.close()
         return
+    # Override trade.py's TRADING_ENABLED based on pipeline config
+    import trade
+    trade.TRADING_ENABLED = is_pipeline_live("eth_5m")
 
     # 1. Fetch ETH markets
     print("[1/5] Fetching ETH markets...")

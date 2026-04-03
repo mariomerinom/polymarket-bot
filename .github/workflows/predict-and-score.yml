@@ -40,19 +40,24 @@ jobs:
         working-directory: src
         run: |
           python -c "
-          from pipeline_control import load_pipeline_config
+          from pipeline_control import load_pipeline_config, is_pipeline_live
           cfg = load_pipeline_config('btc_5m')
-          if not cfg['enabled']:
+          if cfg['mode'] == 'paused':
               print(f'BTC 5m PAUSED: {cfg[\"notes\"]}')
               raise SystemExit(1)
-          print('BTC 5m pipeline: enabled')
+          mode = cfg['mode']
+          live = 'true' if mode == 'live' else 'false'
+          print(f'BTC 5m pipeline: {mode} (TRADING_ENABLED={live})')
+          import os
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'trading_enabled={live}\n')
           "
 
       - name: Run prediction cycle
         if: steps.check-pipeline.outcome == 'success'
         working-directory: src
         env:
-          TRADING_ENABLED: ${{ vars.TRADING_ENABLED }}
+          TRADING_ENABLED: ${{ steps.check-pipeline.outputs.trading_enabled }}
           POLYMARKET_PRIVATE_KEY: ${{ secrets.POLYMARKET_PRIVATE_KEY }}
           BET_SIZE: ${{ vars.BET_SIZE }}
           DAILY_LOSS_LIMIT: ${{ vars.DAILY_LOSS_LIMIT }}

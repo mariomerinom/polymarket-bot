@@ -44,7 +44,7 @@ def main():
 
     from pipeline_control import load_pipeline_config
     cfg = load_pipeline_config("btc_15m")
-    if not cfg["enabled"]:
+    if cfg["mode"] == "paused":
         print(f"BTC 15m pipeline PAUSED: {cfg['notes']}")
         db.close()
         return
