@@ -15,6 +15,7 @@ import requests
 
 from kalshi_markets import _sign_request, _is_mock_mode, KALSHI_BASE_URL
 from score import mark_resolved
+from config import API_TIMEOUT_KALSHI, SETTLEMENT_DELAY_S
 
 
 def auto_resolve_kalshi(db):

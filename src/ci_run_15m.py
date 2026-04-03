@@ -1,3 +1,4 @@
+from config import DEFAULT_CANDLE_LIMIT
 """
 ci_run_15m.py — One-shot cycle for 15-minute BTC markets.
 

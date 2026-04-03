@@ -1,3 +1,4 @@
+from config import DEFAULT_CANDLE_LIMIT
 from config import SHADOW_CANDLE_LIMIT
 """
 ci_run_kalshi.py — One-shot Kalshi cycle for GitHub Actions.
