@@ -136,7 +136,7 @@ All criteria met. Proceeding to Part 6.
 
 ---
 
-## Part 7: DigitalOcean VPS Deployment (NEXT)
+## Part 7: DigitalOcean VPS Deployment (DONE)
 
 Move from GitHub Actions to a dedicated VPS in a non-US region. GitHub Actions runners are US-based and get 403 geoblocked by Polymarket's CLOB API — all live orders fail.
 
