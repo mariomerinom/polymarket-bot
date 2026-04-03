@@ -105,6 +105,13 @@ def main():
     DB_PATH_BYBIT.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_bybit()
 
+    from pipeline_control import load_pipeline_config
+    cfg = load_pipeline_config("bybit")
+    if not cfg["enabled"]:
+        print(f"Bybit pipeline PAUSED: {cfg['notes']}")
+        db.close()
+        return
+
     mode_label = "LIVE" if BYBIT_TRADING_ENABLED else "PAPER"
     print(f"=== Bybit BTCUSDT Perps ({mode_label}) ===\n")
 

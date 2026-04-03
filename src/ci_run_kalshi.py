@@ -102,6 +102,13 @@ def main():
     DB_PATH_KALSHI.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_kalshi()
 
+    from pipeline_control import load_pipeline_config
+    cfg = load_pipeline_config("kalshi")
+    if not cfg["enabled"]:
+        print(f"Kalshi pipeline PAUSED: {cfg['notes']}")
+        db.close()
+        return
+
     # 1. Fetch Kalshi markets
     print("[1/5] Fetching Kalshi BTC markets...")
     try:
@@ -146,6 +153,14 @@ def main():
         db = sqlite3.connect(DB_PATH_KALSHI)
     else:
         print("  No unpredicted Kalshi markets")
+
+    # Shadow conviction scorer — continuous strength signal
+    try:
+        from shadow_conviction_scorer import shadow_log_cycle
+        if kalshi_data and kalshi_data.get("candles"):
+            shadow_log_cycle(db, cycle, kalshi_data["candles"], "kalshi")
+    except Exception as e:
+        print(f"    [shadow] skipped: {e}")
 
     # 4. Score
     print("[4/5] Scoring...")

@@ -46,6 +46,13 @@ def main():
     DB_PATH_ETH.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_eth()
 
+    from pipeline_control import load_pipeline_config
+    cfg = load_pipeline_config("eth_5m")
+    if not cfg["enabled"]:
+        print(f"ETH 5m pipeline PAUSED: {cfg['notes']}")
+        db.close()
+        return
+
     # 1. Fetch ETH markets
     print("[1/5] Fetching ETH markets...")
     try:

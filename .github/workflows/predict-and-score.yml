@@ -35,7 +35,21 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short
 
+      - name: Check pipeline config
+        id: check-pipeline
+        working-directory: src
+        run: |
+          python -c "
+          from pipeline_control import load_pipeline_config
+          cfg = load_pipeline_config('btc_5m')
+          if not cfg['enabled']:
+              print(f'BTC 5m PAUSED: {cfg[\"notes\"]}')
+              raise SystemExit(1)
+          print('BTC 5m pipeline: enabled')
+          "
+
       - name: Run prediction cycle
+        if: steps.check-pipeline.outcome == 'success'
         working-directory: src
         env:
           TRADING_ENABLED: ${{ vars.TRADING_ENABLED }}

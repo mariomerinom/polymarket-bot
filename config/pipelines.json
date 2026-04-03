@@ -1,0 +1,10 @@
+{
+  "_comment": "Pipeline control. Edit to pause/resume or change bet sizes. Commit + push for CI.",
+  "pipelines": {
+    "btc_5m":  { "enabled": true,  "bet_size": 25,    "notes": "Production — live trading" },
+    "btc_15m": { "enabled": true,  "bet_size": null,   "notes": "Paper only" },
+    "eth_5m":  { "enabled": false, "bet_size": null,   "notes": "PAUSED 2026-04-02 — thin books, asymmetric losses (-$46.52 on 9 orders)" },
+    "kalshi":  { "enabled": true,  "bet_size": null,   "notes": "Phase 0 paper" },
+    "bybit":   { "enabled": true,  "bet_size": 0.005,  "notes": "Bybit perps — live" }
+  }
+}

@@ -42,6 +42,13 @@ def main():
     DB_PATH_15M.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_15m()
 
+    from pipeline_control import load_pipeline_config
+    cfg = load_pipeline_config("btc_15m")
+    if not cfg["enabled"]:
+        print(f"BTC 15m pipeline PAUSED: {cfg['notes']}")
+        db.close()
+        return
+
     # 1. Fetch 15-min markets
     print("[15M 1/5] Fetching 15-min markets...")
     try:

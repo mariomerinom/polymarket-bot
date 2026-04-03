@@ -159,14 +159,36 @@ def _check_drawdown_pct(db):
     return (drawdown / peak) * 100
 
 
+def _agent_to_pipeline(agent: str) -> str:
+    """Map prediction agent name to pipeline config key."""
+    agent_lower = agent.lower()
+    if "eth" in agent_lower:
+        return "eth_5m"
+    if "bybit" in agent_lower:
+        return "bybit"
+    if "kalshi" in agent_lower:
+        return "kalshi"
+    return "btc_5m"
+
+
 def get_bet_size(prediction_row, liquidity=None):
     """Return bet size based on asset and conviction.
 
+    Priority: env var override > pipelines.json > config.py defaults.
     BTC: flat $25 (medium grind phase).
     ETH: tiered by conviction, capped by book depth.
     """
     agent = prediction_row.get("agent", "")
     conviction = prediction_row.get("conviction_score", 0)
+
+    # Check per-pipeline bet size override (from config/pipelines.json)
+    try:
+        from pipeline_control import get_bet_size_override
+        override = get_bet_size_override(_agent_to_pipeline(agent))
+        if override is not None:
+            return override
+    except ImportError:
+        pass
 
     if "eth" in agent.lower():
         base = ETH_BET_SIZES.get(conviction, 0)
