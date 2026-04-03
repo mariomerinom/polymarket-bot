@@ -11,6 +11,7 @@ import json
 import os
 from collections import defaultdict
 from urllib.request import urlopen, Request
+from config import API_TIMEOUT_GAMMA
 
 DATA_API = "https://data-api.polymarket.com"
 WALLET_ADDRESS = os.getenv(

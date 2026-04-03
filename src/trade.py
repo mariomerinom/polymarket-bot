@@ -526,6 +526,17 @@ def settle_orders(db):
                         UPDATE orders SET status = 'filled', price_filled = ?,
                         filled_at = ? WHERE id = ?
                     """, (fill_price, now, order_db_id))
+                # Compute realized slippage: how far fill_price deviated from price_limit
+                limit_row = db.execute(
+                    "SELECT price_limit FROM orders WHERE id = ?", (order_db_id,)
+                ).fetchone()
+                if limit_row and limit_row[0] and fill_price:
+                    realized_slip = abs(fill_price - limit_row[0]) / limit_row[0] * 100
+                    db.execute(
+                        "UPDATE orders SET slippage_pct = ? WHERE id = ?",
+                        (round(realized_slip, 4), order_db_id),
+                    )
+
                 settled += 1
                 size_note = f", actual=${actual_size:.2f}" if update_size else ""
                 print(f"  [TRADE] Order {order_id[:12]}... FILLED @ {fill_price:.3f}{size_note}")
