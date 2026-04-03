@@ -213,7 +213,7 @@
       "description": "Cap 15m conviction at 3 (59.3% WR on 27 conv=4 bets, no better than conv=3)",
       "registered_at": "2026-04-02T16:44:27.880921+00:00",
       "pipeline": "15m",
-      "status": "active",
+      "status": "reverted",
       "min_sample": 50,
       "revert_condition": "post_wr < baseline_wr - 2",
       "baseline": {
@@ -231,8 +231,8 @@
         "pnl": -215.75,
         "wagered": 375.0
       },
-      "closed_at": null,
-      "close_reason": null
+      "closed_at": "2026-04-03T11:57:28.131600+00:00",
+      "close_reason": "Conv=3 WR collapsed to 22% (2W-7L) on 2026-04-03. Cap removed natural quality filter. Reverting to let conv=4/5 function as intended."
     },
     {
       "name": "eth_regime_recalibrate",

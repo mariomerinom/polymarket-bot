@@ -94,16 +94,11 @@ def main():
             print(f"  Prediction error: {e}")
         db = sqlite3.connect(DB_PATH_15M)
 
-        # Decision #20: Demote 15m conv=4/5 to conv=3
-        # 15m conv=4 WR: 59.3% on 27 bets — no better than conv=3.
-        # predict.py is frozen, so cap conviction post-prediction.
-        demoted = db.execute("""
-            UPDATE predictions SET conviction_score = 3
-            WHERE cycle = ? AND conviction_score > 3
-        """, (cycle,)).rowcount
-        db.commit()
-        if demoted:
-            print(f"  [15m cap] Demoted {demoted} prediction(s) from conv>3 to conv=3")
+        # Decision #20 conv cap REVERTED 2026-04-03.
+        # Cap demoted conv=4→3, but conv=3 WR collapsed to 22% (2W-7L today).
+        # The cap removed the quality filter without improving accuracy.
+        # Conv=4 at 61% WR (28 bets) was functioning — the 59.3% trigger
+        # was noise at 27 bets. Restoring natural conviction tiers.
     else:
         print("  No unpredicted markets")
 
