@@ -57,7 +57,7 @@
       "description": "Disable 5m-derived gates (dead hours, cooldown, DOWN+NEUTRAL) for 15m. Signal has 72% accuracy on 75 predictions but only 16% made it through filters.",
       "registered_at": "2026-03-29T12:58:24.732704+00:00",
       "pipeline": "15m",
-      "status": "active",
+      "status": "reverted",
       "min_sample": 50,
       "revert_condition": "post_wr < 55",
       "baseline": {
@@ -67,16 +67,16 @@
         "pnl": 33.56,
         "wagered": 1400.0
       },
-      "latest_check": "2026-04-03T12:03:01.319992+00:00",
+      "latest_check": "2026-04-03T11:22:50.168617+00:00",
       "post_stats": {
-        "bets": 47,
-        "wins": 26,
-        "wr": 55.3,
-        "pnl": -82.41,
-        "wagered": 1175.0
+        "bets": 46,
+        "wins": 25,
+        "wr": 54.3,
+        "pnl": -113.59,
+        "wagered": 1150.0
       },
-      "closed_at": null,
-      "close_reason": null
+      "closed_at": "2026-04-03T12:18:51.899581+00:00",
+      "close_reason": "DOWN+NEUTRAL filter extended to 15m on 2026-04-03. loose_mode no longer bypasses it. 15m DOWN was 48% WR on 27 bets \u2014 no edge, same as 5m. Optimization was tracking unfiltered data that included coin-flip DOWN+NEUTRAL bets."
     },
     {
       "name": "cross_exchange_consensus",
@@ -119,11 +119,11 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-03T12:03:01.319992+00:00",
+      "latest_check": "2026-04-03T12:19:41.298571+00:00",
       "post_stats": {
-        "bets": 75,
-        "wins": 56,
-        "wr": 74.7,
+        "bets": 73,
+        "wins": 55,
+        "wr": 75.3,
         "pnl": 1068.37,
         "wagered": 1775.0
       },
@@ -145,7 +145,7 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-03T12:03:01.319992+00:00",
+      "latest_check": "2026-04-03T12:19:41.298571+00:00",
       "post_stats": {
         "bets": 27,
         "wins": 22,
@@ -197,7 +197,7 @@
         "pnl": 2269.5,
         "wagered": 6875.0
       },
-      "latest_check": "2026-04-03T12:03:01.319992+00:00",
+      "latest_check": "2026-04-03T12:19:41.298571+00:00",
       "post_stats": {
         "bets": 29,
         "wins": 22,
@@ -249,7 +249,7 @@
         "pnl": 2364.53,
         "wagered": 7000.0
       },
-      "latest_check": "2026-04-03T12:03:01.319992+00:00",
+      "latest_check": "2026-04-03T12:19:41.298571+00:00",
       "post_stats": {
         "bets": 23,
         "wins": 17,
@@ -275,7 +275,7 @@
         "pnl": 2364.53,
         "wagered": 7000.0
       },
-      "latest_check": "2026-04-03T12:03:01.319992+00:00",
+      "latest_check": "2026-04-03T12:19:41.298571+00:00",
       "post_stats": {
         "bets": 22,
         "wins": 16,

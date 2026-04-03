@@ -52,6 +52,84 @@ Every 5 minutes, GitHub Actions triggers the bot. The bot fetches 20 BTC candles
 
 ---
 
+## Regimes
+
+Every cycle, the bot classifies the current market into a **regime** based on two dimensions computed from recent candles:
+
+**Volatility** (standard deviation of returns):
+
+| Level | Threshold | Meaning |
+|-------|-----------|---------|
+| LOW_VOL | < 0.05% | Quiet market, small moves |
+| MEDIUM_VOL | 0.05% – 0.12% | Normal trading conditions |
+| HIGH_VOL | ≥ 0.12% | Large swings, high activity |
+
+**Trend** (autocorrelation of returns):
+
+| Level | Threshold | Meaning |
+|-------|-----------|---------|
+| TRENDING | autocorr > 0.15 | Price moves persist — momentum works |
+| NEUTRAL | -0.15 to 0.15 | No strong pattern |
+| MEAN_REVERTING | autocorr < -0.15 | Price snaps back — momentum fails |
+
+These combine into a 3×3 grid (e.g. `MEDIUM_VOL / TRENDING`). The regime determines whether we trade and how:
+
+### How Each Regime Is Treated
+
+| Regime (trend) | Action | Why |
+|----------------|--------|-----|
+| **MEAN_REVERTING** (any vol) | Skip entirely | Momentum loses when price reverts. No predictions stored at conv≥3. |
+| **TRENDING + UP** | Trade (conv 3-5) | Momentum's sweet spot. Streaks persist. |
+| **TRENDING + DOWN** | Trade (conv 3-5) | Same edge in both directions during trends. |
+| **NEUTRAL + UP** | Trade (conv 3-5) | Still has edge: 82% WR on 90 BTC 5m bets. |
+| **NEUTRAL + DOWN** | Demote to conv=2 | No edge: 52% WR on 25 BTC 5m bets, 47% on 19 BTC 15m bets. Tracked but no money. |
+
+### BTC 5m Regime Performance (304 bets, conv≥3)
+
+| Regime | Bets | WR | Notes |
+|--------|------|----|-------|
+| MEDIUM_VOL / NEUTRAL | 115 | 76% | Highest volume, strong edge |
+| HIGH_VOL / NEUTRAL | 63 | 63% | Decent but more volatile |
+| MEDIUM_VOL / TRENDING | 60 | 70% | Solid |
+| HIGH_VOL / TRENDING | 59 | 66% | Solid |
+| LOW_VOL / * | 7 | 57% | Rare, small sample |
+
+### BTC 5m Direction × Regime (key splits)
+
+| Split | Bets | WR | Verdict |
+|-------|------|----|---------|
+| UP + MEDIUM_VOL / NEUTRAL | 90 | **82%** | Best slice — ride UP in calm markets |
+| DOWN + MEDIUM_VOL / NEUTRAL | 25 | **52%** | Coin flip — filtered to conv=2 |
+| UP + HIGH_VOL / NEUTRAL | 27 | 59% | Weaker UP in volatile neutral |
+| DOWN + HIGH_VOL / NEUTRAL | 36 | 67% | DOWN works in volatile neutral |
+| UP/DOWN + TRENDING | ~120 | 67% | Symmetric edge in trends |
+
+---
+
+## Conviction Tiers
+
+Conviction determines whether a prediction becomes a real bet. Assigned in `store_prediction()` (5m) or post-prediction in `ci_run_15m.py` (15m, since `predict.py` is frozen).
+
+| Tier | Bet Size | How It's Assigned |
+|------|----------|-------------------|
+| **conv=0** | $0 (skip) | No trade signal — streak too short, price at extremes, dead hour, or mean-reverting regime |
+| **conv=2** | $0 (paper) | Signal exists but filtered: DOWN+NEUTRAL, low confidence (streak < high threshold), or shadow-only predictions |
+| **conv=3** | $25 | Base tradeable prediction — medium confidence signal in a valid regime |
+| **conv=4** | $25 | UP direction + market price in sweet spot (0.30–0.70) |
+| **conv=5** | $25 | Conv=4 + cross-exchange consensus boost (both Kraken and Coinbase see the same streak) |
+
+All tiers bet the same $25 in production (Phase 1 flat grind). The tiers exist for data collection — we track whether higher conviction actually predicts better outcomes.
+
+### BTC 5m Conviction Performance (304 bets)
+
+| Tier | Bets | WR | Notes |
+|------|------|----|-------|
+| conv=3 | 84 | 64% | Base tier |
+| conv=4 | 145 | 70% | Sweet spot boost helps |
+| conv=5 | 75 | 80% | Consensus boost adds real signal |
+
+---
+
 ## Repository Map
 
 ### Core Pipeline (src/)
@@ -138,8 +216,9 @@ Every 5 minutes, GitHub Actions triggers the bot. The bot fetches 20 BTC candles
 - Runs every 15 min via `predict-15m.yml`
 - `min_streak=2` (30 min of movement ≈ 5m streak of 6)
 - `autocorr_threshold=-0.20` (relaxed — noisier on fewer data points)
-- `loose_mode=True` — 5m-derived gates disabled to gather unfiltered data
-- 12 resolved bets at 67% WR (small sample)
+- `loose_mode=True` — dead hour gate disabled (15m has different activity patterns)
+- DOWN+NEUTRAL filter applied post-prediction (same as 5m — no edge on DOWN in neutral regimes)
+- 59 resolved bets at 59% WR
 
 ### ETH 5-Minute (Paper)
 - Runs every 5 min via `predict-eth-5m.yml`

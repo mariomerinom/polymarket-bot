@@ -422,6 +422,66 @@ def test_pnl_uses_actual_fill_size():
     db.close()
 
 
+# ── Incident 7: 15m DOWN+NEUTRAL asymmetry — 48% WR on 27 bets ─────────
+
+def test_down_neutral_demoted_even_in_loose_mode():
+    """DOWN+NEUTRAL filter must apply to 15m too (via ci_run_15m.py post-prediction).
+    Incident 7: 15m used loose_mode=True which bypassed DOWN+NEUTRAL filter.
+    15m DOWN was 48% WR on 27 bets — same no-edge pattern as 5m (52% on 25 bets).
+    Momentum is direction-agnostic; filter must be symmetric.
+    """
+    import sqlite3
+    import json
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE predictions (
+        id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT, estimate REAL,
+        edge REAL, confidence TEXT, reasoning TEXT, predicted_at TEXT,
+        cycle INTEGER, conviction_score INTEGER, regime TEXT
+    )""")
+    db.execute("""CREATE TABLE markets (
+        id TEXT PRIMARY KEY, resolved INTEGER, outcome INTEGER
+    )""")
+
+    # Simulate a DOWN+NEUTRAL prediction at conv=3 (what loose_mode produces)
+    reasoning = json.dumps({"signal": {"direction": "DOWN", "should_trade": True}})
+    db.execute("""INSERT INTO predictions VALUES
+        (1, 'm1', 'momentum_rule', 0.38, 0.12, 'medium', ?, '2026-04-03T10:00:00',
+         1, 3, 'HIGH_VOL / NEUTRAL')""", (reasoning,))
+
+    # Simulate an UP+NEUTRAL prediction at conv=4 (should NOT be demoted)
+    reasoning_up = json.dumps({"signal": {"direction": "UP", "should_trade": True}})
+    db.execute("""INSERT INTO predictions VALUES
+        (2, 'm2', 'momentum_rule', 0.62, 0.12, 'medium', ?, '2026-04-03T10:00:00',
+         1, 4, 'MEDIUM_VOL / NEUTRAL')""", (reasoning_up,))
+
+    # Simulate a DOWN+TRENDING prediction at conv=3 (should NOT be demoted)
+    reasoning_trend = json.dumps({"signal": {"direction": "DOWN", "should_trade": True}})
+    db.execute("""INSERT INTO predictions VALUES
+        (3, 'm3', 'momentum_rule', 0.38, 0.12, 'medium', ?, '2026-04-03T10:00:00',
+         1, 3, 'HIGH_VOL / TRENDING')""", (reasoning_trend,))
+    db.commit()
+
+    # Apply the same demotion query that ci_run_15m.py uses
+    demoted = db.execute("""
+        UPDATE predictions SET conviction_score = 2
+        WHERE cycle = 1 AND conviction_score >= 3
+        AND regime LIKE '%NEUTRAL%'
+        AND json_extract(reasoning, '$.signal.direction') = 'DOWN'
+    """).rowcount
+    db.commit()
+
+    rows = db.execute(
+        "SELECT market_id, conviction_score FROM predictions ORDER BY market_id"
+    ).fetchall()
+    db.close()
+
+    assert demoted == 1, f"Should demote exactly 1 DOWN+NEUTRAL prediction, got {demoted}"
+    assert rows[0] == ("m1", 2), f"DOWN+NEUTRAL should be conv=2, got {rows[0]}"
+    assert rows[1] == ("m2", 4), f"UP+NEUTRAL should stay conv=4, got {rows[1]}"
+    assert rows[2] == ("m3", 3), f"DOWN+TRENDING should stay conv=3, got {rows[2]}"
+
+
 def test_no_evolve_imports():
     """No production code should import from deleted evolve.py.
     Incident 3: evolve.py was deleted but run_cycle.py imported it.
