@@ -285,6 +285,46 @@
       },
       "closed_at": null,
       "close_reason": null
+    },
+    {
+      "name": "hour_16_dead_gate",
+      "description": "Add hour 16 UTC to dead hour fallback. 40.0% WR on 10 bets, comparable to gated hours 3/21.",
+      "registered_at": "2026-04-03T15:53:12.043232+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < baseline_wr - 2",
+      "baseline": {
+        "bets": 306,
+        "wins": 214,
+        "wr": 69.9,
+        "pnl": 2789.76,
+        "wagered": 7650.0
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "highvol_neutral_up_monitor",
+      "description": "Monitor HIGH_VOL/NEUTRAL UP segment \u2014 59.3% WR on 27 bets, below pipeline avg. Tracking only.",
+      "registered_at": "2026-04-03T15:53:12.104630+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < 55",
+      "baseline": {
+        "bets": 306,
+        "wins": 214,
+        "wr": 69.9,
+        "pnl": 2789.76,
+        "wagered": 7650.0
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
     }
   ]
 }
