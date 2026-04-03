@@ -131,4 +131,4 @@ def rsi_gate(direction, conviction, btc_closes):
 
 ## Decision
 
-Add `rsi_conviction_gate` to the decision alerts tracker in `docs/decisions.md`. Start shadow logging immediately. Review at 50 bets.
+Add `rsi_conviction_gate` to the decision alerts tracker in `docs/core/decisions.md`. Start shadow logging immediately. Review at 50 bets.

@@ -299,4 +299,4 @@ Stochastic becomes higher priority once the pipeline is executing real orders in
 
 ## Decision
 
-Add `stochastic_entry_timing` to the decision alerts tracker in `docs/decisions.md`. Begin dual logging (immediate vs. timed price) when Part 6 paper trading starts. Not needed during the current shadow/simulation phase.
+Add `stochastic_entry_timing` to the decision alerts tracker in `docs/core/decisions.md`. Begin dual logging (immediate vs. timed price) when Part 6 paper trading starts. Not needed during the current shadow/simulation phase.

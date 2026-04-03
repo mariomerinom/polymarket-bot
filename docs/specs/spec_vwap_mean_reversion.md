@@ -241,4 +241,4 @@ The bar is deliberately lower than the momentum model (66%+ WR). This is a new s
 
 ## Decision
 
-Add `vwap_mean_reversion` to the decision alerts tracker in `docs/decisions.md`. Start shadow logging. This is the only spec of the three that generates **new** signals (RSI and OBV modify existing ones), so it should be validated independently before combining with the other filters.
+Add `vwap_mean_reversion` to the decision alerts tracker in `docs/core/decisions.md`. Start shadow logging. This is the only spec of the three that generates **new** signals (RSI and OBV modify existing ones), so it should be validated independently before combining with the other filters.

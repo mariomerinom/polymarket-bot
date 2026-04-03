@@ -125,4 +125,5 @@ tests/
   test_btc_data.py     # candle parsing, summary stats
   test_15m.py          # 15-minute pipeline specifics
   test_regression.py   # one test per past incident
+  test_shadow_conviction.py  # 23 tests: shadow scorer logic, tier mapping, production isolation
 ```

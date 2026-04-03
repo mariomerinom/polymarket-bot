@@ -625,6 +625,26 @@ def execute_trades(db, cycle):
         row
     )) for row in cursor.fetchall()]
 
+    # Shadow indicators — run every cycle regardless of qualifying predictions.
+    # This ensures data collection during MEAN_REVERTING and other low-conviction regimes.
+    try:
+        from shadow_indicators import shadow_log_indicators
+        shadow = shadow_log_indicators(db, cycle)
+        if shadow:
+            print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
+    except Exception as e:
+        print(f"    [SHADOW] skipped: {e}")
+
+    # Shadow conviction scorer — continuous strength signal
+    try:
+        from shadow_conviction_scorer import shadow_log_cycle
+        from btc_data import fetch_btc_candles
+        btc = fetch_btc_candles(limit=20)
+        if btc and btc.get("candles"):
+            shadow_log_cycle(db, cycle, btc["candles"], "btc_5m")
+    except Exception as e:
+        print(f"    [shadow] skipped: {e}")
+
     if not predictions:
         return []
 
@@ -691,25 +711,6 @@ def execute_trades(db, cycle):
     pnl_updated = compute_order_pnl(db)
     if pnl_updated:
         print(f"    [{mode_label}] P&L computed for {pnl_updated} order(s)")
-
-    # Shadow indicators — compute and log (never blocks trades)
-    try:
-        from shadow_indicators import shadow_log_indicators
-        shadow = shadow_log_indicators(db, cycle)
-        if shadow:
-            print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
-    except Exception as e:
-        print(f"    [SHADOW] skipped: {e}")
-
-    # Shadow conviction scorer — continuous strength signal for BTC 5m
-    try:
-        from shadow_conviction_scorer import shadow_log_cycle
-        from btc_data import fetch_btc_candles
-        btc = fetch_btc_candles(limit=20)
-        if btc and btc.get("candles"):
-            shadow_log_cycle(db, cycle, btc["candles"], "btc_5m")
-    except Exception as e:
-        print(f"    [shadow] skipped: {e}")
 
     return orders
 

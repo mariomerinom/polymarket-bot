@@ -178,4 +178,4 @@ baseline: current 0.50-0.70 bucket WR (~67% aggregate)
 
 ## Decision
 
-Add `obv_bucket_filter` to the decision alerts tracker in `docs/decisions.md`. Start shadow logging alongside RSI gate. Review at 50 bets in the 0.50–0.70 bucket.
+Add `obv_bucket_filter` to the decision alerts tracker in `docs/core/decisions.md`. Start shadow logging alongside RSI gate. Review at 50 bets in the 0.50–0.70 bucket.

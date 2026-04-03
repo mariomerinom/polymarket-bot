@@ -52,7 +52,7 @@ Three iterations of Claude-powered prediction agents.
 **Key finding:** Conviction-based bet sizing — not the agents — drove profitability.
 The LLM agents are expensive ($1.50/day) and add marginal signal over simple rules.
 
-See `docs/BACKTEST_FINDINGS.md` for full analysis.
+See `docs/research/BACKTEST_FINDINGS.md` for full analysis.
 
 ---
 
@@ -159,7 +159,7 @@ Move from GitHub Actions to a dedicated VPS in a non-US region. GitHub Actions r
 - Parallel pipeline: `predict_eth.py`, `ci_run_eth.py`, `predict-eth-5m.yml`
 - Separate DB (`predictions_eth.db`), separate dashboard (`docs/eth.html`)
 - All predictions at conviction 2 (paper). Collecting 50+ resolved before Phase 2.
-- Phase 2 (ETH adaptation layer): regime recalibration, cross-asset features, ETH-specific conviction. See `docs/daily/eth_pipeline_acceptance_criteria.md`.
+- Phase 2 (ETH adaptation layer): regime recalibration, cross-asset features, ETH-specific conviction. See `docs/pipelines/eth_pipeline_acceptance_criteria.md`.
 
 ### BTC 15m (ACTIVE — paper trading)
 - Momentum signal with relaxed params (`min_streak=2`, `loose_mode=True`)
@@ -169,7 +169,7 @@ Move from GitHub Actions to a dedicated VPS in a non-US region. GitHub Actions r
 - Phase 2 showed contrarian_exhaust_s3 at 53.8% on 186 bets — weaker signal, smaller sample.
 - Not prioritized until ETH paper trading validates.
 
-See [docs/multi-asset-plan.md](multi-asset-plan.md) for the original expansion plan.
+See [docs/plans/multi-asset-plan.md](../plans/multi-asset-plan.md) for the original expansion plan.
 
 ### Kalshi BTC (ACTIVE — Phase 0)
 - Phase 0 infrastructure completed 2026-04-02. Pipeline running in mock mode (no API credentials yet).
@@ -177,4 +177,4 @@ See [docs/multi-asset-plan.md](multi-asset-plan.md) for the original expansion p
 - Collecting predictions toward 200+ resolved gate.
 - Gate: WR > 55% → Phase 0.5 (paper trading with fill simulation). WR < 50% → signal is venue-specific, skip to Phase 1 (paired data).
 
-See [docs/KALSHI_INTEGRATION_PLAN.md](KALSHI_INTEGRATION_PLAN.md) for full phased roadmap (Phase 0–5) and risk framework.
+See [docs/plans/KALSHI_INTEGRATION_PLAN.md](../plans/KALSHI_INTEGRATION_PLAN.md) for full phased roadmap (Phase 0–5) and risk framework.

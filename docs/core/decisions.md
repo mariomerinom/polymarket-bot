@@ -4,7 +4,7 @@ Pending optimization decisions with automated triggers. The daily report checks 
 
 Status flow: `MONITORING` → `READY` → `ACTIONED` or `DEFERRED`
 
-Source: [Pipeline Recommendations Mar 25–27](daily/pipeline_recommendations_mar25-27.md)
+Source: [Pipeline Recommendations Mar 25–27](../analysis/pipeline_recommendations_mar25-27.md)
 
 ---
 

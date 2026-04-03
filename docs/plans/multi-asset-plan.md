@@ -65,7 +65,7 @@ Coinbase (ETH-USD) ──> eth_data.py ──> predict_eth.py ──> prediction
 
 ## ETH Phased Rollout
 
-See `docs/daily/eth_pipeline_acceptance_criteria.md` for full details.
+See `docs/pipelines/eth_pipeline_acceptance_criteria.md` for full details.
 
 ### Phase 1 — Momentum Signal Validation (ACTIVE)
 - Momentum signal deployed 2026-04-01

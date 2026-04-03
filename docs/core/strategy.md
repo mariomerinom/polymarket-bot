@@ -38,7 +38,7 @@ Production uses flat $25 per bet. Paper trading retains tiered sizing for data c
 - **DOWN + NEUTRAL filter**: DOWN bets in NEUTRAL regime demoted to conv=2 (52% WR = no edge)
 
 ### Removed Filters
-- **Exhaustion gate**: Removed 2026-03-31. Was filtering 85% WR predictions. See `docs/daily/analysis_exhaustion_gate.md`.
+- **Exhaustion gate**: Removed 2026-03-31. Was filtering 85% WR predictions. See `docs/analysis/analysis_exhaustion_gate.md`.
 - **Cooldown flip gate**: Removed 2026-03-31. Was blocking 73% WR predictions. Regime gate handles chop.
 
 ### Performance
@@ -101,7 +101,22 @@ Same momentum signal as BTC production, running against Kalshi BTC 15-min/1h mar
 - **Entry point**: `src/ci_run_kalshi.py` → `data/predictions_kalshi.db` → `docs/kalshi.html`
 - **Phase 0 gate**: 200+ resolved predictions. WR > 55% → Phase 0.5. WR < 50% → signal is venue-specific.
 
-See [docs/KALSHI_INTEGRATION_PLAN.md](KALSHI_INTEGRATION_PLAN.md) for cross-market arbitrage strategy (Phase 1+).
+See [docs/plans/KALSHI_INTEGRATION_PLAN.md](../plans/KALSHI_INTEGRATION_PLAN.md) for cross-market arbitrage strategy (Phase 1+).
+
+---
+
+## Shadow Conviction Scorer (All Pipelines)
+
+Runs alongside all 4 pipelines. Computes a continuous strength signal (0.0–1.0) from two components:
+
+- **Length**: `min(log(streak) / log(baseline), 1.0)` — longer streaks score higher, log curve prevents over-weighting
+- **Magnitude**: `min(|net_return| / (realized_vol × multiplier), 1.0)` — bigger moves relative to volatility score higher
+
+`strength = length × magnitude` → mapped to estimate (0.50 ± max_edge × strength) → conviction tier (2/3/4/5).
+
+Always on, zero production impact. Shadow scores stored in reasoning JSON as `shadow_generic_scorer`. Daily report surfaces tier-by-tier WR comparison and divergence analysis (when shadow ≠ production, who was right?).
+
+Phase A analysis triggers after BTC live gate passes (Decision #17, currently 33/50 bets).
 
 ---
 
@@ -130,4 +145,4 @@ Every optimization follows these principles (enforced by `src/optimization_track
 
 ## Decision Tracker
 
-Pending decisions with automated triggers live in `docs/decisions.md`. The daily report checks these conditions and alerts when action is needed.
+Pending decisions with automated triggers live in `docs/core/decisions.md`. The daily report checks these conditions and alerts when action is needed.

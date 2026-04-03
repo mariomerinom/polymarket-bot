@@ -5,7 +5,7 @@
       "description": "DOWN + NEUTRAL regime \u2192 conv=2 (no bet). 52% WR on 25 bets was coin flip.",
       "registered_at": "2026-03-28T22:27:28.501156+00:00",
       "pipeline": "5m",
-      "status": "active",
+      "status": "validated",
       "min_sample": 50,
       "revert_condition": "post_wr < baseline_wr - 2",
       "baseline": {
@@ -15,23 +15,23 @@
         "pnl": 4964.57,
         "wagered": 18525.0
       },
-      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "latest_check": "2026-04-03T11:12:22.017707+00:00",
       "post_stats": {
-        "bets": 77,
-        "wins": 59,
-        "wr": 76.6,
-        "pnl": 1052.83,
-        "wagered": 1925.0
+        "bets": 98,
+        "wins": 75,
+        "wr": 76.5,
+        "pnl": 1344.28,
+        "wagered": 2450.0
       },
-      "closed_at": null,
-      "close_reason": null
+      "closed_at": "2026-04-03T11:22:34.284381+00:00",
+      "close_reason": "+10.2pp WR on 98 bets, sustained above baseline"
     },
     {
       "name": "dead_hour_gate",
       "description": "Skip UTC hours 3 and 21. Combined 40% WR on 20 bets.",
       "registered_at": "2026-03-28T22:27:37.655415+00:00",
       "pipeline": "5m",
-      "status": "active",
+      "status": "validated",
       "min_sample": 50,
       "revert_condition": "post_wr < baseline_wr - 2",
       "baseline": {
@@ -41,16 +41,16 @@
         "pnl": 4964.57,
         "wagered": 18525.0
       },
-      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "latest_check": "2026-04-03T11:12:22.017707+00:00",
       "post_stats": {
-        "bets": 77,
-        "wins": 59,
-        "wr": 76.6,
-        "pnl": 1052.83,
-        "wagered": 1925.0
+        "bets": 98,
+        "wins": 75,
+        "wr": 76.5,
+        "pnl": 1344.28,
+        "wagered": 2450.0
       },
-      "closed_at": null,
-      "close_reason": null
+      "closed_at": "2026-04-03T11:22:34.285639+00:00",
+      "close_reason": "+10.2pp WR on 98 bets, sustained above baseline"
     },
     {
       "name": "15m_loose_mode",
@@ -67,13 +67,13 @@
         "pnl": 33.56,
         "wagered": 1400.0
       },
-      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "latest_check": "2026-04-03T11:22:50.168617+00:00",
       "post_stats": {
-        "bets": 31,
-        "wins": 21,
-        "wr": 67.7,
-        "pnl": 102.16,
-        "wagered": 775.0
+        "bets": 46,
+        "wins": 25,
+        "wr": 54.3,
+        "pnl": -113.59,
+        "wagered": 1150.0
       },
       "closed_at": null,
       "close_reason": null
@@ -83,7 +83,7 @@
       "description": "Fetch both Kraken and Coinbase candles. When both see the same streak (score=2), bump conviction +1 (max 5, ). Addresses NEUTRAL regime by requiring cross-exchange agreement.",
       "registered_at": "2026-03-29T14:29:55.355200+00:00",
       "pipeline": "5m",
-      "status": "active",
+      "status": "validated",
       "min_sample": 50,
       "revert_condition": "post_wr < baseline_wr - 3",
       "baseline": {
@@ -93,16 +93,16 @@
         "pnl": 6074.3,
         "wagered": 20750.0
       },
-      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "latest_check": "2026-04-03T11:12:22.017707+00:00",
       "post_stats": {
-        "bets": 65,
-        "wins": 49,
-        "wr": 75.4,
-        "pnl": 873.2,
-        "wagered": 1625.0
+        "bets": 86,
+        "wins": 65,
+        "wr": 75.6,
+        "pnl": 1164.65,
+        "wagered": 2150.0
       },
-      "closed_at": null,
-      "close_reason": null
+      "closed_at": "2026-04-03T11:22:34.286122+00:00",
+      "close_reason": "+8.2pp WR on 86 bets, sustained above baseline"
     },
     {
       "name": "shadow_rsi_14_gate",
@@ -119,13 +119,13 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "latest_check": "2026-04-03T11:22:50.168617+00:00",
       "post_stats": {
-        "bets": 47,
-        "wins": 37,
-        "wr": 78.7,
-        "pnl": 748.79,
-        "wagered": 1175.0
+        "bets": 68,
+        "wins": 53,
+        "wr": 77.9,
+        "pnl": 1040.23,
+        "wagered": 1700.0
       },
       "closed_at": null,
       "close_reason": null
@@ -145,13 +145,13 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "latest_check": "2026-04-03T11:22:50.168617+00:00",
       "post_stats": {
-        "bets": 47,
-        "wins": 37,
-        "wr": 78.7,
-        "pnl": 748.79,
-        "wagered": 1175.0
+        "bets": 27,
+        "wins": 22,
+        "wr": 81.5,
+        "pnl": 382.74,
+        "wagered": 675.0
       },
       "closed_at": null,
       "close_reason": null
@@ -161,7 +161,7 @@
       "description": "VWAP z-score paper predictions in MEAN_REVERTING regime",
       "registered_at": "2026-03-30T23:25:48.986457+00:00",
       "pipeline": "5m",
-      "status": "active",
+      "status": "reverted",
       "min_sample": 50,
       "revert_condition": "post_wr < 45",
       "baseline": {
@@ -171,16 +171,16 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "latest_check": "2026-04-03T11:12:22.017707+00:00",
       "post_stats": {
-        "bets": 47,
-        "wins": 37,
-        "wr": 78.7,
-        "pnl": 748.79,
-        "wagered": 1175.0
+        "bets": 68,
+        "wins": 53,
+        "wr": 77.9,
+        "pnl": 1040.23,
+        "wagered": 1700.0
       },
-      "closed_at": null,
-      "close_reason": null
+      "closed_at": "2026-04-03T11:22:34.286559+00:00",
+      "close_reason": "Contaminated: tracked aggregate conv>=3 stats (77.9%), not VWAP-specific. Actual VWAP meanrev: 0 BTC predictions, 40% WR on 20 ETH predictions. See Decision #23 postmortem."
     },
     {
       "name": "eth_conv3_medium_confidence",
@@ -197,13 +197,13 @@
         "pnl": 2269.5,
         "wagered": 6875.0
       },
-      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "latest_check": "2026-04-03T11:22:50.168617+00:00",
       "post_stats": {
-        "bets": 5,
-        "wins": 4,
-        "wr": 80.0,
-        "pnl": 95.02,
-        "wagered": 125.0
+        "bets": 26,
+        "wins": 20,
+        "wr": 76.9,
+        "pnl": 386.47,
+        "wagered": 650.0
       },
       "closed_at": null,
       "close_reason": null
@@ -223,13 +223,13 @@
         "pnl": 120.35,
         "wagered": 1075.0
       },
-      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "latest_check": "2026-04-03T11:22:50.168617+00:00",
       "post_stats": {
-        "bets": 0,
-        "wins": 0,
-        "wr": 0,
-        "pnl": 0,
-        "wagered": 0
+        "bets": 15,
+        "wins": 4,
+        "wr": 26.7,
+        "pnl": -215.75,
+        "wagered": 375.0
       },
       "closed_at": null,
       "close_reason": null
@@ -249,13 +249,13 @@
         "pnl": 2364.53,
         "wagered": 7000.0
       },
-      "latest_check": "2026-04-02T16:58:06.518016+00:00",
+      "latest_check": "2026-04-03T11:22:50.168617+00:00",
       "post_stats": {
-        "bets": 0,
-        "wins": 0,
-        "wr": 0,
-        "pnl": 0,
-        "wagered": 0
+        "bets": 20,
+        "wins": 15,
+        "wr": 75.0,
+        "pnl": 263.81,
+        "wagered": 500.0
       },
       "closed_at": null,
       "close_reason": null
@@ -275,8 +275,14 @@
         "pnl": 2364.53,
         "wagered": 7000.0
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-04-03T11:22:50.168617+00:00",
+      "post_stats": {
+        "bets": 19,
+        "wins": 14,
+        "wr": 73.7,
+        "pnl": 235.05,
+        "wagered": 475.0
+      },
       "closed_at": null,
       "close_reason": null
     }

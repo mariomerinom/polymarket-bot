@@ -5,7 +5,7 @@
 **Problem:** The ETH pipeline launched on Mar 30 using what appears to be the BTC model applied to ETH markets. Results: 105 predictions, 0 bets, conv=0 at 60.2% WR, conv=2 at 47.1% WR (below coin flip). The model doesn't generalize — ETH has different volatility structure, correlation dynamics, and market microstructure than BTC. Additionally, ETH Polymarket liquidity is 4x worse than BTC (3.98% avg spread vs 1.50%, $149 max bet vs $910).
 **Goal:** Train a dedicated ETH model that accounts for ETH-specific dynamics and the tighter liquidity constraints of ETH prediction markets.
 
-> **2026-04-01 UPDATE:** The ETH pipeline has been flipped from contrarian to **momentum** (ride streaks). The original contrarian signal lost at 33.3% WR on 54 resolved predictions; momentum counterfactual on the same bets: 66.7%. Same V3→V4 pattern as BTC. The Option B adaptation layer (regime recalibration, cross-asset features, ETH conviction scoring) remains the plan for Phase 2, but the signal direction is now momentum, not contrarian. See `docs/daily/eth_pipeline_acceptance_criteria.md` for the current phased rollout plan.
+> **2026-04-01 UPDATE:** The ETH pipeline has been flipped from contrarian to **momentum** (ride streaks). The original contrarian signal lost at 33.3% WR on 54 resolved predictions; momentum counterfactual on the same bets: 66.7%. Same V3→V4 pattern as BTC. The Option B adaptation layer (regime recalibration, cross-asset features, ETH conviction scoring) remains the plan for Phase 2, but the signal direction is now momentum, not contrarian. See `docs/pipelines/eth_pipeline_acceptance_criteria.md` for the current phased rollout plan.
 
 ---
 

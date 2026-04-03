@@ -51,8 +51,18 @@ def save_optimizations(data):
     OPTIMIZATIONS_PATH.write_text(json.dumps(data, indent=2) + "\n")
 
 
-def compute_stats(db_path, since=None):
-    """Compute aggregate stats from the DB, optionally filtered to predictions after a date."""
+def compute_stats(db_path, since=None, shadow_key=None, agent_filter=None):
+    """Compute aggregate stats from the DB, optionally filtered to predictions after a date.
+
+    Args:
+        db_path: Path to the predictions database.
+        since: ISO timestamp — only count predictions after this date.
+        shadow_key: If set, only count resolved predictions whose reasoning JSON
+                    contains this key (e.g. "shadow_rsi_14"). Drops the conv>=3
+                    filter since shadow indicators apply to all predictions.
+        agent_filter: If set, only count predictions from this agent name
+                      (e.g. "vwap_meanrev"). Drops the conv>=3 filter.
+    """
     if not Path(db_path).exists():
         return None
 
@@ -60,23 +70,45 @@ def compute_stats(db_path, since=None):
     db.row_factory = sqlite3.Row
 
     date_filter = ""
-    params = ()
+    params = []
     if since:
         date_filter = "AND p.predicted_at >= ?"
-        params = (since,)
+        params.append(since)
+
+    # Shadow/agent queries include all conviction levels
+    conv_filter = "AND p.conviction_score >= 3"
+    agent_clause = ""
+    if shadow_key or agent_filter:
+        conv_filter = ""
+    if agent_filter:
+        agent_clause = "AND p.agent = ?"
+        params.append(agent_filter)
 
     try:
         rows = db.execute(f"""
-            SELECT p.estimate, p.conviction_score, p.regime,
+            SELECT p.estimate, p.conviction_score, p.regime, p.reasoning,
                    m.outcome, m.price_yes
             FROM predictions p
             JOIN markets m ON p.market_id = m.id
-            WHERE m.resolved = 1 AND p.conviction_score >= 3
+            WHERE m.resolved = 1 {conv_filter}
+            {agent_clause}
             {date_filter}
         """, params).fetchall()
     except sqlite3.OperationalError:
         db.close()
         return None
+
+    # Post-filter for shadow_key presence in reasoning JSON
+    if shadow_key:
+        filtered = []
+        for r in rows:
+            try:
+                reasoning = json.loads(r["reasoning"]) if r["reasoning"] else {}
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if shadow_key in reasoning:
+                filtered.append(r)
+        rows = filtered
 
     if not rows:
         db.close()
@@ -115,6 +147,14 @@ def compute_stats(db_path, since=None):
         "pnl": round(total_pnl, 2),
         "wagered": round(total_wagered, 2),
     }
+
+
+# Map shadow optimization names to their query filters
+SHADOW_FILTERS = {
+    "shadow_rsi_14_gate": {"shadow_key": "shadow_rsi_14"},
+    "shadow_obv_bucket_filter": {"shadow_key": "shadow_obv_slope"},
+    "shadow_vwap_meanrev": {"agent_filter": "vwap_meanrev"},
+}
 
 
 def register(name, description, revert_condition, min_sample=50, pipeline="5m"):
@@ -173,7 +213,8 @@ def check_all():
             continue
 
         db_path = DB_5M if opt["pipeline"] == "5m" else DB_15M
-        post = compute_stats(db_path, since=opt["registered_at"])
+        shadow = SHADOW_FILTERS.get(opt["name"], {})
+        post = compute_stats(db_path, since=opt["registered_at"], **shadow)
 
         if post is None:
             continue
