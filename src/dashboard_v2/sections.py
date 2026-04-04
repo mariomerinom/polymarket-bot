@@ -43,20 +43,23 @@ def header_section(pipeline_name, mode, summary, integrity=None):
     status_color = C.PROFIT if status == "Active" else (C.LOSS if status == "Stale" else C.NEUTRAL)
 
     # Integrity indicator
-    integrity_html = ""
+    integrity_dot = ""
+    integrity_detail = ""
     if integrity:
         int_status = integrity.get("status", "green")
         warnings = integrity.get("warnings_24h", 0)
         failures = integrity.get("failures_24h", 0)
         issues = integrity.get("recent_issues", [])
-        title_text = "; ".join(issues[:5]) if issues else ""
-        title_attr = f' title="{title_text}"' if title_text else ""
         if int_status == "red":
-            integrity_html = f'&nbsp;&middot;&nbsp; <span style="color:#ef4444"{title_attr}>&#9679; {failures} failure(s)</span>'
+            integrity_dot = f'&nbsp;&middot;&nbsp; <span style="color:#ef4444">&#9679; {failures} failure(s)</span>'
         elif int_status == "yellow":
-            integrity_html = f'&nbsp;&middot;&nbsp; <span style="color:#eab308"{title_attr}>&#9679; {warnings} warning(s)</span>'
+            integrity_dot = f'&nbsp;&middot;&nbsp; <span style="color:#eab308">&#9679; {warnings} warning(s)</span>'
         else:
-            integrity_html = '&nbsp;&middot;&nbsp; <span style="color:#22c55e">&#9679; Integrity OK</span>'
+            integrity_dot = '&nbsp;&middot;&nbsp; <span style="color:#22c55e">&#9679; Integrity OK</span>'
+        # Show issues as visible list if any
+        if issues:
+            items = "".join(f'<li>{_esc(i)}</li>' for i in issues[:8])
+            integrity_detail = f'<ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:{C.TEXT_DIM};list-style:disc">{items}</ul>'
 
     return f"""<div class="header">
     <h1>{pipeline_name} <span class="badge {badge_cls}">{badge_label}</span></h1>
@@ -64,9 +67,14 @@ def header_section(pipeline_name, mode, summary, integrity=None):
         <span style="color:{status_color}">&#9679; {status}</span>
         &nbsp;&middot;&nbsp; Last cycle: {summary["last_prediction"]}
         &nbsp;&middot;&nbsp; {summary["resolved_markets"]}/{summary["total_markets"]} resolved
-        &nbsp;&middot;&nbsp; Health: {summary["health_pct"]}%{integrity_html}
-    </div>
+        &nbsp;&middot;&nbsp; Health: {summary["health_pct"]}%{integrity_dot}
+    </div>{integrity_detail}
 </div>"""
+
+
+def _esc(text):
+    """Escape HTML special chars."""
+    return (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +297,57 @@ def trade_execution_section(exec_data):
     <div class="section-title">Trade Execution</div>
     <div class="metrics">{metrics_html}</div>
     <div class="provenance" style="margin-top:8px">Last order: {last_order} UTC</div>
+</div>"""
+
+
+# ---------------------------------------------------------------------------
+# Recent bets
+# ---------------------------------------------------------------------------
+
+_RESULT_COLORS = {
+    "WIN": C.PROFIT,
+    "LOSS": C.LOSS,
+    "FAILED": C.LOSS,
+    "PENDING": C.CHART_LINE,
+    "SETTLED": C.NEUTRAL,
+}
+
+
+def _result_color(result):
+    for key, color in _RESULT_COLORS.items():
+        if key in result:
+            return color
+    return C.NEUTRAL
+
+
+def recent_bets_section(bets):
+    if not bets:
+        return ""
+
+    rows = ""
+    for b in bets:
+        rc = _result_color(b["result"])
+        mode_badge = f'<span style="color:{C.LIVE["accent"]};font-size:10px">LIVE</span>' if b["mode"] == "live" else f'<span style="color:{C.PAPER["accent"]};font-size:10px">PAPER</span>'
+        price_str = f'@{b["filled_price"]:.2f}' if b["filled_price"] else (f'lim {b["limit_price"]:.2f}' if b["limit_price"] else "")
+        detail = f' <span style="color:{C.TEXT_DIM}">{_esc(b["result_detail"])}</span>' if b["result_detail"] else ""
+
+        rows += f"""<tr>
+    <td style="white-space:nowrap">{_esc(b["time"])}</td>
+    <td>{mode_badge}</td>
+    <td>{b["direction"]}</td>
+    <td>${b["size"]:.0f}</td>
+    <td style="color:{C.TEXT_MUTED};font-size:12px">{price_str}</td>
+    <td style="color:{rc};font-weight:600">{b["result"]}{detail}</td>
+</tr>"""
+
+    return f"""<div class="section">
+    <div class="section-title">Recent Bets</div>
+    <table class="conv-table">
+        <thead><tr>
+            <th>Time</th><th>Mode</th><th>Dir</th><th>Size</th><th>Price</th><th>Result</th>
+        </tr></thead>
+        <tbody>{rows}</tbody>
+    </table>
 </div>"""
 
 

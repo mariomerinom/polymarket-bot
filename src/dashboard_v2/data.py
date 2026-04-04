@@ -177,6 +177,98 @@ def get_trade_execution(db):
 
 
 # ---------------------------------------------------------------------------
+# Recent bets (last N orders with resolution status)
+# ---------------------------------------------------------------------------
+
+def get_recent_bets(db, limit=10):
+    """Last N orders with market resolution data. Works for both paper and live."""
+    try:
+        tbl = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='orders'"
+        ).fetchone()
+        if not tbl:
+            return None
+
+        rows = db.execute(f"""
+            SELECT o.direction, o.size, o.price_limit, o.price_filled,
+                   o.status, o.mode, o.placed_at, o.pnl, o.settled_at,
+                   o.reason,
+                   m.question, m.outcome, m.resolved
+            FROM orders o
+            LEFT JOIN markets m ON o.market_id = m.id
+            ORDER BY o.placed_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+        bets = []
+        for r in rows:
+            question = r["question"] or ""
+            # Extract short time label from question like "April 4, 4:40PM-4:45PM ET"
+            import re
+            time_match = re.search(r'(\w+ \d+, \d+:\d+(?:AM|PM)-\d+:\d+(?:AM|PM) ET)', question)
+            time_label = time_match.group(1) if time_match else (r["placed_at"] or "")[:16].replace("T", " ")
+
+            # Determine result
+            status = r["status"]
+            outcome = r["outcome"]
+            resolved = r["resolved"]
+            direction = r["direction"]
+
+            if status == "failed":
+                result = "FAILED"
+                result_detail = (r["reason"] or "")[:40] if r["reason"] else "API error"
+            elif status in ("submitted", "pending"):
+                if resolved and outcome is not None:
+                    # Order was submitted but never settled — likely expired
+                    would_win = (direction == "UP" and outcome == 1) or (direction == "DOWN" and outcome == 0)
+                    result = "EXPIRED (would have won)" if would_win else "EXPIRED (would have lost)"
+                else:
+                    result = "PENDING"
+                result_detail = ""
+            elif status == "settled":
+                if r["pnl"] is not None and r["pnl"] > 0:
+                    result = "WIN"
+                elif r["pnl"] is not None and r["pnl"] < 0:
+                    result = "LOSS"
+                else:
+                    result = "SETTLED"
+                result_detail = f"${r['pnl']:+.2f}" if r["pnl"] is not None else ""
+            elif status == "filled":
+                if resolved and outcome is not None:
+                    would_win = (direction == "UP" and outcome == 1) or (direction == "DOWN" and outcome == 0)
+                    result = "WIN (unsettled)" if would_win else "LOSS (unsettled)"
+                else:
+                    result = "FILLED (open)"
+                result_detail = ""
+            elif status == "paper":
+                if resolved and outcome is not None:
+                    would_win = (direction == "UP" and outcome == 1) or (direction == "DOWN" and outcome == 0)
+                    result = "WIN" if would_win else "LOSS"
+                else:
+                    result = "OPEN"
+                result_detail = f"${r['pnl']:+.2f}" if r["pnl"] is not None else ""
+            else:
+                result = status.upper()
+                result_detail = ""
+
+            bets.append({
+                "time": time_label,
+                "direction": direction,
+                "size": r["size"],
+                "mode": r["mode"],
+                "status": status,
+                "result": result,
+                "result_detail": result_detail,
+                "filled_price": r["price_filled"],
+                "limit_price": r["price_limit"],
+            })
+
+        return bets
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Live P&L (Polymarket Data API — source of truth)
 # ---------------------------------------------------------------------------
 

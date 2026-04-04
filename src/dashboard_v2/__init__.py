@@ -3,8 +3,8 @@
 Drop-in replacement for dashboard.build_html().
 """
 
-from .data import get_db, get_pipeline_summary, detect_mode, get_live_pnl, get_signal_pnl, get_conviction_breakdown, get_breaker_status, get_rolling_accuracy, get_trade_execution, get_integrity_status
-from .sections import header_section, live_pnl_section, signal_pnl_section, ev_gauge_section, conviction_section, rolling_accuracy_section, breaker_section, trade_execution_section
+from .data import get_db, get_pipeline_summary, detect_mode, get_live_pnl, get_signal_pnl, get_conviction_breakdown, get_breaker_status, get_rolling_accuracy, get_trade_execution, get_integrity_status, get_recent_bets
+from .sections import header_section, live_pnl_section, signal_pnl_section, ev_gauge_section, conviction_section, rolling_accuracy_section, breaker_section, trade_execution_section, recent_bets_section
 from .layout import page_shell
 
 DEFAULT_NAV = [
@@ -68,6 +68,9 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
         # Integrity
         integrity = get_integrity_status(db)
 
+        # Recent bets
+        recent_bets = get_recent_bets(db)
+
         # Circuit breakers
         breakers = get_breaker_status(db, asset=asset, subtitle=subtitle)
     finally:
@@ -78,6 +81,7 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
         header_section(pipeline_name, mode, summary, integrity=integrity),
         live_pnl_section(live_data),
         trade_execution_section(exec_data),
+        recent_bets_section(recent_bets),
         signal_pnl_section(signal_data, mode),
         ev_gauge_section(signal_data),
         conviction_section(conv_breakdown),
