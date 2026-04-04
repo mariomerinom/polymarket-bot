@@ -1,16 +1,15 @@
 from config import DEFAULT_CANDLE_LIMIT
 from config import API_TIMEOUT_BYBIT
 from config import SHADOW_CANDLE_LIMIT
+from config import STREAK_AGREEMENT_MIN
 """
 bybit_data.py — BTC candle data for Bybit perpetual futures pipeline.
 
 Primary: Bybit /v5/market/kline (public, no auth).
-Fallback: btc_data.fetch_btc_candles() (Kraken/Coinbase).
+Secondary: btc_data.fetch_btc_candles() (Kraken/Coinbase spot).
 
-BTC is BTC regardless of venue — the momentum signal was trained on
-Kraken/Coinbase candles and must see the same data distribution.
-Bybit candles are offered as primary to reduce latency and capture
-any venue-specific microstructure differences.
+Always fetches both sources for perps-vs-spot consensus scoring.
+Bybit perps candles are primary; spot provides cross-venue confirmation.
 """
 
 import os
@@ -30,21 +29,30 @@ def fetch_bybit_candles(symbol="BTCUSDT", interval="5", limit=DEFAULT_CANDLE_LIM
     """
     Fetch BTC candles for the Bybit pipeline.
 
-    Primary: Bybit kline API (public, no auth).
-    Fallback: btc_data.fetch_btc_candles() (Kraken/Coinbase).
-
+    Always fetches both Bybit perps and spot (Kraken/Coinbase) for
+    cross-venue consensus. Bybit is primary; spot is secondary.
     Returns the same dict format as btc_data.fetch_btc_candles().
     """
+    bybit_data = None
     try:
-        data = _fetch_bybit_kline(symbol, interval, limit)
-        if data:
-            return data
+        bybit_data = _fetch_bybit_kline(symbol, interval, limit)
     except Exception as e:
         print(f"  Bybit kline API failed ({e})")
 
-    # Fallback to Kraken/Coinbase
+    # Always fetch spot for consensus (Kraken→Coinbase failover built in)
     interval_str = f"{interval}m" if not interval.endswith("m") else interval
-    return fetch_btc_candles(interval=interval_str, limit=limit)
+    spot_data = None
+    try:
+        spot_data = fetch_btc_candles(interval=interval_str, limit=limit)
+    except Exception as e:
+        print(f"  Spot data fetch failed ({e})")
+
+    primary = bybit_data or spot_data
+    if primary is None:
+        return None
+
+    primary["consensus"] = _compute_perp_spot_consensus(bybit_data, spot_data)
+    return primary
 
 
 def _fetch_bybit_kline(symbol, interval, limit):
@@ -102,6 +110,75 @@ def _fetch_bybit_kline(symbol, interval, limit):
     # Delegate to btc_data's _compute_summary for consistent output format
     from btc_data import _compute_summary
     return _compute_summary(candles)
+
+
+def _compute_perp_spot_consensus(bybit_data, spot_data):
+    """
+    Compare Bybit perps and spot (Kraken/Coinbase) candle data.
+
+    Returns dict with consensus score and perps premium/discount.
+    Same scoring as btc_data._compute_consensus():
+      2 = both agree direction + both streak >= STREAK_AGREEMENT_MIN
+      1 = single source or direction agrees but streaks differ
+     -1 = directions disagree
+      0 = no data
+    """
+    result = {
+        "sources": 0,
+        "streak_agree": None,
+        "direction_agree": None,
+        "streak_bybit": None,
+        "streak_spot": None,
+        "score": 0,
+        "perps_premium_pct": None,
+    }
+
+    if bybit_data:
+        result["sources"] += 1
+        result["streak_bybit"] = {
+            "direction": bybit_data["consecutive_dir_label"],
+            "length": bybit_data["consecutive_direction"],
+        }
+    if spot_data:
+        result["sources"] += 1
+        result["streak_spot"] = {
+            "direction": spot_data["consecutive_dir_label"],
+            "length": spot_data["consecutive_direction"],
+        }
+
+    if result["sources"] < 2:
+        result["score"] = 1 if result["sources"] == 1 else 0
+        return result
+
+    # Both available — compare
+    b_dir = bybit_data["consecutive_dir_label"]
+    s_dir = spot_data["consecutive_dir_label"]
+    b_streak = bybit_data["consecutive_direction"]
+    s_streak = spot_data["consecutive_direction"]
+
+    result["direction_agree"] = b_dir == s_dir
+    result["streak_agree"] = (
+        b_dir == s_dir
+        and b_streak >= STREAK_AGREEMENT_MIN
+        and s_streak >= STREAK_AGREEMENT_MIN
+    )
+
+    if result["streak_agree"]:
+        result["score"] = 2
+    elif result["direction_agree"]:
+        result["score"] = 1
+    else:
+        result["score"] = -1
+
+    # Perps premium/discount (informational — log only, no action yet)
+    bybit_close = bybit_data["current_price"]
+    spot_close = spot_data["current_price"]
+    if spot_close > 0:
+        result["perps_premium_pct"] = round(
+            (bybit_close - spot_close) / spot_close * 100, 4
+        )
+
+    return result
 
 
 def fetch_bybit_mark_price(symbol="BTCUSDT"):

@@ -469,6 +469,121 @@ class TestTradingSummary:
 # Frozen files check
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ═════════════════════════════════════════════════════════════════════���════════
+# Leg 4: Perps-vs-Spot Consensus Tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _make_summary(direction, streak, price=84000.0):
+    """Helper: create a minimal summary dict for consensus testing."""
+    return {
+        "consecutive_dir_label": direction,
+        "consecutive_direction": streak,
+        "current_price": price,
+    }
+
+
+class TestBybitConsensus:
+    def test_perp_spot_consensus_both_agree(self):
+        from bybit_data import _compute_perp_spot_consensus
+        bybit = _make_summary("UP", 3, 84010.0)
+        spot = _make_summary("UP", 4, 84000.0)
+        result = _compute_perp_spot_consensus(bybit, spot)
+        assert result["score"] == 2
+        assert result["streak_agree"] is True
+        assert result["direction_agree"] is True
+        assert result["sources"] == 2
+
+    def test_perp_spot_consensus_direction_only(self):
+        from bybit_data import _compute_perp_spot_consensus
+        bybit = _make_summary("UP", 3, 84010.0)
+        spot = _make_summary("UP", 1, 84000.0)  # streak < 2
+        result = _compute_perp_spot_consensus(bybit, spot)
+        assert result["score"] == 1
+        assert result["streak_agree"] is False
+        assert result["direction_agree"] is True
+
+    def test_perp_spot_consensus_disagree(self):
+        from bybit_data import _compute_perp_spot_consensus
+        bybit = _make_summary("UP", 3, 84010.0)
+        spot = _make_summary("DOWN", 3, 84000.0)
+        result = _compute_perp_spot_consensus(bybit, spot)
+        assert result["score"] == -1
+        assert result["direction_agree"] is False
+
+    def test_perp_spot_consensus_single_source(self):
+        from bybit_data import _compute_perp_spot_consensus
+        bybit = _make_summary("UP", 3)
+        result = _compute_perp_spot_consensus(bybit, None)
+        assert result["score"] == 1
+        assert result["sources"] == 1
+        assert result["streak_bybit"] is not None
+        assert result["streak_spot"] is None
+
+    def test_perp_spot_consensus_no_data(self):
+        from bybit_data import _compute_perp_spot_consensus
+        result = _compute_perp_spot_consensus(None, None)
+        assert result["score"] == 0
+        assert result["sources"] == 0
+
+    def test_perp_spot_consensus_premium(self):
+        from bybit_data import _compute_perp_spot_consensus
+        bybit = _make_summary("UP", 3, 84084.0)  # $84 premium on $84000
+        spot = _make_summary("UP", 3, 84000.0)
+        result = _compute_perp_spot_consensus(bybit, spot)
+        assert result["perps_premium_pct"] is not None
+        assert abs(result["perps_premium_pct"] - 0.1) < 0.01  # ~0.1%
+
+    def test_consensus_conviction_boost(self, bybit_db):
+        from ci_run_bybit import store_prediction_bybit
+        signal = {"estimate": 0.60, "should_trade": True, "confidence": "medium",
+                  "direction": "UP", "streak": 3, "reason": "ride_streak_UP"}
+        regime = {"label": "MEDIUM_VOL / TRENDING", "is_mean_reverting": False,
+                  "autocorrelation": 0.20, "volatility": 0.08}
+        consensus = {"score": 2, "sources": 2, "streak_agree": True,
+                     "direction_agree": True, "streak_bybit": {"direction": "UP", "length": 3},
+                     "streak_spot": {"direction": "UP", "length": 3}}
+        pred = store_prediction_bybit(bybit_db, "test-boost", signal, regime,
+                                      cycle=1, consensus=consensus)
+        assert pred["conviction_score"] == 4, f"Expected 4 (3+1 boost), got {pred['conviction_score']}"
+
+    def test_consensus_no_boost_on_skip(self, bybit_db):
+        from ci_run_bybit import store_prediction_bybit
+        signal = {"estimate": 0.5, "should_trade": False, "confidence": "skip",
+                  "reason": "regime_gate"}
+        regime = {"label": "MEDIUM_VOL / MEAN_REVERTING", "is_mean_reverting": True,
+                  "autocorrelation": -0.20, "volatility": 0.08}
+        consensus = {"score": 2, "sources": 2, "streak_agree": True,
+                     "direction_agree": True}
+        pred = store_prediction_bybit(bybit_db, "test-skip", signal, regime,
+                                      cycle=1, consensus=consensus)
+        assert pred["conviction_score"] == 0, f"Skip signal should stay conv=0, got {pred['conviction_score']}"
+
+    def test_fetch_always_calls_spot(self):
+        from bybit_data import fetch_bybit_candles
+        mock_bybit = _make_summary("UP", 3)
+        mock_bybit["candles"] = SAMPLE_CANDLES
+        mock_bybit.update({
+            "1h_change_pct": 0.1, "trend": "up", "volatility": 0.05,
+            "up_count": 5, "down_count": 0,
+            "last_candle": {"direction": "UP", "body_pct": 0.08, "wick_ratio": 0.5},
+            "range_high": 84400, "range_low": 83950, "range_position": 0.8,
+            "avg_volume": 11.0, "last_volume_ratio": 1.0,
+            "last_3_range_shrinking": False, "last_range_ratio": 1.0,
+            "last_candle_pattern": "none",
+            "last_wick_upper_ratio": 0.5, "last_wick_lower_ratio": 0.3,
+        })
+        mock_spot = dict(mock_bybit)
+        mock_spot["current_price"] = 83990.0
+
+        with patch("bybit_data._fetch_bybit_kline", return_value=mock_bybit) as p_bybit, \
+             patch("bybit_data.fetch_btc_candles", return_value=mock_spot) as p_spot:
+            result = fetch_bybit_candles()
+            p_bybit.assert_called_once()
+            p_spot.assert_called_once()  # Spot always called, even when Bybit succeeds
+            assert "consensus" in result
+            assert result["consensus"]["sources"] == 2
+
+
 class TestFrozenFiles:
     """Verify the Bybit pipeline doesn't touch frozen production files."""
 

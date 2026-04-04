@@ -34,7 +34,7 @@ from bybit_trade import (
 )
 from predict import compute_regime_from_candles, momentum_signal
 from score import calculate_brier_scores, print_scorecard
-from config import BYBIT_MIN_CONVICTION
+from config import BYBIT_MIN_CONVICTION, MAX_CONVICTION
 
 # Dead hours gate — EMPTY until calibrated from Bybit trading data.
 DEAD_HOURS_UTC = set()
@@ -48,7 +48,7 @@ def get_next_cycle(db):
 
 def store_prediction_bybit(db, market_id, signal, regime, cycle,
                            predicted_at=None, mark_price=None,
-                           funding_rate=None):
+                           funding_rate=None, consensus=None):
     """Store a Bybit prediction in the database."""
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
@@ -66,6 +66,11 @@ def store_prediction_bybit(db, market_id, signal, regime, cycle,
     else:
         conviction = 0
 
+    # Perps-vs-spot consensus boost
+    consensus_score = consensus.get("score", 0) if consensus else 0
+    if consensus_score == 2 and conviction >= 3:
+        conviction = min(conviction + 1, MAX_CONVICTION)
+
     reasoning_data = {
         "signal": signal,
         "regime": regime,
@@ -78,6 +83,8 @@ def store_prediction_bybit(db, market_id, signal, regime, cycle,
     }
     if funding_rate:
         reasoning_data["funding_rate"] = funding_rate
+    if consensus:
+        reasoning_data["consensus"] = consensus
     reasoning = json.dumps(reasoning_data)
 
     db.execute("""
@@ -149,9 +156,21 @@ def main():
 
     candles = bybit_data["candles"]
     current_price = bybit_data["current_price"]
+    consensus = bybit_data.get("consensus")
     print(f"  BTC: ${current_price:,.2f} | "
           f"1h: {bybit_data['1h_change_pct']:+.3f}% | "
           f"Trend: {bybit_data['trend']}")
+    if consensus and consensus.get("sources", 0) >= 2:
+        score = consensus.get("score", 0)
+        label = {2: "STRONG", 1: "WEAK", -1: "DISAGREE"}.get(score, "?")
+        b = consensus.get("streak_bybit", {})
+        s = consensus.get("streak_spot", {})
+        print(f"  Consensus: {label} (score={score}) | "
+              f"Bybit: {b.get('direction','?')}x{b.get('length',0)} | "
+              f"Spot: {s.get('direction','?')}x{s.get('length',0)}")
+        premium = consensus.get("perps_premium_pct")
+        if premium is not None:
+            print(f"  Perps premium: {premium:+.4f}%")
 
     # Create synthetic market for this cycle
     market_id = create_synthetic_market(db, current_price)
@@ -173,7 +192,7 @@ def main():
             "reason": f"time_gate_dead_hour (UTC {current_hour_utc})",
         }
         store_prediction_bybit(db, market_id, skip_signal, regime, cycle,
-                               mark_price=current_price)
+                               mark_price=current_price, consensus=consensus)
         print(f"  -> SKIP (dead hour: UTC {current_hour_utc})")
 
     elif regime["is_mean_reverting"]:
@@ -182,7 +201,7 @@ def main():
             "reason": "regime_gate_mean_reverting",
         }
         store_prediction_bybit(db, market_id, skip_signal, regime, cycle,
-                               mark_price=current_price)
+                               mark_price=current_price, consensus=consensus)
         print(f"  -> SKIP (mean-reverting regime)")
 
     else:
@@ -197,6 +216,7 @@ def main():
         prediction = store_prediction_bybit(
             db, market_id, signal, regime, cycle,
             mark_price=current_price, funding_rate=funding_rate,
+            consensus=consensus,
         )
 
         direction = signal.get("direction", "?")
