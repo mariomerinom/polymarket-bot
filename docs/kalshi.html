@@ -2,1779 +2,451 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="300">
-<title>BOTSY CASH MATERIALIZER</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BOTSY — Kalshi BTC Momentum</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
-    background: #0d1117;
-    color: #c9d1d9;
-    line-height: 1.5;
-    padding: 20px;
-}
-h1 {
-    color: #58a6ff;
-    font-size: 1.8rem;
-    margin-bottom: 8px;
-}
-.dash-nav {
-    display: flex;
-    gap: 8px;
-    margin: 8px 0 4px 0;
-}
-.dash-nav-link {
-    display: inline-block;
-    padding: 4px 14px;
-    border-radius: 6px;
-    background: #21262d;
-    color: #c9d1d9;
-    text-decoration: none;
-    font-size: 0.85rem;
-    font-weight: 600;
-    border: 1px solid #30363d;
-    transition: background 0.15s;
-}
-.dash-nav-link:hover {
-    background: #30363d;
-    color: #58a6ff;
-}
-.subtitle {
-    color: #8b949e;
-    margin-bottom: 28px;
-    font-size: 0.95rem;
-}
-h2 {
-    color: #58a6ff;
-    font-size: 1.25rem;
-    margin: 32px 0 12px 0;
-    padding-bottom: 6px;
-    border-bottom: 1px solid #21262d;
-}
-.section-desc {
-    color: #8b949e;
-    font-size: 0.85rem;
-    margin-bottom: 12px;
-}
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-}
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 16px;
-    font-size: 0.9rem;
-}
-th {
-    background: #161b22;
-    color: #58a6ff;
-    text-align: left;
-    padding: 10px 12px;
-    border-bottom: 2px solid #21262d;
-    white-space: nowrap;
-}
-td {
-    padding: 8px 12px;
-    border-bottom: 1px solid #21262d;
-    vertical-align: middle;
-    max-width: 320px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-tr:hover {
-    background: #161b22;
-}
-.agent-name {
-    color: #d2a8ff;
-    font-weight: 600;
-}
-.badge {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 600;
-}
-.badge-yes {
-    background: #238636;
-    color: #fff;
-}
-.badge-no {
-    background: #da3633;
-    color: #fff;
-}
-.badge-pending {
-    background: #30363d;
-    color: #8b949e;
-    border: 1px solid #484f58;
-}
-.empty {
-    text-align: center;
-    color: #484f58;
-    padding: 24px;
-    font-style: italic;
-}
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        background: #0d1117;
+        color: #c9d1d9;
+        line-height: 1.5;
+        padding: 0;
+    }
+    .container { max-width: 900px; margin: 0 auto; padding: 16px 20px; }
 
-/* Performance Cards */
-.perf-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
-    margin-bottom: 8px;
-}
-.perf-card {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 10px;
-    padding: 20px;
-    text-align: center;
-}
-.perf-ensemble {
-    border-color: #f0883e;
-    border-width: 2px;
-}
-.consolidated-pnl {
-    background: #161b22;
-    border: 2px solid #3fb950;
-    border-radius: 10px;
-    padding: 24px;
-    text-align: center;
-    margin-bottom: 16px;
-}
-.consolidated-label {
-    font-size: 0.8rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #8b949e;
-    margin-bottom: 4px;
-}
-.consolidated-return {
-    font-size: 3rem;
-    font-weight: 800;
-    line-height: 1.1;
-}
-.consolidated-detail {
-    color: #8b949e;
-    font-size: 0.9rem;
-    margin: 4px 0;
-}
-.consolidated-profit {
-    font-size: 1.1rem;
-    font-weight: 700;
-}
-.pnl-asymmetry {
-    margin-top: 12px;
-    text-align: left;
-    max-width: 500px;
-    margin-left: auto;
-    margin-right: auto;
-}
-.pnl-asym-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 4px 0;
-    font-size: 0.85rem;
-}
-.pnl-asym-label {
-    width: 30px;
-    font-weight: 700;
-    text-align: right;
-    flex-shrink: 0;
-}
-.pnl-asym-bar-wrap {
-    flex: 1;
-    background: #21262d;
-    border-radius: 4px;
-    height: 18px;
-    overflow: hidden;
-}
-.pnl-asym-bar {
-    display: block;
-    height: 100%;
-    border-radius: 4px;
-    min-width: 4px;
-}
-.pnl-asym-val {
-    width: 80px;
-    font-weight: 700;
-    text-align: right;
-    flex-shrink: 0;
-}
-.pnl-asym-avg {
-    color: #8b949e;
-    font-size: 0.75rem;
-    width: 110px;
-    flex-shrink: 0;
-}
-/* EV & Breakeven Box */
-.ev-box {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 10px;
-    padding: 16px 24px;
-    margin-bottom: 16px;
-}
-.ev-row {
-    display: flex;
-    justify-content: space-around;
-    gap: 16px;
-    margin-bottom: 12px;
-}
-.ev-metric {
-    text-align: center;
-}
-.ev-label {
-    font-size: 0.7rem;
-    color: #8b949e;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 2px;
-}
-.ev-value {
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: #c9d1d9;
-}
-.ev-gauge-wrap {
-    max-width: 500px;
-    margin: 0 auto;
-}
-.ev-gauge-bg {
-    position: relative;
-    height: 14px;
-    background: #21262d;
-    border-radius: 7px;
-    overflow: visible;
-}
-.ev-gauge-fill {
-    height: 100%;
-    border-radius: 7px;
-    opacity: 0.7;
-    transition: width 0.3s;
-}
-.ev-gauge-marker {
-    position: absolute;
-    top: -4px;
-    width: 3px;
-    height: 22px;
-    background: #c9d1d9;
-    border-radius: 2px;
-    transform: translateX(-50%);
-}
-.ev-gauge-labels {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.7rem;
-    color: #484f58;
-    margin-top: 2px;
-    position: relative;
-}
-.perf-agent {
-    font-size: 0.85rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 8px;
-}
-.perf-record {
-    font-size: 1.6rem;
-    font-weight: 700;
-    color: #c9d1d9;
-    margin-bottom: 4px;
-}
-.perf-accuracy {
-    font-size: 2rem;
-    font-weight: 800;
-    margin-bottom: 4px;
-}
-.perf-vs {
-    font-size: 0.85rem;
-    margin-bottom: 8px;
-}
-.perf-streak {
-    margin-top: 4px;
-}
+    /* Nav */
+    .nav { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid #21262d; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+    .nav a {
+        color: #484f58; text-decoration: none; font-size: 13px; font-weight: 500;
+        padding: 4px 10px; border-radius: 6px; transition: all 0.15s;
+    }
+    .nav a:hover { color: #c9d1d9; background: #161b22; }
+    .nav a.active { color: #c9d1d9; background: #161b22; font-weight: 600; }
 
-/* Streaks */
-.streak {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 700;
-}
-.streak-w {
-    background: #238636;
-    color: #fff;
-}
-.streak-l {
-    background: #da3633;
-    color: #fff;
-}
+    /* Header */
+    .header { margin-bottom: 24px; }
+    .header h1 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .badge {
+        font-size: 11px; font-weight: 700; letter-spacing: 1px;
+        padding: 2px 8px; border-radius: 4px; text-transform: uppercase;
+    }
+    .badge-live { background: rgba(240,136,62,0.15); color: #f0883e; border: 1px solid rgba(240,136,62,0.3); }
+    .badge-paper { background: rgba(88,166,255,0.12); color: #58a6ff; border: 1px solid rgba(88,166,255,0.2); }
+    .header-meta { font-size: 12px; color: #6e7681; margin-top: 4px; }
 
-/* Bar Chart */
-.bar-chart {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 20px;
-}
-.bar-group {
-    margin-bottom: 20px;
-}
-.bar-group:last-child {
-    margin-bottom: 0;
-}
-.bar-label {
-    font-weight: 700;
-    font-size: 0.9rem;
-    margin-bottom: 6px;
-}
-.bar-row {
-    display: flex;
-    align-items: center;
-    margin-bottom: 4px;
-    gap: 8px;
-}
-.bar-tag {
-    width: 55px;
-    font-size: 0.75rem;
-    color: #8b949e;
-    text-align: right;
-    flex-shrink: 0;
-}
-.bar-track {
-    flex: 1;
-    height: 22px;
-    background: #0d1117;
-    border-radius: 4px;
-    overflow: hidden;
-    position: relative;
-}
-.bar-fill {
-    height: 100%;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    padding-left: 8px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #fff;
-    min-width: 45px;
-    transition: width 0.3s ease;
-}
+    /* Section */
+    .section {
+        background: #161b22; border: 1px solid #30363d;
+        border-radius: 10px; padding: 20px; margin-bottom: 20px;
+    }
+    .section-live { border-left: 3px solid #f0883e; }
+    .section-paper { border-left: 3px solid #58a6ff; }
+    .section-title {
+        font-size: 12px; font-weight: 700; color: #8b949e;
+        letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 14px;
+    }
 
-/* Chart */
-.chart-container {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 8px;
-}
-.chart-legend {
-    display: flex;
-    gap: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
-    padding-top: 12px;
-}
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.8rem;
-    color: #8b949e;
-}
-.legend-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    display: inline-block;
-}
-.legend-line {
-    width: 16px;
-    height: 0;
-    border-top: 2px dashed;
-    display: inline-block;
-}
+    /* Hero number */
+    .hero { font-size: 36px; font-weight: 800; margin: 4px 0 8px; }
+    .hero-positive { color: #3fb950; }
+    .hero-negative { color: #f44336; }
+    .hero-zero { color: #8b949e; }
 
-/* Pipeline Health Banner */
-.pipeline-banner {
-    background: #161b22;
-    border: 2px solid #21262d;
-    border-radius: 10px;
-    padding: 16px 24px;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-.pipeline-main {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-.pipeline-fraction {
-    font-weight: 800;
-}
-.pipeline-big {
-    font-size: 2.2rem;
-    line-height: 1;
-}
-.pipeline-slash {
-    font-size: 1.2rem;
-    opacity: 0.6;
-}
-.pipeline-labels {
-    display: flex;
-    flex-direction: column;
-}
-.pipeline-status {
-    font-size: 0.85rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-}
-.pipeline-desc {
-    color: #8b949e;
-    font-size: 0.8rem;
-}
-.pipeline-meta {
-    text-align: right;
-}
-.pipeline-detail {
-    color: #8b949e;
-    font-size: 0.8rem;
-}
-.pipeline-ago {
-    color: #8b949e;
-    font-size: 0.75rem;
-    margin-top: 2px;
-}
+    /* Metrics row */
+    .metrics { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; }
+    .metric {
+        flex: 1 1 120px; background: #0d1117; border-radius: 8px;
+        padding: 10px 14px; min-width: 120px;
+    }
+    .metric-label { font-size: 11px; color: #6e7681; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric-value { font-size: 18px; font-weight: 700; margin-top: 2px; }
 
-/* Live Context Banner */
-.live-banner {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 12px;
-    margin-bottom: 24px;
-}
-.live-card {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 14px 18px;
-}
-.live-label {
-    color: #484f58;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 4px;
-}
-.live-value {
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: #c9d1d9;
-    margin-bottom: 2px;
-}
-.live-detail {
-    font-size: 0.8rem;
-    color: #8b949e;
-}
-.live-sub {
-    font-size: 0.72rem;
-    color: #484f58;
-    margin-top: 4px;
-    word-break: break-all;
-}
-.live-result {
-    border-width: 2px;
-}
-.live-verdict {
-    font-size: 1.8rem;
-    font-weight: 800;
-    line-height: 1.1;
-    margin-bottom: 4px;
-}
-.live-outcome {
-    font-size: 0.85rem;
-    color: #8b949e;
-    margin-bottom: 4px;
-}
-.result-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 8px;
-}
-.result-chip {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 14px;
-    font-size: 0.72rem;
-    font-weight: 700;
-    white-space: nowrap;
-}
+    /* Provenance */
+    .provenance { font-size: 11px; color: #484f58; margin-top: 8px; }
+    .provenance-tag {
+        background: #21262d; padding: 1px 6px; border-radius: 3px;
+        margin-right: 6px; font-size: 10px;
+    }
 
-/* Status Bar */
-.status-bar {
-    display: flex;
-    gap: 24px;
-    flex-wrap: wrap;
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 16px 20px;
-    margin-bottom: 24px;
-}
-.status-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-.status-label {
-    color: #484f58;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-.status-value {
-    color: #c9d1d9;
-    font-size: 1rem;
-    font-weight: 600;
-}
-.table-wrap {
-    overflow-x: auto;
-}
-@media (max-width: 768px) {
-    body { padding: 10px; }
-    h1 { font-size: 1.4rem; }
-    td, th { padding: 6px 8px; font-size: 0.82rem; }
-    .perf-grid { grid-template-columns: repeat(2, 1fr); }
-}
+    /* Chart container */
+    .chart-container { margin: 16px 0 8px; }
+    .chart-container svg { width: 100%; height: auto; display: block; }
+    .chart-empty { color: #484f58; font-size: 13px; padding: 20px 0; text-align: center; }
+
+    /* Conviction table */
+    .conv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .conv-table th {
+        text-align: left; padding: 8px 12px; border-bottom: 1px solid #21262d;
+        color: #8b949e; font-size: 11px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .conv-table td { padding: 8px 12px; border-bottom: 1px solid #21262d; }
+
+    /* Breakers */
+    .breaker-row { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; }
+    .breaker-item { display: flex; align-items: center; gap: 6px; }
+    .loss-bar {
+        width: 80px; height: 8px; background: #21262d;
+        border-radius: 4px; overflow: hidden; display: inline-block;
+    }
+    .loss-bar-fill { height: 100%; border-radius: 4px; }
+
+    /* D3 tooltip */
+    .d3-tooltip {
+        position: absolute; background: #1c2128; border: 1px solid #30363d;
+        border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #c9d1d9;
+        pointer-events: none; opacity: 0; transition: opacity 0.15s;
+        z-index: 100;
+    }
+
+    /* Footer */
+    .footer { font-size: 11px; color: #484f58; text-align: center; padding: 16px 0; }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+        .container { padding: 10px 12px; }
+        .hero { font-size: 28px; }
+        .metrics { gap: 8px; }
+        .metric { min-width: 100px; padding: 8px 10px; }
+        .metric-value { font-size: 15px; }
+    }
 </style>
 </head>
 <body>
 <div class="container">
-    <h1>BOTSY CASH MATERIALIZER</h1>
-    <nav class="dash-nav"><a href="index.html" class="dash-nav-link">BTC 5m</a><a href="15m.html" class="dash-nav-link">BTC 15m</a><a href="eth.html" class="dash-nav-link">ETH 5m</a><a href="kalshi.html" class="dash-nav-link">Kalshi</a><a href="bybit-perps.html" class="dash-nav-link">Bybit Perps</a></nav>
-    <p class="subtitle">Kalshi BTC (Phase 0 — Paper)</p>
-
-    <div class="status-bar">
-        <div class="status-item">
-            <span class="status-label">Status</span>
-            <span class="status-value" style="color:#238636">Active</span>
-        </div>
-        <div class="status-item">
-            <span class="status-label">Last Cycle</span>
-            <span class="status-value">2026-04-04 19:55 UTC</span>
-        </div>
-        <div class="status-item">
-            <span class="status-label">Markets</span>
-            <span class="status-value">190 / 196 resolved</span>
-        </div>
-        <div class="status-item">
-            <span class="status-label">Next Market</span>
-            <span class="status-value" id="countdown" data-next-market="2026-04-04T19:56:37.212984+00:00">--</span>
-        </div>
+<nav class="nav"><a href="index.html">BTC 5m</a> <a href="15m.html">BTC 15m</a> <a href="eth.html">ETH 5m</a> <a href="kalshi.html" class="active">Kalshi</a> <a href="bybit-perps.html">Bybit Perps</a></nav>
+<div class="header">
+    <h1>Kalshi BTC Momentum <span class="badge badge-paper">PAPER</span></h1>
+    <div class="header-meta">
+        <span style="color:#f44336">&#9679; Stale</span>
+        &nbsp;&middot;&nbsp; Last cycle: 2026-04-04 19:55
+        &nbsp;&middot;&nbsp; 190/196 resolved
+        &nbsp;&middot;&nbsp; Health: 0.0%&nbsp;&middot;&nbsp; <span style="color:#eab308" title="[WARN] db_health: foreign_keys=OFF">&#9679; 1 warning(s)</span>
     </div>
-
-    <div style="background:rgba(88,166,255,0.12);border:1px solid #1f6feb;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">&#128203; PAPER TRADING — MOMENTUM</div>
-        <div style="color:#8b949e;font-size:13px;margin-top:4px">Ride the streak. Collecting data for validation.</div>
-    </div>
-
-    <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 20px;margin-bottom:16px">
-    <div style="font-size:12px;font-weight:700;color:#8b949e;letter-spacing:1.5px;margin-bottom:10px">CIRCUIT BREAKERS</div>
-    <div style="display:flex;flex-wrap:wrap;gap:20px;font-size:13px;color:#c9d1d9">
-        <div><span style="color:#8b949e">Kill Switch:</span> <span style="color:#3fb950">&#x2714; OFF</span></div>
-        <div><span style="color:#8b949e">Daily Loss:</span> <div style="display:inline-flex;align-items:center;gap:8px">
-        <div style="width:80px;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
-            <div style="width:0%;height:100%;background:#3fb950;border-radius:4px"></div>
+</div>
+<div class="section">
+    <div class="section-title">Conviction Breakdown</div>
+    <table class="conv-table">
+        <thead><tr>
+            <th>Tier</th><th>Bets</th><th>WR</th><th>Record</th><th>P&L</th><th>Wagered</th><th>ROI</th>
+        </tr></thead>
+        <tbody><tr>
+    <td>Low (2)</td>
+    <td>55</td>
+    <td style="color:#8b949e">45.5%</td>
+    <td>25W-30L</td>
+    <td style="color:#8b949e">$0.00</td>
+    <td>$0</td>
+    <td style="color:#8b949e">0%</td>
+</tr><tr>
+    <td>No Bet (0-1)</td>
+    <td>135</td>
+    <td style="color:#f44336">43.0%</td>
+    <td>58W-77L</td>
+    <td style="color:#8b949e">$0.00</td>
+    <td>$0</td>
+    <td style="color:#8b949e">0%</td>
+</tr></tbody>
+    </table>
+</div>
+<div class="section">
+    <div class="section-title">Rolling Accuracy (10-bet window)</div>
+    <div class="chart-container d3-chart" data-chart-type="rolling_accuracy" data-chart-data='[{"date":"2026-04-02T15:58:11.101226+00:00","value":30.0},{"date":"2026-04-02T15:58:11.102262+00:00","value":30.0},{"date":"2026-04-02T15:58:11.103256+00:00","value":40.0},{"date":"2026-04-02T16:59:33.086283+00:00","value":30.0},{"date":"2026-04-02T16:59:33.087374+00:00","value":30.0},{"date":"2026-04-02T16:59:33.088172+00:00","value":30.0},{"date":"2026-04-02T16:59:33.088977+00:00","value":20.0},{"date":"2026-04-02T17:54:45.324168+00:00","value":30.0},{"date":"2026-04-02T17:54:45.325888+00:00","value":40.0},{"date":"2026-04-02T17:54:45.326990+00:00","value":40.0},{"date":"2026-04-02T17:54:45.328370+00:00","value":30.0},{"date":"2026-04-02T18:52:53.433331+00:00","value":40.0},{"date":"2026-04-02T18:52:53.434546+00:00","value":40.0},{"date":"2026-04-02T18:52:53.435578+00:00","value":50.0},{"date":"2026-04-02T18:52:53.436598+00:00","value":60.0},{"date":"2026-04-02T19:48:17.491887+00:00","value":70.0},{"date":"2026-04-02T19:48:17.493895+00:00","value":80.0},{"date":"2026-04-02T19:48:17.495253+00:00","value":70.0},{"date":"2026-04-02T19:48:17.496165+00:00","value":60.0},{"date":"2026-04-02T20:32:20.896451+00:00","value":60.0},{"date":"2026-04-02T20:32:20.897328+00:00","value":70.0},{"date":"2026-04-02T20:32:20.898181+00:00","value":70.0},{"date":"2026-04-02T20:32:20.899085+00:00","value":70.0},{"date":"2026-04-02T21:34:12.221211+00:00","value":70.0},{"date":"2026-04-02T21:34:12.222293+00:00","value":70.0},{"date":"2026-04-02T21:34:12.223117+00:00","value":70.0},{"date":"2026-04-02T21:34:12.223847+00:00","value":60.0},{"date":"2026-04-02T22:28:20.994285+00:00","value":60.0},{"date":"2026-04-02T22:28:20.995521+00:00","value":70.0},{"date":"2026-04-02T22:28:20.996285+00:00","value":80.0},{"date":"2026-04-02T22:28:20.997010+00:00","value":80.0},{"date":"2026-04-02T23:00:21.330077+00:00","value":70.0},{"date":"2026-04-02T23:00:21.331122+00:00","value":70.0},{"date":"2026-04-02T23:00:21.332136+00:00","value":60.0},{"date":"2026-04-02T23:00:21.332939+00:00","value":60.0},{"date":"2026-04-03T02:37:06.455625+00:00","value":50.0},{"date":"2026-04-03T02:37:06.456754+00:00","value":60.0},{"date":"2026-04-03T02:37:06.457621+00:00","value":60.0},{"date":"2026-04-03T02:37:06.458503+00:00","value":60.0},{"date":"2026-04-03T05:02:15.204882+00:00","value":50.0},{"date":"2026-04-03T05:02:15.206073+00:00","value":50.0},{"date":"2026-04-03T05:02:15.206854+00:00","value":50.0},{"date":"2026-04-03T05:02:15.207578+00:00","value":40.0},{"date":"2026-04-03T06:44:55.558016+00:00","value":40.0},{"date":"2026-04-03T06:44:55.559279+00:00","value":30.0},{"date":"2026-04-03T06:44:55.560125+00:00","value":30.0},{"date":"2026-04-03T06:44:55.561012+00:00","value":20.0},{"date":"2026-04-03T08:01:06.467140+00:00","value":20.0},{"date":"2026-04-03T08:01:06.468108+00:00","value":10.0},{"date":"2026-04-03T08:01:06.469011+00:00","value":10.0},{"date":"2026-04-03T08:01:06.469710+00:00","value":0.0},{"date":"2026-04-03T09:14:33.047767+00:00","value":10.0},{"date":"2026-04-03T09:14:33.049459+00:00","value":10.0},{"date":"2026-04-03T09:14:33.050416+00:00","value":10.0},{"date":"2026-04-03T09:14:33.051573+00:00","value":10.0},{"date":"2026-04-03T11:09:37.448362+00:00","value":20.0},{"date":"2026-04-03T11:09:37.449569+00:00","value":20.0},{"date":"2026-04-03T11:09:37.450552+00:00","value":20.0},{"date":"2026-04-03T11:09:37.451524+00:00","value":20.0},{"date":"2026-04-03T11:59:23.875841+00:00","value":30.0},{"date":"2026-04-03T11:59:23.876850+00:00","value":40.0},{"date":"2026-04-03T11:59:23.877912+00:00","value":30.0},{"date":"2026-04-03T11:59:23.878635+00:00","value":30.0},{"date":"2026-04-03T13:19:02.425579+00:00","value":40.0},{"date":"2026-04-03T13:19:02.426726+00:00","value":40.0},{"date":"2026-04-03T13:19:02.427789+00:00","value":30.0},{"date":"2026-04-03T13:19:02.428549+00:00","value":40.0},{"date":"2026-04-03T16:00:01.758544+00:00","value":40.0},{"date":"2026-04-03T16:00:01.759626+00:00","value":40.0},{"date":"2026-04-03T16:00:01.760940+00:00","value":30.0},{"date":"2026-04-03T16:00:01.761777+00:00","value":30.0},{"date":"2026-04-03T16:53:08.176809+00:00","value":30.0},{"date":"2026-04-03T16:53:08.177812+00:00","value":30.0},{"date":"2026-04-03T16:53:08.178611+00:00","value":20.0},{"date":"2026-04-03T16:53:08.179211+00:00","value":20.0},{"date":"2026-04-03T17:31:12.606089+00:00","value":20.0},{"date":"2026-04-03T17:31:12.608312+00:00","value":20.0},{"date":"2026-04-03T17:31:12.609431+00:00","value":20.0},{"date":"2026-04-03T17:31:12.610160+00:00","value":20.0},{"date":"2026-04-03T18:41:15.675340+00:00","value":30.0},{"date":"2026-04-03T18:41:15.676326+00:00","value":20.0},{"date":"2026-04-03T18:41:15.677410+00:00","value":30.0},{"date":"2026-04-03T18:41:15.678162+00:00","value":40.0},{"date":"2026-04-03T19:36:18.280660+00:00","value":40.0},{"date":"2026-04-03T19:36:18.281705+00:00","value":50.0},{"date":"2026-04-03T19:36:18.282889+00:00","value":60.0},{"date":"2026-04-03T19:36:18.283711+00:00","value":50.0},{"date":"2026-04-03T20:32:16.180438+00:00","value":50.0},{"date":"2026-04-03T20:32:16.181718+00:00","value":60.0},{"date":"2026-04-03T20:32:16.182933+00:00","value":60.0},{"date":"2026-04-03T20:32:16.183685+00:00","value":60.0},{"date":"2026-04-03T21:30:11.906494+00:00","value":60.0},{"date":"2026-04-03T21:30:11.907743+00:00","value":60.0},{"date":"2026-04-03T21:30:11.908889+00:00","value":70.0},{"date":"2026-04-03T21:30:11.909667+00:00","value":60.0},{"date":"2026-04-03T22:00:24.491300+00:00","value":60.0},{"date":"2026-04-03T22:00:24.492410+00:00","value":60.0},{"date":"2026-04-03T22:00:24.493522+00:00","value":60.0},{"date":"2026-04-03T22:00:24.494424+00:00","value":50.0},{"date":"2026-04-03T22:44:34.300980+00:00","value":40.0},{"date":"2026-04-03T22:44:34.301902+00:00","value":40.0},{"date":"2026-04-03T22:44:34.302501+00:00","value":40.0},{"date":"2026-04-03T22:44:34.303421+00:00","value":40.0},{"date":"2026-04-03T23:30:40.542583+00:00","value":40.0},{"date":"2026-04-03T23:30:40.543670+00:00","value":50.0},{"date":"2026-04-03T23:30:40.544236+00:00","value":50.0},{"date":"2026-04-03T23:30:40.544763+00:00","value":50.0},{"date":"2026-04-04T01:53:26.240010+00:00","value":50.0},{"date":"2026-04-04T01:53:26.241050+00:00","value":50.0},{"date":"2026-04-04T01:53:26.241969+00:00","value":50.0},{"date":"2026-04-04T01:53:26.243034+00:00","value":60.0},{"date":"2026-04-04T04:15:10.622563+00:00","value":50.0},{"date":"2026-04-04T04:15:10.623720+00:00","value":50.0},{"date":"2026-04-04T04:15:10.624420+00:00","value":40.0},{"date":"2026-04-04T04:15:10.625059+00:00","value":30.0},{"date":"2026-04-04T05:39:06.535089+00:00","value":20.0},{"date":"2026-04-04T05:39:06.536200+00:00","value":30.0},{"date":"2026-04-04T05:39:06.537029+00:00","value":30.0},{"date":"2026-04-04T05:39:06.538142+00:00","value":40.0},{"date":"2026-04-04T06:56:49.394417+00:00","value":40.0},{"date":"2026-04-04T06:56:49.395681+00:00","value":30.0},{"date":"2026-04-04T06:56:49.396457+00:00","value":40.0},{"date":"2026-04-04T06:56:49.397170+00:00","value":30.0},{"date":"2026-04-04T07:48:57.301127+00:00","value":40.0},{"date":"2026-04-04T07:48:57.302209+00:00","value":40.0},{"date":"2026-04-04T07:48:57.303429+00:00","value":50.0},{"date":"2026-04-04T07:48:57.304194+00:00","value":40.0},{"date":"2026-04-04T08:37:30.741144+00:00","value":50.0},{"date":"2026-04-04T08:37:30.742178+00:00","value":40.0},{"date":"2026-04-04T08:37:30.742976+00:00","value":50.0},{"date":"2026-04-04T08:37:30.744263+00:00","value":50.0},{"date":"2026-04-04T09:34:33.458836+00:00","value":40.0},{"date":"2026-04-04T09:34:33.459963+00:00","value":40.0},{"date":"2026-04-04T09:34:33.460793+00:00","value":30.0},{"date":"2026-04-04T09:34:33.461593+00:00","value":40.0},{"date":"2026-04-04T10:29:47.287929+00:00","value":30.0},{"date":"2026-04-04T10:29:47.289052+00:00","value":30.0},{"date":"2026-04-04T10:29:47.289832+00:00","value":30.0},{"date":"2026-04-04T10:29:47.290616+00:00","value":30.0},{"date":"2026-04-04T11:01:56.571104+00:00","value":20.0},{"date":"2026-04-04T11:01:56.572499+00:00","value":30.0},{"date":"2026-04-04T11:01:56.573776+00:00","value":40.0},{"date":"2026-04-04T11:01:56.574573+00:00","value":40.0},{"date":"2026-04-04T11:52:03.127084+00:00","value":40.0},{"date":"2026-04-04T11:52:03.128276+00:00","value":40.0},{"date":"2026-04-04T11:52:03.129465+00:00","value":50.0},{"date":"2026-04-04T11:52:03.130340+00:00","value":50.0},{"date":"2026-04-04T12:47:40.456664+00:00","value":50.0},{"date":"2026-04-04T12:47:40.457778+00:00","value":50.0},{"date":"2026-04-04T12:47:40.459030+00:00","value":50.0},{"date":"2026-04-04T12:47:40.459822+00:00","value":40.0},{"date":"2026-04-04T13:51:25.959283+00:00","value":30.0},{"date":"2026-04-04T13:51:25.960962+00:00","value":40.0},{"date":"2026-04-04T13:51:25.962679+00:00","value":50.0},{"date":"2026-04-04T13:51:25.964253+00:00","value":40.0},{"date":"2026-04-04T14:31:15.256146+00:00","value":30.0},{"date":"2026-04-04T14:31:15.257337+00:00","value":30.0},{"date":"2026-04-04T14:31:15.258769+00:00","value":30.0},{"date":"2026-04-04T14:31:15.259805+00:00","value":30.0},{"date":"2026-04-04T15:27:58.132397+00:00","value":40.0},{"date":"2026-04-04T15:27:58.133878+00:00","value":50.0},{"date":"2026-04-04T15:27:58.135538+00:00","value":60.0},{"date":"2026-04-04T15:27:58.136808+00:00","value":50.0},{"date":"2026-04-04T15:55:55.353594+00:00","value":50.0},{"date":"2026-04-04T15:55:55.354615+00:00","value":60.0},{"date":"2026-04-04T15:55:55.357411+00:00","value":70.0},{"date":"2026-04-04T15:55:55.358410+00:00","value":70.0},{"date":"2026-04-04T16:33:03.251348+00:00","value":60.0},{"date":"2026-04-04T16:33:03.252382+00:00","value":70.0},{"date":"2026-04-04T16:33:03.253206+00:00","value":60.0},{"date":"2026-04-04T16:33:03.254705+00:00","value":60.0},{"date":"2026-04-04T17:27:11.138850+00:00","value":50.0},{"date":"2026-04-04T17:27:11.139877+00:00","value":50.0},{"date":"2026-04-04T17:27:11.140869+00:00","value":50.0},{"date":"2026-04-04T17:27:11.141804+00:00","value":40.0},{"date":"2026-04-04T17:56:37.480998+00:00","value":30.0},{"date":"2026-04-04T17:56:37.482020+00:00","value":40.0},{"date":"2026-04-04T17:56:37.482625+00:00","value":50.0},{"date":"2026-04-04T18:41:23.362632+00:00","value":50.0},{"date":"2026-04-04T18:41:23.363786+00:00","value":60.0},{"date":"2026-04-04T18:41:23.365258+00:00","value":60.0}]'></div>
+</div>
+<div class="section">
+    <div class="section-title">Circuit Breakers</div>
+    <div class="breaker-row">
+        <div class="breaker-item"><span style="color:#8b949e">Kill Switch:</span> <span style="color:#3fb950">&#x2714; OFF</span></div>
+        <div class="breaker-item">
+            <span style="color:#8b949e">Daily Loss:</span>
+            <span class="loss-bar"><span class="loss-bar-fill" style="width:0%;background:#3fb950"></span></span>
+            <span>$0/$300</span>
         </div>
-        <span>$0/$300</span>
-    </div></div>
-        <div><span style="color:#8b949e">Consec Losses:</span> <span style="color:#c9d1d9;font-weight:600">0/5</span></div>
+        <div class="breaker-item"><span style="color:#8b949e">Consec Losses:</span> <span style="color:#c9d1d9;font-weight:600">0/5</span></div>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:11px;color:#6e7681;margin-top:8px;border-top:1px solid #21262d;padding-top:8px">
         <span>Min Conv: 3</span>
         <span>Edge: 5%</span>
         <span>Price Gate: 15%–85%</span>
-        <span>Extreme Est: &lt;0.35 / &gt;0.65</span>
+        <span>Extreme: &lt;0.35 / &gt;0.65</span>
     </div>
 </div>
-
-    
-
-    <div class="pipeline-banner" style="background:rgba(244,67,54,0.08);border-color:#da3633">
-        <div class="pipeline-main">
-            <div class="pipeline-fraction" style="color:#f44336">
-                <span class="pipeline-big">0</span><span class="pipeline-slash">/48</span>
-            </div>
-            <div class="pipeline-labels">
-                <span class="pipeline-status" style="color:#f44336">DOWN</span>
-                <span class="pipeline-desc">cycles on time (0%)</span>
-            </div>
-        </div>
-        <div class="pipeline-meta">
-            <div class="pipeline-detail">Avg gap: 68min &middot; 49 total &middot; 48 missed</div>
-            <div class='pipeline-ago'>Last cycle: 1m ago</div>
-        </div>
-    </div>
-
-    <div class="live-banner"><div class="live-card">
-            <div class="live-label">BTC Price</div>
-            <div class="live-value">$67,304</div>
-            <div class="live-detail" style="color:#f44336">-0.081% &middot; NEUTRAL</div>
-        </div><div class="live-card live-result" style="background:rgba(63,185,80,0.15);border-color:#238636">
-            <div class="live-label">Last Result</div>
-            <div class="live-verdict" style="color:#3fb950">&#10003; ALL HIT</div>
-            <div class="live-outcome">Resolved <span style="color:#f44336;font-weight:700">DOWN &#9660;</span></div>
-            <div class="live-detail">Will BTC be above $85,000 at 19:41 UTC?</div>
-            <div class="result-chips"><span class="result-chip" style="background:rgba(63,185,80,0.15);border:1px solid #238636;color:#238636">&#10003; momentum_kalshi 49%</span> </div>
-        </div><div class="live-card">
-            <div class="live-label">Current Prediction</div>
-            <div class="live-value" style="color:#58a6ff">Mkt 55%</div>
-            <div class="live-detail">Will BTC be above $85,500 at 19:56 UTC?</div>
-            <div class="live-sub">momentum_kalshi:50%(low)</div>
-        </div></div>
-
-    <h2>Performance</h2>
-        <div class="perf-grid"><div class="perf-card" style="opacity:0.6;">
-                <div class="perf-agent" style="color:#c9d1d9">momentum_kalshi <span style="background:#484f58;color:#8b949e;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle">SHADOW</span></div>
-                <div class="perf-record">83W - 107L</div>
-                <div class="perf-accuracy" style="color:#f44336">43.7%</div>
-                <div class="perf-vs" style="color:#f44336">-6.3pp vs coin flip</div>
-                <div class="perf-streak"><span class="streak streak-w">W5</span></div>
-            </div><div class="perf-card perf-ensemble">
-            <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
-            <div class="perf-record">83W - 107L</div>
-            <div class="perf-accuracy" style="color:#f44336">43.7%</div>
-            <div class="perf-vs" style="color:#f44336">-6.3pp vs coin flip</div>
-            <div class="perf-streak"><span class="streak streak-w">W5</span></div>
-        </div></div>
-
-    <h2>Signal Performance P&amp;L</h2>
-        <p class="section-desc">Based on prediction outcomes. Flat $25 per bet. Wins variable (entry price dependent), losses fixed at bet size.</p>
-        <div class="consolidated-pnl">
-            <div class="consolidated-label">SIGNAL PERFORMANCE</div>
-            <div class="consolidated-return" style="color:#3fb950">+$0</div>
-            <div class="consolidated-detail">0 discrete bets &middot; +0% ROI (cumulative) &middot; <span style="color:#3fb950;font-weight:700">+0% ROI/bet</span></div>
-            <div class="pnl-asymmetry">
-                <div class="pnl-asym-row">
-                    <span class="pnl-asym-label" style="color:#3fb950">0W</span>
-                    <span class="pnl-asym-bar-wrap"><span class="pnl-asym-bar" style="background:#3fb950;width:5%"></span></span>
-                    <span class="pnl-asym-val" style="color:#3fb950">+$0</span>
-                    <span class="pnl-asym-avg">avg +$0/win</span>
-                </div>
-                <div class="pnl-asym-row">
-                    <span class="pnl-asym-label" style="color:#f44336">0L</span>
-                    <span class="pnl-asym-bar-wrap"><span class="pnl-asym-bar" style="background:#f44336;width:5%"></span></span>
-                    <span class="pnl-asym-val" style="color:#f44336">$0</span>
-                    <span class="pnl-asym-avg">fixed $0/loss</span>
-                </div>
-            </div>
-            <div class="consolidated-detail" style="margin-top:8px;font-size:0.75rem;color:#8b949e">
-                Max drawdown: <span style="color:#f44336">$0</span>
-                &middot; Cumulative risked: $0 (sequential, not simultaneous)
-            </div>
-        </div>
-        
-        <div class="perf-grid"><div class="perf-card">
-                    <div class="perf-agent" style="color:#c9d1d9">momentum_kalshi</div>
-                    <div class="perf-accuracy" style="color:#3fb950">+$0</div>
-                    <div class="perf-record">0W-0L (0% WR)</div>
-                    <div class="perf-vs" style="color:#3fb950">+$0 won (avg +$0)</div>
-                    <div class="perf-vs" style="color:#f44336">$0 lost (fixed $0)</div>
-                    <div class="perf-vs" style="color:#8b949e">Max DD: $0 &middot; +0% ROI</div>
-                </div><div class="perf-card perf-ensemble">
-                <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
-                <div class="perf-accuracy" style="color:#3fb950">+$0</div>
-                <div class="perf-record">0 bets &middot; +0% ROI</div>
-                <div class="perf-vs">from $0 cumulative (190 skipped)</div>
-            </div></div>
-        <div class="chart-container" style="margin-top:16px">
-            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Per-Bet Waterfall</h3>
-            <p class="empty">No bet data for waterfall chart.</p>
-        </div>
-        <div class="chart-container" style="margin-top:16px">
-            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Win/Loss Distribution</h3>
-            <p class="empty">Need more bets for distribution chart.</p>
-        </div>
-        <div class="chart-container" style="margin-top:16px">
-            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Cumulative P&amp;L</h3>
-            <svg viewBox="0 0 800 300" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:800px;height:auto;background:#161b22;border-radius:8px;"><line x1="60" y1="260.0" x2="780" y2="260.0" stroke="#484f58" stroke-width="1" stroke-dasharray="6,4" /><text x="52" y="264.0" fill="#8b949e" font-size="11" text-anchor="end">$0</text><line x1="60" y1="200.0" x2="780" y2="200.0" stroke="#21262d" stroke-width="1" /><text x="52" y="204.0" fill="#8b949e" font-size="10" text-anchor="end">$0</text><line x1="60" y1="140.0" x2="780" y2="140.0" stroke="#21262d" stroke-width="1" /><text x="52" y="144.0" fill="#8b949e" font-size="10" text-anchor="end">$0</text><line x1="60" y1="80.0" x2="780" y2="80.0" stroke="#21262d" stroke-width="1" /><text x="52" y="84.0" fill="#8b949e" font-size="10" text-anchor="end">$1</text><line x1="60" y1="20.0" x2="780" y2="20.0" stroke="#21262d" stroke-width="1" /><text x="52" y="24.0" fill="#8b949e" font-size="10" text-anchor="end">$1</text><polyline points="60.0,260.0 63.8,260.0 67.6,260.0 71.4,260.0 75.2,260.0 79.0,260.0 82.9,260.0 86.7,260.0 90.5,260.0 94.3,260.0 98.1,260.0 101.9,260.0 105.7,260.0 109.5,260.0 113.3,260.0 117.1,260.0 121.0,260.0 124.8,260.0 128.6,260.0 132.4,260.0 136.2,260.0 140.0,260.0 143.8,260.0 147.6,260.0 151.4,260.0 155.2,260.0 159.0,260.0 162.9,260.0 166.7,260.0 170.5,260.0 174.3,260.0 178.1,260.0 181.9,260.0 185.7,260.0 189.5,260.0 193.3,260.0 197.1,260.0 201.0,260.0 204.8,260.0 208.6,260.0 212.4,260.0 216.2,260.0 220.0,260.0 223.8,260.0 227.6,260.0 231.4,260.0 235.2,260.0 239.0,260.0 242.9,260.0 246.7,260.0 250.5,260.0 254.3,260.0 258.1,260.0 261.9,260.0 265.7,260.0 269.5,260.0 273.3,260.0 277.1,260.0 281.0,260.0 284.8,260.0 288.6,260.0 292.4,260.0 296.2,260.0 300.0,260.0 303.8,260.0 307.6,260.0 311.4,260.0 315.2,260.0 319.0,260.0 322.9,260.0 326.7,260.0 330.5,260.0 334.3,260.0 338.1,260.0 341.9,260.0 345.7,260.0 349.5,260.0 353.3,260.0 357.1,260.0 361.0,260.0 364.8,260.0 368.6,260.0 372.4,260.0 376.2,260.0 380.0,260.0 383.8,260.0 387.6,260.0 391.4,260.0 395.2,260.0 399.0,260.0 402.9,260.0 406.7,260.0 410.5,260.0 414.3,260.0 418.1,260.0 421.9,260.0 425.7,260.0 429.5,260.0 433.3,260.0 437.1,260.0 441.0,260.0 444.8,260.0 448.6,260.0 452.4,260.0 456.2,260.0 460.0,260.0 463.8,260.0 467.6,260.0 471.4,260.0 475.2,260.0 479.0,260.0 482.9,260.0 486.7,260.0 490.5,260.0 494.3,260.0 498.1,260.0 501.9,260.0 505.7,260.0 509.5,260.0 513.3,260.0 517.1,260.0 521.0,260.0 524.8,260.0 528.6,260.0 532.4,260.0 536.2,260.0 540.0,260.0 543.8,260.0 547.6,260.0 551.4,260.0 555.2,260.0 559.0,260.0 562.9,260.0 566.7,260.0 570.5,260.0 574.3,260.0 578.1,260.0 581.9,260.0 585.7,260.0 589.5,260.0 593.3,260.0 597.1,260.0 601.0,260.0 604.8,260.0 608.6,260.0 612.4,260.0 616.2,260.0 620.0,260.0 623.8,260.0 627.6,260.0 631.4,260.0 635.2,260.0 639.0,260.0 642.9,260.0 646.7,260.0 650.5,260.0 654.3,260.0 658.1,260.0 661.9,260.0 665.7,260.0 669.5,260.0 673.3,260.0 677.1,260.0 681.0,260.0 684.8,260.0 688.6,260.0 692.4,260.0 696.2,260.0 700.0,260.0 703.8,260.0 707.6,260.0 711.4,260.0 715.2,260.0 719.0,260.0 722.9,260.0 726.7,260.0 730.5,260.0 734.3,260.0 738.1,260.0 741.9,260.0 745.7,260.0 749.5,260.0 753.3,260.0 757.1,260.0 761.0,260.0 764.8,260.0 768.6,260.0 772.4,260.0 776.2,260.0 780.0,260.0" fill="none" stroke="#f0883e" stroke-width="3" /><polyline points="60.0,260.0 63.8,260.0 67.6,260.0 71.4,260.0 75.2,260.0 79.0,260.0 82.9,260.0 86.7,260.0 90.5,260.0 94.3,260.0 98.1,260.0 101.9,260.0 105.7,260.0 109.5,260.0 113.3,260.0 117.1,260.0 121.0,260.0 124.8,260.0 128.6,260.0 132.4,260.0 136.2,260.0 140.0,260.0 143.8,260.0 147.6,260.0 151.4,260.0 155.2,260.0 159.0,260.0 162.9,260.0 166.7,260.0 170.5,260.0 174.3,260.0 178.1,260.0 181.9,260.0 185.7,260.0 189.5,260.0 193.3,260.0 197.1,260.0 201.0,260.0 204.8,260.0 208.6,260.0 212.4,260.0 216.2,260.0 220.0,260.0 223.8,260.0 227.6,260.0 231.4,260.0 235.2,260.0 239.0,260.0 242.9,260.0 246.7,260.0 250.5,260.0 254.3,260.0 258.1,260.0 261.9,260.0 265.7,260.0 269.5,260.0 273.3,260.0 277.1,260.0 281.0,260.0 284.8,260.0 288.6,260.0 292.4,260.0 296.2,260.0 300.0,260.0 303.8,260.0 307.6,260.0 311.4,260.0 315.2,260.0 319.0,260.0 322.9,260.0 326.7,260.0 330.5,260.0 334.3,260.0 338.1,260.0 341.9,260.0 345.7,260.0 349.5,260.0 353.3,260.0 357.1,260.0 361.0,260.0 364.8,260.0 368.6,260.0 372.4,260.0 376.2,260.0 380.0,260.0 383.8,260.0 387.6,260.0 391.4,260.0 395.2,260.0 399.0,260.0 402.9,260.0 406.7,260.0 410.5,260.0 414.3,260.0 418.1,260.0 421.9,260.0 425.7,260.0 429.5,260.0 433.3,260.0 437.1,260.0 441.0,260.0 444.8,260.0 448.6,260.0 452.4,260.0 456.2,260.0 460.0,260.0 463.8,260.0 467.6,260.0 471.4,260.0 475.2,260.0 479.0,260.0 482.9,260.0 486.7,260.0 490.5,260.0 494.3,260.0 498.1,260.0 501.9,260.0 505.7,260.0 509.5,260.0 513.3,260.0 517.1,260.0 521.0,260.0 524.8,260.0 528.6,260.0 532.4,260.0 536.2,260.0 540.0,260.0 543.8,260.0 547.6,260.0 551.4,260.0 555.2,260.0 559.0,260.0 562.9,260.0 566.7,260.0 570.5,260.0 574.3,260.0 578.1,260.0 581.9,260.0 585.7,260.0 589.5,260.0 593.3,260.0 597.1,260.0 601.0,260.0 604.8,260.0 608.6,260.0 612.4,260.0 616.2,260.0 620.0,260.0 623.8,260.0 627.6,260.0 631.4,260.0 635.2,260.0 639.0,260.0 642.9,260.0 646.7,260.0 650.5,260.0 654.3,260.0 658.1,260.0 661.9,260.0 665.7,260.0 669.5,260.0 673.3,260.0 677.1,260.0 681.0,260.0 684.8,260.0 688.6,260.0 692.4,260.0 696.2,260.0 700.0,260.0 703.8,260.0 707.6,260.0 711.4,260.0 715.2,260.0 719.0,260.0 722.9,260.0 726.7,260.0 730.5,260.0 734.3,260.0 738.1,260.0 741.9,260.0 745.7,260.0 749.5,260.0 753.3,260.0 757.1,260.0 761.0,260.0 764.8,260.0 768.6,260.0 772.4,260.0 776.2,260.0 780.0,260.0" fill="none" stroke="#58a6ff" stroke-width="2" /></svg><div class="chart-legend"><span class="legend-item"><span class="legend-dot" style="background:#f0883e"></span>ENSEMBLE</span><span class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>momentum_kalshi</span></div>
-        </div>
-
-    <h2>Conviction Scoreboard (Live Trading)</h2>
-            <p class="section-desc">Only bet when conviction &ge; 3. Flat $25 per bet.</p>
-            <div class="table-wrap"><table>
-                <thead><tr>
-                    <th>Tier</th><th>Markets</th><th>Accuracy</th><th>W</th><th>L</th><th>Bet Size</th><th>P&amp;L</th><th>ROI</th>
-                </tr></thead>
-                <tbody><tr>
-                    <td style="color:#ffc107;font-weight:700">LOW (2)</td>
-                    <td>55</td>
-                    <td style="color:#f44336">45.5%</td>
-                    <td>25</td>
-                    <td>30</td>
-                    <td>$0</td>
-                    <td style="color:#3fb950">—</td>
-                    <td>—</td>
-                </tr><tr>
-                    <td style="color:#8b949e;font-weight:700">NO BET (0-1)</td>
-                    <td>135</td>
-                    <td style="color:#f44336">43.0%</td>
-                    <td>58</td>
-                    <td>77</td>
-                    <td>$0</td>
-                    <td style="color:#3fb950">—</td>
-                    <td>—</td>
-                </tr>
-                <tr style="border-top:2px solid #30363d">
-                    <td style="font-weight:700;color:#f0883e">TOTAL (bets only)</td>
-                    <td></td><td></td><td></td><td></td>
-                    <td></td>
-                    <td style="color:#3fb950;font-weight:700">$+0</td>
-                    <td style="font-weight:700">+0%</td>
-                </tr></tbody>
-            </table></div>
-
-    <h2>Rolling Accuracy (last 10 predictions)</h2>
-    <div class="chart-container"><svg viewBox="0 0 800 300" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:800px;height:auto;background:#161b22;border-radius:8px;"><line x1="50" y1="260.0" x2="780" y2="260.0" stroke="#484f58" stroke-width="1"  /><text x="42" y="264.0" fill="#8b949e" font-size="11" text-anchor="end">0%</text><line x1="50" y1="200.0" x2="780" y2="200.0" stroke="#484f58" stroke-width="1"  /><text x="42" y="204.0" fill="#8b949e" font-size="11" text-anchor="end">25%</text><line x1="50" y1="140.0" x2="780" y2="140.0" stroke="#da3633" stroke-width="1" stroke-dasharray="6,4" /><text x="42" y="144.0" fill="#8b949e" font-size="11" text-anchor="end">50%</text><line x1="50" y1="80.0" x2="780" y2="80.0" stroke="#484f58" stroke-width="1"  /><text x="42" y="84.0" fill="#8b949e" font-size="11" text-anchor="end">75%</text><line x1="50" y1="20.0" x2="780" y2="20.0" stroke="#484f58" stroke-width="1"  /><text x="42" y="24.0" fill="#8b949e" font-size="11" text-anchor="end">100%</text><text x="50.0" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#1</text><text x="171.66666666666666" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#31</text><text x="293.3333333333333" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#61</text><text x="415.0" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#91</text><text x="536.6666666666666" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#121</text><text x="658.3333333333334" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#151</text><text x="780.0" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#181</text><polyline points="50.0,188.0 54.1,188.0 58.1,164.0 62.2,188.0 66.2,188.0 70.3,188.0 74.3,212.0 78.4,188.0 82.4,164.0 86.5,164.0 90.6,188.0 94.6,164.0 98.7,164.0 102.7,140.0 106.8,116.0 110.8,92.0 114.9,68.0 118.9,92.0 123.0,116.0 127.1,116.0 131.1,92.0 135.2,92.0 139.2,92.0 143.3,92.0 147.3,92.0 151.4,92.0 155.4,116.0 159.5,116.0 163.6,92.0 167.6,68.0 171.7,68.0 175.7,92.0 179.8,92.0 183.8,116.0 187.9,116.0 191.9,140.0 196.0,116.0 200.1,116.0 204.1,116.0 208.2,140.0 212.2,140.0 216.3,140.0 220.3,164.0 224.4,164.0 228.4,188.0 232.5,188.0 236.6,212.0 240.6,212.0 244.7,236.0 248.7,236.0 252.8,260.0 256.8,236.0 260.9,236.0 264.9,236.0 269.0,236.0 273.1,212.0 277.1,212.0 281.2,212.0 285.2,212.0 289.3,188.0 293.3,164.0 297.4,188.0 301.4,188.0 305.5,164.0 309.6,164.0 313.6,188.0 317.7,164.0 321.7,164.0 325.8,164.0 329.8,188.0 333.9,188.0 337.9,188.0 342.0,188.0 346.1,212.0 350.1,212.0 354.2,212.0 358.2,212.0 362.3,212.0 366.3,212.0 370.4,188.0 374.4,212.0 378.5,188.0 382.6,164.0 386.6,164.0 390.7,140.0 394.7,116.0 398.8,140.0 402.8,140.0 406.9,116.0 410.9,116.0 415.0,116.0 419.1,116.0 423.1,116.0 427.2,92.0 431.2,116.0 435.3,116.0 439.3,116.0 443.4,116.0 447.4,140.0 451.5,164.0 455.6,164.0 459.6,164.0 463.7,164.0 467.7,164.0 471.8,140.0 475.8,140.0 479.9,140.0 483.9,140.0 488.0,140.0 492.1,140.0 496.1,116.0 500.2,140.0 504.2,140.0 508.3,164.0 512.3,188.0 516.4,212.0 520.4,188.0 524.5,188.0 528.6,164.0 532.6,164.0 536.7,188.0 540.7,164.0 544.8,188.0 548.8,164.0 552.9,164.0 556.9,140.0 561.0,164.0 565.1,140.0 569.1,164.0 573.2,140.0 577.2,140.0 581.3,164.0 585.3,164.0 589.4,188.0 593.4,164.0 597.5,188.0 601.6,188.0 605.6,188.0 609.7,188.0 613.7,212.0 617.8,188.0 621.8,164.0 625.9,164.0 629.9,164.0 634.0,164.0 638.1,140.0 642.1,140.0 646.2,140.0 650.2,140.0 654.3,140.0 658.3,164.0 662.4,188.0 666.4,164.0 670.5,140.0 674.6,164.0 678.6,188.0 682.7,188.0 686.7,188.0 690.8,188.0 694.8,164.0 698.9,140.0 702.9,116.0 707.0,140.0 711.1,140.0 715.1,116.0 719.2,92.0 723.2,92.0 727.3,116.0 731.3,92.0 735.4,116.0 739.4,116.0 743.5,140.0 747.6,140.0 751.6,140.0 755.7,164.0 759.7,188.0 763.8,164.0 767.8,140.0 771.9,140.0 775.9,116.0 780.0,116.0" fill="none" stroke="#d2a8ff" stroke-width="2" /></svg><div class="chart-legend"><span class="legend-item"><span class="legend-dot" style="background:#d2a8ff"></span>momentum_kalshi</span><span class="legend-item"><span class="legend-line" style="border-color:#da3633"></span>50% (coin flip)</span></div></div>
-
-    <h2>Win/Loss &amp; Hit Rate</h2>
-        <div class="table-wrap"><table>
-            <thead><tr>
-                <th>Agent</th><th>Record</th><th>Accuracy</th><th>Last 10</th>
-                <th>Streak</th><th>Best W</th><th>Worst L</th>
-            </tr></thead>
-            <tbody><tr style="opacity:0.6">
-                <td class="agent-name" style="color:#c9d1d9">momentum_kalshi <span style="background:#484f58;color:#8b949e;font-size:0.65rem;padding:1px 4px;border-radius:3px">SHADOW</span></td>
-                <td>83-107</td>
-                <td style="color:#f44336">43.7%</td>
-                <td style="color:#3fb950">60.0%</td>
-                <td><span class="streak streak-w">W5</span></td>
-                <td><span class="streak streak-w">W6</span></td>
-                <td><span class="streak streak-l">L10</span></td>
-            </tr></tbody>
-        </table></div>
-
-    <h2>Agent vs Market vs Coin Flip</h2>
-        <div class="bar-chart"><div class="bar-group">
-                <div class="bar-label" style="color:#c9d1d9">momentum_kalshi</div>
-                <div class="bar-row">
-                    <span class="bar-tag">Agent</span>
-                    <div class="bar-track"><div class="bar-fill" style="width:43.684210526315795%;background:#3fb950">43.7%</div></div>
-                </div>
-                <div class="bar-row">
-                    <span class="bar-tag">Market</span>
-                    <div class="bar-track"><div class="bar-fill" style="width:42.63157894736842%;background:#58a6ff">42.6%</div></div>
-                </div>
-                <div class="bar-row">
-                    <span class="bar-tag">Coin Flip</span>
-                    <div class="bar-track"><div class="bar-fill" style="width:50%;background:#484f58">50.0%</div></div>
-                </div>
-            </div></div>
-
-    <h2>Confidence Calibration</h2>
-        <p class="section-desc">When an agent says "high confidence", are they right more often?</p>
-        <div class="table-wrap"><table>
-            <thead><tr>
-                <th>Agent</th><th>Low</th><th>Medium</th><th>High</th>
-            </tr></thead>
-            <tbody><tr><td class="agent-name" style="color:#c9d1d9">momentum_kalshi</td><td style="color:#f44336">46% <span style="color:#484f58">(67)</span></td><td style="color:#f44336">45% <span style="color:#484f58">(55)</span></td><td style="color:#484f58">-- (0)</td></tr></tbody>
-        </table></div>
-
-    
-
-    
-
-    <h2>Recent Predictions</h2>
-    <div class="table-wrap">
-    <table>
-        <thead><tr>
-            <th>Agent</th>
-            <th>Market</th>
-            <th>Estimate</th>
-            <th>Market Price</th>
-            <th>Edge</th>
-            <th>Confidence</th>
-            <th>Outcome</th>
-            <th>Cycle</th>
-            <th>Spread %</th>
-            <th>Max Bet @2%</th>
-        </tr></thead>
-        <tbody><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 21:55 UTC?">Will BTC be above $85,500 at 21:55 UTC?</td>
-                <td>54.5%</td>
-                <td>54.5%</td>
-                <td>+4.5%</td>
-                <td>skip</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-                <td>C49</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 20:55 UTC?">Will BTC be above $85,000 at 20:55 UTC?</td>
-                <td>48.5%</td>
-                <td>48.5%</td>
-                <td>+1.5%</td>
-                <td>skip</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-                <td>C49</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 20:25 UTC?">Will BTC be above $84,500 at 20:25 UTC?</td>
-                <td>49.5%</td>
-                <td>49.5%</td>
-                <td>+0.5%</td>
-                <td>skip</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-                <td>C49</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 20:10 UTC?">Will BTC be above $84,000 at 20:10 UTC?</td>
-                <td>50.5%</td>
-                <td>50.5%</td>
-                <td>+0.5%</td>
-                <td>skip</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-                <td>C49</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 20:41 UTC?">Will BTC be above $85,500 at 20:41 UTC?</td>
-                <td>49.0%</td>
-                <td>48.5%</td>
-                <td>+1.0%</td>
-                <td>medium</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-                <td>C48</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 19:41 UTC?">Will BTC be above $85,000 at 19:41 UTC?</td>
-                <td>49.0%</td>
-                <td>56.5%</td>
-                <td>+1.0%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C48</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 19:11 UTC?">Will BTC be above $84,500 at 19:11 UTC?</td>
-                <td>49.0%</td>
-                <td>50.5%</td>
-                <td>+1.0%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C48</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 18:56 UTC?">Will BTC be above $84,000 at 18:56 UTC?</td>
-                <td>49.0%</td>
-                <td>52.5%</td>
-                <td>+1.0%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C48</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 19:56 UTC?">Will BTC be above $85,500 at 19:56 UTC?</td>
-                <td>50.0%</td>
-                <td>54.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-                <td>C47</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 18:56 UTC?">Will BTC be above $85,000 at 18:56 UTC?</td>
-                <td>50.0%</td>
-                <td>47.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C47</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 18:26 UTC?">Will BTC be above $84,500 at 18:26 UTC?</td>
-                <td>50.0%</td>
-                <td>51.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C47</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 18:11 UTC?">Will BTC be above $84,000 at 18:11 UTC?</td>
-                <td>50.0%</td>
-                <td>52.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C47</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 19:27 UTC?">Will BTC be above $85,500 at 19:27 UTC?</td>
-                <td>51.2%</td>
-                <td>50.5%</td>
-                <td>+1.2%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C46</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 18:27 UTC?">Will BTC be above $85,000 at 18:27 UTC?</td>
-                <td>51.2%</td>
-                <td>47.5%</td>
-                <td>+1.2%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C46</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 17:57 UTC?">Will BTC be above $84,500 at 17:57 UTC?</td>
-                <td>51.2%</td>
-                <td>50.5%</td>
-                <td>+1.2%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C46</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 17:42 UTC?">Will BTC be above $84,000 at 17:42 UTC?</td>
-                <td>51.2%</td>
-                <td>56.5%</td>
-                <td>+1.2%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C46</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 18:33 UTC?">Will BTC be above $85,500 at 18:33 UTC?</td>
-                <td>55.5%</td>
-                <td>55.5%</td>
-                <td>+5.5%</td>
-                <td>skip</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C45</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 17:33 UTC?">Will BTC be above $85,000 at 17:33 UTC?</td>
-                <td>52.5%</td>
-                <td>52.5%</td>
-                <td>+2.5%</td>
-                <td>skip</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C45</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 17:03 UTC?">Will BTC be above $84,500 at 17:03 UTC?</td>
-                <td>55.5%</td>
-                <td>55.5%</td>
-                <td>+5.5%</td>
-                <td>skip</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C45</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 16:48 UTC?">Will BTC be above $84,000 at 16:48 UTC?</td>
-                <td>56.5%</td>
-                <td>56.5%</td>
-                <td>+6.5%</td>
-                <td>skip</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C45</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 17:55 UTC?">Will BTC be above $85,500 at 17:55 UTC?</td>
-                <td>50.0%</td>
-                <td>50.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C44</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 16:55 UTC?">Will BTC be above $85,000 at 16:55 UTC?</td>
-                <td>50.0%</td>
-                <td>51.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C44</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 16:25 UTC?">Will BTC be above $84,500 at 16:25 UTC?</td>
-                <td>50.0%</td>
-                <td>51.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C44</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 16:10 UTC?">Will BTC be above $84,000 at 16:10 UTC?</td>
-                <td>50.0%</td>
-                <td>49.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C44</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 17:27 UTC?">Will BTC be above $85,500 at 17:27 UTC?</td>
-                <td>50.0%</td>
-                <td>56.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C43</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 16:27 UTC?">Will BTC be above $85,000 at 16:27 UTC?</td>
-                <td>50.0%</td>
-                <td>53.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C43</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 15:57 UTC?">Will BTC be above $84,500 at 15:57 UTC?</td>
-                <td>50.0%</td>
-                <td>51.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C43</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 15:42 UTC?">Will BTC be above $84,000 at 15:42 UTC?</td>
-                <td>50.0%</td>
-                <td>51.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C43</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 16:31 UTC?">Will BTC be above $85,500 at 16:31 UTC?</td>
-                <td>48.7%</td>
-                <td>53.5%</td>
-                <td>+1.3%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C42</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 15:31 UTC?">Will BTC be above $85,000 at 15:31 UTC?</td>
-                <td>48.7%</td>
-                <td>48.5%</td>
-                <td>+1.3%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C42</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 15:01 UTC?">Will BTC be above $84,500 at 15:01 UTC?</td>
-                <td>48.7%</td>
-                <td>55.5%</td>
-                <td>+1.3%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C42</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 14:46 UTC?">Will BTC be above $84,000 at 14:46 UTC?</td>
-                <td>48.7%</td>
-                <td>47.5%</td>
-                <td>+1.3%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C42</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 15:51 UTC?">Will BTC be above $85,500 at 15:51 UTC?</td>
-                <td>50.0%</td>
-                <td>50.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C41</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 14:51 UTC?">Will BTC be above $85,000 at 14:51 UTC?</td>
-                <td>50.0%</td>
-                <td>55.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C41</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 14:21 UTC?">Will BTC be above $84,500 at 14:21 UTC?</td>
-                <td>50.0%</td>
-                <td>51.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C41</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 14:06 UTC?">Will BTC be above $84,000 at 14:06 UTC?</td>
-                <td>50.0%</td>
-                <td>52.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C41</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 14:47 UTC?">Will BTC be above $85,500 at 14:47 UTC?</td>
-                <td>50.0%</td>
-                <td>56.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C40</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 13:47 UTC?">Will BTC be above $85,000 at 13:47 UTC?</td>
-                <td>50.0%</td>
-                <td>56.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C40</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 13:17 UTC?">Will BTC be above $84,500 at 13:17 UTC?</td>
-                <td>50.0%</td>
-                <td>48.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C40</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 13:02 UTC?">Will BTC be above $84,000 at 13:02 UTC?</td>
-                <td>50.0%</td>
-                <td>55.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C40</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 13:52 UTC?">Will BTC be above $85,500 at 13:52 UTC?</td>
-                <td>50.0%</td>
-                <td>48.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C39</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 12:52 UTC?">Will BTC be above $85,000 at 12:52 UTC?</td>
-                <td>50.0%</td>
-                <td>53.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C39</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 12:22 UTC?">Will BTC be above $84,500 at 12:22 UTC?</td>
-                <td>50.0%</td>
-                <td>55.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C39</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 12:07 UTC?">Will BTC be above $84,000 at 12:07 UTC?</td>
-                <td>50.0%</td>
-                <td>54.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C39</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 13:01 UTC?">Will BTC be above $85,500 at 13:01 UTC?</td>
-                <td>59.3%</td>
-                <td>54.5%</td>
-                <td>+9.3%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C38</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 12:01 UTC?">Will BTC be above $85,000 at 12:01 UTC?</td>
-                <td>59.3%</td>
-                <td>51.5%</td>
-                <td>+9.3%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C38</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,500 at 11:31 UTC?">Will BTC be above $84,500 at 11:31 UTC?</td>
-                <td>59.3%</td>
-                <td>55.5%</td>
-                <td>+9.3%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C38</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $84,000 at 11:16 UTC?">Will BTC be above $84,000 at 11:16 UTC?</td>
-                <td>59.3%</td>
-                <td>54.5%</td>
-                <td>+9.3%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C38</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,500 at 12:29 UTC?">Will BTC be above $85,500 at 12:29 UTC?</td>
-                <td>50.0%</td>
-                <td>54.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C37</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td title="Will BTC be above $85,000 at 11:29 UTC?">Will BTC be above $85,000 at 11:29 UTC?</td>
-                <td>50.0%</td>
-                <td>53.5%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C37</td>
-                <td>—</td>
-                <td>—</td>
-            </tr></tbody>
-    </table>
-    </div>
-
-    <h2>Technical Metrics (Brier Scores)</h2>
-    <div class="table-wrap">
-    <table>
-        <thead><tr>
-            <th>Agent</th>
-            <th>Avg Brier Score</th>
-            <th>Resolved Markets</th>
-            <th>vs Market</th>
-        </tr></thead>
-        <tbody><tr>
-                <td class="agent-name">momentum_kalshi</td>
-                <td style="color:#ffc107;font-weight:600">0.2558</td>
-                <td>190</td>
-                <td style="color:#4caf50">-0.0018 (BEATING market)</td>
-            </tr></tbody>
-    </table>
-    </div>
-
-    <h2>Markets <span style="color:#8b949e;font-size:0.85rem;font-weight:400">(latest 50 of 196)</span></h2>
-    <div class="table-wrap">
-    <table>
-        <thead><tr>
-            <th>Question</th>
-            <th>Category</th>
-            <th>Price (UP)</th>
-            <th>Volume</th>
-            <th>End Date</th>
-            <th>Status</th>
-        </tr></thead>
-        <tbody><tr>
-                <td title="Will BTC be above $85,500 at 21:55 UTC?">Will BTC be above $85,500 at 21:55 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>54.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 20:55 UTC?">Will BTC be above $85,000 at 20:55 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>48.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 20:41 UTC?">Will BTC be above $85,500 at 20:41 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>48.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 20:25 UTC?">Will BTC be above $84,500 at 20:25 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>49.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 20:10 UTC?">Will BTC be above $84,000 at 20:10 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 19:56 UTC?">Will BTC be above $85,500 at 19:56 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>54.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 19:41 UTC?">Will BTC be above $85,000 at 19:41 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>56.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 19:27 UTC?">Will BTC be above $85,500 at 19:27 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 19:11 UTC?">Will BTC be above $84,500 at 19:11 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 18:56 UTC?">Will BTC be above $85,000 at 18:56 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>47.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 18:56 UTC?">Will BTC be above $84,000 at 18:56 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>52.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 18:33 UTC?">Will BTC be above $85,500 at 18:33 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>55.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 18:27 UTC?">Will BTC be above $85,000 at 18:27 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>47.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 18:26 UTC?">Will BTC be above $84,500 at 18:26 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>51.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 18:11 UTC?">Will BTC be above $84,000 at 18:11 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>52.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 17:57 UTC?">Will BTC be above $84,500 at 17:57 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 17:55 UTC?">Will BTC be above $85,500 at 17:55 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 17:42 UTC?">Will BTC be above $84,000 at 17:42 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>56.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 17:33 UTC?">Will BTC be above $85,000 at 17:33 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>52.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 17:27 UTC?">Will BTC be above $85,500 at 17:27 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>56.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 17:03 UTC?">Will BTC be above $84,500 at 17:03 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>55.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 16:55 UTC?">Will BTC be above $85,000 at 16:55 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>51.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 16:48 UTC?">Will BTC be above $84,000 at 16:48 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>56.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 16:31 UTC?">Will BTC be above $85,500 at 16:31 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>53.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 16:27 UTC?">Will BTC be above $85,000 at 16:27 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>53.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 16:25 UTC?">Will BTC be above $84,500 at 16:25 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>51.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 16:10 UTC?">Will BTC be above $84,000 at 16:10 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>49.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 15:57 UTC?">Will BTC be above $84,500 at 15:57 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>51.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 15:51 UTC?">Will BTC be above $85,500 at 15:51 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 15:42 UTC?">Will BTC be above $84,000 at 15:42 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>51.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 15:31 UTC?">Will BTC be above $85,000 at 15:31 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>48.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 15:01 UTC?">Will BTC be above $84,500 at 15:01 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>55.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 14:51 UTC?">Will BTC be above $85,000 at 14:51 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>55.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 14:47 UTC?">Will BTC be above $85,500 at 14:47 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>56.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 14:46 UTC?">Will BTC be above $84,000 at 14:46 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>47.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 14:21 UTC?">Will BTC be above $84,500 at 14:21 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>51.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 14:06 UTC?">Will BTC be above $84,000 at 14:06 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>52.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 13:52 UTC?">Will BTC be above $85,500 at 13:52 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>48.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 13:47 UTC?">Will BTC be above $85,000 at 13:47 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>56.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 13:17 UTC?">Will BTC be above $84,500 at 13:17 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>48.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 13:02 UTC?">Will BTC be above $84,000 at 13:02 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>55.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 13:01 UTC?">Will BTC be above $85,500 at 13:01 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>54.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 12:52 UTC?">Will BTC be above $85,000 at 12:52 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>53.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 12:29 UTC?">Will BTC be above $85,500 at 12:29 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>54.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 12:22 UTC?">Will BTC be above $84,500 at 12:22 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>55.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,000 at 12:07 UTC?">Will BTC be above $84,000 at 12:07 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>54.5%</td>
-                <td>$50,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 12:01 UTC?">Will BTC be above $85,000 at 12:01 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>51.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,500 at 11:34 UTC?">Will BTC be above $85,500 at 11:34 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>52.5%</td>
-                <td>$80,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $84,500 at 11:31 UTC?">Will BTC be above $84,500 at 11:31 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>55.5%</td>
-                <td>$60,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $85,000 at 11:29 UTC?">Will BTC be above $85,000 at 11:29 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>53.5%</td>
-                <td>$70,000</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr></tbody>
-    </table>
-    </div>
-
-
+<div class="footer">Generated 2026-04-04 21:14 UTC</div>
 </div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
 (function() {
-    var el = document.getElementById('countdown');
-    if (!el) return;
-    var endStr = el.getAttribute('data-next-market');
-    if (!endStr) { el.textContent = 'No upcoming market'; return; }
-    var end = new Date(endStr.replace('Z','+00:00'));
-    function update() {
-        var now = new Date();
-        var diff = Math.floor((end - now) / 1000);
-        if (diff <= 0) { el.textContent = 'Resolving...'; return; }
-        var h = Math.floor(diff / 3600);
-        var m = Math.floor((diff % 3600) / 60);
-        var s = diff % 60;
-        if (h > 0) {
-            el.textContent = h + 'h ' + m + 'm';
-        } else {
-            el.textContent = m + 'm ' + (s < 10 ? '0' : '') + s + 's';
-        }
+  const C = {
+    bg: '#161b22', grid: '#21262d', zero: '#484f58',
+    green: '#3fb950', red: '#f44336', line: '#58a6ff',
+    text: '#8b949e', textLight: '#c9d1d9'
+  };
+
+  function renderCumulativePnl(el, data) {
+    if (!data || data.length < 2) {
+      el.innerHTML = '<div class="chart-empty">Not enough data for chart.</div>';
+      return;
     }
-    update();
-    setInterval(update, 1000);
+    const margin = {top: 16, right: 16, bottom: 32, left: 56};
+    const width = el.clientWidth || 860;
+    const height = 260;
+    const iw = width - margin.left - margin.right;
+    const ih = height - margin.top - margin.bottom;
+
+    const svg = d3.select(el).append('svg')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const parseDate = d => new Date(d);
+    const x = d3.scaleTime()
+      .domain(d3.extent(data, d => parseDate(d.date)))
+      .range([0, iw]);
+    const yMin = Math.min(d3.min(data, d => d.value), 0);
+    const yMax = Math.max(d3.max(data, d => d.value), 0);
+    const yPad = (yMax - yMin) * 0.1 || 10;
+    const y = d3.scaleLinear()
+      .domain([yMin - yPad, yMax + yPad])
+      .range([ih, 0]);
+
+    // Grid
+    g.append('g').selectAll('line')
+      .data(y.ticks(5)).enter().append('line')
+      .attr('x1', 0).attr('x2', iw)
+      .attr('y1', d => y(d)).attr('y2', d => y(d))
+      .attr('stroke', C.grid).attr('stroke-width', 0.5);
+
+    // Zero line
+    g.append('line')
+      .attr('x1', 0).attr('x2', iw)
+      .attr('y1', y(0)).attr('y2', y(0))
+      .attr('stroke', C.zero).attr('stroke-width', 1)
+      .attr('stroke-dasharray', '6,4');
+
+    // Area (green above zero, red below)
+    const areaAbove = d3.area()
+      .x(d => x(parseDate(d.date)))
+      .y0(y(0))
+      .y1(d => y(Math.max(d.value, 0)))
+      .curve(d3.curveMonotoneX);
+    const areaBelow = d3.area()
+      .x(d => x(parseDate(d.date)))
+      .y0(y(0))
+      .y1(d => y(Math.min(d.value, 0)))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path').datum(data)
+      .attr('d', areaAbove)
+      .attr('fill', C.green).attr('fill-opacity', 0.15);
+    g.append('path').datum(data)
+      .attr('d', areaBelow)
+      .attr('fill', C.red).attr('fill-opacity', 0.15);
+
+    // Line
+    const line = d3.line()
+      .x(d => x(parseDate(d.date)))
+      .y(d => y(d.value))
+      .curve(d3.curveMonotoneX);
+    g.append('path').datum(data)
+      .attr('d', line)
+      .attr('fill', 'none')
+      .attr('stroke', data[data.length-1].value >= 0 ? C.green : C.red)
+      .attr('stroke-width', 2);
+
+    // Axes
+    g.append('g')
+      .attr('transform', `translate(0,${ih})`)
+      .call(d3.axisBottom(x).ticks(5).tickFormat(d3.timeFormat('%b %d')))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+    g.append('g')
+      .call(d3.axisLeft(y).ticks(5).tickFormat(d => '$' + d3.format(',.0f')(d)))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+
+    // Tooltip
+    const tooltip = d3.select(el).append('div').attr('class', 'd3-tooltip');
+    const bisect = d3.bisector(d => parseDate(d.date)).left;
+    const overlay = g.append('rect')
+      .attr('width', iw).attr('height', ih)
+      .attr('fill', 'none').attr('pointer-events', 'all');
+    const focus = g.append('circle').attr('r', 4)
+      .attr('fill', C.textLight).attr('display', 'none');
+
+    overlay.on('mousemove', function(event) {
+      const [mx] = d3.pointer(event);
+      const x0 = x.invert(mx);
+      const i = bisect(data, x0, 1);
+      const d0 = data[i-1], d1 = data[i];
+      if (!d0) return;
+      const d = d1 && (x0 - parseDate(d0.date) > parseDate(d1.date) - x0) ? d1 : d0;
+      focus.attr('cx', x(parseDate(d.date))).attr('cy', y(d.value)).attr('display', null);
+      const dt = new Date(d.date);
+      tooltip.style('opacity', 1)
+        .html(`<div>${dt.toLocaleDateString('en', {month:'short',day:'numeric'})} ${dt.toLocaleTimeString('en', {hour:'2-digit',minute:'2-digit'})}</div><div style="font-weight:700;color:${d.value >= 0 ? C.green : C.red}">$${d.value.toFixed(2)}</div>`)
+        .style('left', (event.offsetX + 12) + 'px')
+        .style('top', (event.offsetY - 28) + 'px');
+    }).on('mouseleave', function() {
+      focus.attr('display', 'none');
+      tooltip.style('opacity', 0);
+    });
+  }
+
+  function renderWaterfall(el, data) {
+    if (!data || data.length < 2) {
+      el.innerHTML = '<div class="chart-empty">Not enough data for chart.</div>';
+      return;
+    }
+    const margin = {top: 16, right: 16, bottom: 32, left: 56};
+    const width = el.clientWidth || 860;
+    const height = 220;
+    const iw = width - margin.left - margin.right;
+    const ih = height - margin.top - margin.bottom;
+
+    const svg = d3.select(el).append('svg')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const parseDate = d => new Date(d.date);
+    const x = d3.scaleBand()
+      .domain(data.map((d,i) => i))
+      .range([0, iw]).padding(0.3);
+    const yMin = Math.min(d3.min(data, d => d.cumulative), 0);
+    const yMax = Math.max(d3.max(data, d => d.cumulative), 0);
+    const yPad = (yMax - yMin) * 0.1 || 10;
+    const y = d3.scaleLinear()
+      .domain([yMin - yPad, yMax + yPad]).range([ih, 0]);
+
+    // Zero line
+    g.append('line')
+      .attr('x1', 0).attr('x2', iw)
+      .attr('y1', y(0)).attr('y2', y(0))
+      .attr('stroke', C.zero).attr('stroke-width', 1)
+      .attr('stroke-dasharray', '6,4');
+
+    // Bars
+    g.selectAll('.bar').data(data).enter().append('rect')
+      .attr('x', (d,i) => x(i))
+      .attr('width', x.bandwidth())
+      .attr('y', d => y(Math.max(d.cumulative, d.cumulative - d.profit)))
+      .attr('height', d => Math.max(1, Math.abs(y(0) - y(Math.abs(d.profit)))))
+      .attr('fill', d => d.won ? C.green : C.red)
+      .attr('rx', 2);
+
+    // Cumulative line
+    const line = d3.line()
+      .x((d,i) => x(i) + x.bandwidth()/2)
+      .y(d => y(d.cumulative))
+      .curve(d3.curveMonotoneX);
+    g.append('path').datum(data)
+      .attr('d', line).attr('fill', 'none')
+      .attr('stroke', C.line).attr('stroke-width', 1.5);
+
+    // Axes
+    const tickInterval = Math.max(1, Math.floor(data.length / 6));
+    g.append('g')
+      .attr('transform', `translate(0,${ih})`)
+      .call(d3.axisBottom(d3.scaleBand().domain(
+        data.filter((d,i) => i % tickInterval === 0).map((d,i) => {
+          const dt = new Date(d.date);
+          return dt.toLocaleDateString('en', {month:'short',day:'numeric'});
+        })
+      ).range([0, iw])))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+    g.append('g')
+      .call(d3.axisLeft(y).ticks(5).tickFormat(d => '$' + d3.format(',.0f')(d)))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+  }
+
+  function renderRollingAccuracy(el, data) {
+    if (!data || data.length < 2) {
+      el.innerHTML = '<div class="chart-empty">Not enough data for chart.</div>';
+      return;
+    }
+    const margin = {top: 16, right: 16, bottom: 32, left: 48};
+    const width = el.clientWidth || 860;
+    const height = 200;
+    const iw = width - margin.left - margin.right;
+    const ih = height - margin.top - margin.bottom;
+
+    const svg = d3.select(el).append('svg')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const parseDate = d => new Date(d.date);
+    const x = d3.scaleTime()
+      .domain(d3.extent(data, d => parseDate(d.date)))
+      .range([0, iw]);
+    const y = d3.scaleLinear().domain([0, 100]).range([ih, 0]);
+
+    // 50% baseline
+    g.append('line')
+      .attr('x1', 0).attr('x2', iw)
+      .attr('y1', y(50)).attr('y2', y(50))
+      .attr('stroke', C.zero).attr('stroke-width', 1)
+      .attr('stroke-dasharray', '6,4');
+    g.append('text')
+      .attr('x', iw - 4).attr('y', y(50) - 4)
+      .attr('text-anchor', 'end').attr('fill', C.text)
+      .attr('font-size', '10px').text('50%');
+
+    // Area above 50%
+    const areaAbove = d3.area()
+      .x(d => x(parseDate(d.date)))
+      .y0(y(50))
+      .y1(d => y(Math.max(d.value, 50)))
+      .curve(d3.curveMonotoneX);
+    g.append('path').datum(data)
+      .attr('d', areaAbove)
+      .attr('fill', C.green).attr('fill-opacity', 0.1);
+
+    // Line
+    const line = d3.line()
+      .x(d => x(parseDate(d.date)))
+      .y(d => y(d.value))
+      .curve(d3.curveMonotoneX);
+    g.append('path').datum(data)
+      .attr('d', line).attr('fill', 'none')
+      .attr('stroke', C.line).attr('stroke-width', 2);
+
+    // Axes
+    g.append('g')
+      .attr('transform', `translate(0,${ih})`)
+      .call(d3.axisBottom(x).ticks(5).tickFormat(d3.timeFormat('%b %d')))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+    g.append('g')
+      .call(d3.axisLeft(y).ticks(5).tickFormat(d => d + '%'))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+  }
+
+  // Dispatcher
+  document.addEventListener('DOMContentLoaded', function() {
+    const renderers = {
+      cumulative_pnl: renderCumulativePnl,
+      waterfall: renderWaterfall,
+      rolling_accuracy: renderRollingAccuracy
+    };
+    document.querySelectorAll('.d3-chart').forEach(function(el) {
+      const type = el.dataset.chartType;
+      try {
+        const data = JSON.parse(el.dataset.chartData);
+        if (renderers[type]) renderers[type](el, data);
+      } catch(e) {
+        el.innerHTML = '<div class="chart-empty">Chart unavailable.</div>';
+      }
+    });
+  });
 })();
 </script>
+
 </body>
 </html>

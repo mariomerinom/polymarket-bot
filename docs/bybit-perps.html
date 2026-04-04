@@ -2,1892 +2,510 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="300">
-<title>BOTSY CASH MATERIALIZER</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BOTSY — Bybit BTC Perps</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
-    background: #0d1117;
-    color: #c9d1d9;
-    line-height: 1.5;
-    padding: 20px;
-}
-h1 {
-    color: #58a6ff;
-    font-size: 1.8rem;
-    margin-bottom: 8px;
-}
-.dash-nav {
-    display: flex;
-    gap: 8px;
-    margin: 8px 0 4px 0;
-}
-.dash-nav-link {
-    display: inline-block;
-    padding: 4px 14px;
-    border-radius: 6px;
-    background: #21262d;
-    color: #c9d1d9;
-    text-decoration: none;
-    font-size: 0.85rem;
-    font-weight: 600;
-    border: 1px solid #30363d;
-    transition: background 0.15s;
-}
-.dash-nav-link:hover {
-    background: #30363d;
-    color: #58a6ff;
-}
-.subtitle {
-    color: #8b949e;
-    margin-bottom: 28px;
-    font-size: 0.95rem;
-}
-h2 {
-    color: #58a6ff;
-    font-size: 1.25rem;
-    margin: 32px 0 12px 0;
-    padding-bottom: 6px;
-    border-bottom: 1px solid #21262d;
-}
-.section-desc {
-    color: #8b949e;
-    font-size: 0.85rem;
-    margin-bottom: 12px;
-}
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-}
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 16px;
-    font-size: 0.9rem;
-}
-th {
-    background: #161b22;
-    color: #58a6ff;
-    text-align: left;
-    padding: 10px 12px;
-    border-bottom: 2px solid #21262d;
-    white-space: nowrap;
-}
-td {
-    padding: 8px 12px;
-    border-bottom: 1px solid #21262d;
-    vertical-align: middle;
-    max-width: 320px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-tr:hover {
-    background: #161b22;
-}
-.agent-name {
-    color: #d2a8ff;
-    font-weight: 600;
-}
-.badge {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 600;
-}
-.badge-yes {
-    background: #238636;
-    color: #fff;
-}
-.badge-no {
-    background: #da3633;
-    color: #fff;
-}
-.badge-pending {
-    background: #30363d;
-    color: #8b949e;
-    border: 1px solid #484f58;
-}
-.empty {
-    text-align: center;
-    color: #484f58;
-    padding: 24px;
-    font-style: italic;
-}
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        background: #0d1117;
+        color: #c9d1d9;
+        line-height: 1.5;
+        padding: 0;
+    }
+    .container { max-width: 900px; margin: 0 auto; padding: 16px 20px; }
 
-/* Performance Cards */
-.perf-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
-    margin-bottom: 8px;
-}
-.perf-card {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 10px;
-    padding: 20px;
-    text-align: center;
-}
-.perf-ensemble {
-    border-color: #f0883e;
-    border-width: 2px;
-}
-.consolidated-pnl {
-    background: #161b22;
-    border: 2px solid #3fb950;
-    border-radius: 10px;
-    padding: 24px;
-    text-align: center;
-    margin-bottom: 16px;
-}
-.consolidated-label {
-    font-size: 0.8rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #8b949e;
-    margin-bottom: 4px;
-}
-.consolidated-return {
-    font-size: 3rem;
-    font-weight: 800;
-    line-height: 1.1;
-}
-.consolidated-detail {
-    color: #8b949e;
-    font-size: 0.9rem;
-    margin: 4px 0;
-}
-.consolidated-profit {
-    font-size: 1.1rem;
-    font-weight: 700;
-}
-.pnl-asymmetry {
-    margin-top: 12px;
-    text-align: left;
-    max-width: 500px;
-    margin-left: auto;
-    margin-right: auto;
-}
-.pnl-asym-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 4px 0;
-    font-size: 0.85rem;
-}
-.pnl-asym-label {
-    width: 30px;
-    font-weight: 700;
-    text-align: right;
-    flex-shrink: 0;
-}
-.pnl-asym-bar-wrap {
-    flex: 1;
-    background: #21262d;
-    border-radius: 4px;
-    height: 18px;
-    overflow: hidden;
-}
-.pnl-asym-bar {
-    display: block;
-    height: 100%;
-    border-radius: 4px;
-    min-width: 4px;
-}
-.pnl-asym-val {
-    width: 80px;
-    font-weight: 700;
-    text-align: right;
-    flex-shrink: 0;
-}
-.pnl-asym-avg {
-    color: #8b949e;
-    font-size: 0.75rem;
-    width: 110px;
-    flex-shrink: 0;
-}
-/* EV & Breakeven Box */
-.ev-box {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 10px;
-    padding: 16px 24px;
-    margin-bottom: 16px;
-}
-.ev-row {
-    display: flex;
-    justify-content: space-around;
-    gap: 16px;
-    margin-bottom: 12px;
-}
-.ev-metric {
-    text-align: center;
-}
-.ev-label {
-    font-size: 0.7rem;
-    color: #8b949e;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 2px;
-}
-.ev-value {
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: #c9d1d9;
-}
-.ev-gauge-wrap {
-    max-width: 500px;
-    margin: 0 auto;
-}
-.ev-gauge-bg {
-    position: relative;
-    height: 14px;
-    background: #21262d;
-    border-radius: 7px;
-    overflow: visible;
-}
-.ev-gauge-fill {
-    height: 100%;
-    border-radius: 7px;
-    opacity: 0.7;
-    transition: width 0.3s;
-}
-.ev-gauge-marker {
-    position: absolute;
-    top: -4px;
-    width: 3px;
-    height: 22px;
-    background: #c9d1d9;
-    border-radius: 2px;
-    transform: translateX(-50%);
-}
-.ev-gauge-labels {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.7rem;
-    color: #484f58;
-    margin-top: 2px;
-    position: relative;
-}
-.perf-agent {
-    font-size: 0.85rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 8px;
-}
-.perf-record {
-    font-size: 1.6rem;
-    font-weight: 700;
-    color: #c9d1d9;
-    margin-bottom: 4px;
-}
-.perf-accuracy {
-    font-size: 2rem;
-    font-weight: 800;
-    margin-bottom: 4px;
-}
-.perf-vs {
-    font-size: 0.85rem;
-    margin-bottom: 8px;
-}
-.perf-streak {
-    margin-top: 4px;
-}
+    /* Nav */
+    .nav { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid #21262d; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+    .nav a {
+        color: #484f58; text-decoration: none; font-size: 13px; font-weight: 500;
+        padding: 4px 10px; border-radius: 6px; transition: all 0.15s;
+    }
+    .nav a:hover { color: #c9d1d9; background: #161b22; }
+    .nav a.active { color: #c9d1d9; background: #161b22; font-weight: 600; }
 
-/* Streaks */
-.streak {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 700;
-}
-.streak-w {
-    background: #238636;
-    color: #fff;
-}
-.streak-l {
-    background: #da3633;
-    color: #fff;
-}
+    /* Header */
+    .header { margin-bottom: 24px; }
+    .header h1 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .badge {
+        font-size: 11px; font-weight: 700; letter-spacing: 1px;
+        padding: 2px 8px; border-radius: 4px; text-transform: uppercase;
+    }
+    .badge-live { background: rgba(240,136,62,0.15); color: #f0883e; border: 1px solid rgba(240,136,62,0.3); }
+    .badge-paper { background: rgba(88,166,255,0.12); color: #58a6ff; border: 1px solid rgba(88,166,255,0.2); }
+    .header-meta { font-size: 12px; color: #6e7681; margin-top: 4px; }
 
-/* Bar Chart */
-.bar-chart {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 20px;
-}
-.bar-group {
-    margin-bottom: 20px;
-}
-.bar-group:last-child {
-    margin-bottom: 0;
-}
-.bar-label {
-    font-weight: 700;
-    font-size: 0.9rem;
-    margin-bottom: 6px;
-}
-.bar-row {
-    display: flex;
-    align-items: center;
-    margin-bottom: 4px;
-    gap: 8px;
-}
-.bar-tag {
-    width: 55px;
-    font-size: 0.75rem;
-    color: #8b949e;
-    text-align: right;
-    flex-shrink: 0;
-}
-.bar-track {
-    flex: 1;
-    height: 22px;
-    background: #0d1117;
-    border-radius: 4px;
-    overflow: hidden;
-    position: relative;
-}
-.bar-fill {
-    height: 100%;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    padding-left: 8px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #fff;
-    min-width: 45px;
-    transition: width 0.3s ease;
-}
+    /* Section */
+    .section {
+        background: #161b22; border: 1px solid #30363d;
+        border-radius: 10px; padding: 20px; margin-bottom: 20px;
+    }
+    .section-live { border-left: 3px solid #f0883e; }
+    .section-paper { border-left: 3px solid #58a6ff; }
+    .section-title {
+        font-size: 12px; font-weight: 700; color: #8b949e;
+        letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 14px;
+    }
 
-/* Chart */
-.chart-container {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 8px;
-}
-.chart-legend {
-    display: flex;
-    gap: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
-    padding-top: 12px;
-}
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.8rem;
-    color: #8b949e;
-}
-.legend-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    display: inline-block;
-}
-.legend-line {
-    width: 16px;
-    height: 0;
-    border-top: 2px dashed;
-    display: inline-block;
-}
+    /* Hero number */
+    .hero { font-size: 36px; font-weight: 800; margin: 4px 0 8px; }
+    .hero-positive { color: #3fb950; }
+    .hero-negative { color: #f44336; }
+    .hero-zero { color: #8b949e; }
 
-/* Pipeline Health Banner */
-.pipeline-banner {
-    background: #161b22;
-    border: 2px solid #21262d;
-    border-radius: 10px;
-    padding: 16px 24px;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-.pipeline-main {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-.pipeline-fraction {
-    font-weight: 800;
-}
-.pipeline-big {
-    font-size: 2.2rem;
-    line-height: 1;
-}
-.pipeline-slash {
-    font-size: 1.2rem;
-    opacity: 0.6;
-}
-.pipeline-labels {
-    display: flex;
-    flex-direction: column;
-}
-.pipeline-status {
-    font-size: 0.85rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-}
-.pipeline-desc {
-    color: #8b949e;
-    font-size: 0.8rem;
-}
-.pipeline-meta {
-    text-align: right;
-}
-.pipeline-detail {
-    color: #8b949e;
-    font-size: 0.8rem;
-}
-.pipeline-ago {
-    color: #8b949e;
-    font-size: 0.75rem;
-    margin-top: 2px;
-}
+    /* Metrics row */
+    .metrics { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; }
+    .metric {
+        flex: 1 1 120px; background: #0d1117; border-radius: 8px;
+        padding: 10px 14px; min-width: 120px;
+    }
+    .metric-label { font-size: 11px; color: #6e7681; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric-value { font-size: 18px; font-weight: 700; margin-top: 2px; }
 
-/* Live Context Banner */
-.live-banner {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 12px;
-    margin-bottom: 24px;
-}
-.live-card {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 14px 18px;
-}
-.live-label {
-    color: #484f58;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 4px;
-}
-.live-value {
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: #c9d1d9;
-    margin-bottom: 2px;
-}
-.live-detail {
-    font-size: 0.8rem;
-    color: #8b949e;
-}
-.live-sub {
-    font-size: 0.72rem;
-    color: #484f58;
-    margin-top: 4px;
-    word-break: break-all;
-}
-.live-result {
-    border-width: 2px;
-}
-.live-verdict {
-    font-size: 1.8rem;
-    font-weight: 800;
-    line-height: 1.1;
-    margin-bottom: 4px;
-}
-.live-outcome {
-    font-size: 0.85rem;
-    color: #8b949e;
-    margin-bottom: 4px;
-}
-.result-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 8px;
-}
-.result-chip {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 14px;
-    font-size: 0.72rem;
-    font-weight: 700;
-    white-space: nowrap;
-}
+    /* Provenance */
+    .provenance { font-size: 11px; color: #484f58; margin-top: 8px; }
+    .provenance-tag {
+        background: #21262d; padding: 1px 6px; border-radius: 3px;
+        margin-right: 6px; font-size: 10px;
+    }
 
-/* Status Bar */
-.status-bar {
-    display: flex;
-    gap: 24px;
-    flex-wrap: wrap;
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 16px 20px;
-    margin-bottom: 24px;
-}
-.status-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-.status-label {
-    color: #484f58;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-.status-value {
-    color: #c9d1d9;
-    font-size: 1rem;
-    font-weight: 600;
-}
-.table-wrap {
-    overflow-x: auto;
-}
-@media (max-width: 768px) {
-    body { padding: 10px; }
-    h1 { font-size: 1.4rem; }
-    td, th { padding: 6px 8px; font-size: 0.82rem; }
-    .perf-grid { grid-template-columns: repeat(2, 1fr); }
-}
+    /* Chart container */
+    .chart-container { margin: 16px 0 8px; }
+    .chart-container svg { width: 100%; height: auto; display: block; }
+    .chart-empty { color: #484f58; font-size: 13px; padding: 20px 0; text-align: center; }
+
+    /* Conviction table */
+    .conv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .conv-table th {
+        text-align: left; padding: 8px 12px; border-bottom: 1px solid #21262d;
+        color: #8b949e; font-size: 11px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .conv-table td { padding: 8px 12px; border-bottom: 1px solid #21262d; }
+
+    /* Breakers */
+    .breaker-row { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; }
+    .breaker-item { display: flex; align-items: center; gap: 6px; }
+    .loss-bar {
+        width: 80px; height: 8px; background: #21262d;
+        border-radius: 4px; overflow: hidden; display: inline-block;
+    }
+    .loss-bar-fill { height: 100%; border-radius: 4px; }
+
+    /* D3 tooltip */
+    .d3-tooltip {
+        position: absolute; background: #1c2128; border: 1px solid #30363d;
+        border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #c9d1d9;
+        pointer-events: none; opacity: 0; transition: opacity 0.15s;
+        z-index: 100;
+    }
+
+    /* Footer */
+    .footer { font-size: 11px; color: #484f58; text-align: center; padding: 16px 0; }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+        .container { padding: 10px 12px; }
+        .hero { font-size: 28px; }
+        .metrics { gap: 8px; }
+        .metric { min-width: 100px; padding: 8px 10px; }
+        .metric-value { font-size: 15px; }
+    }
 </style>
 </head>
 <body>
 <div class="container">
-    <h1>BOTSY CASH MATERIALIZER</h1>
-    <nav class="dash-nav"><a href="index.html" class="dash-nav-link">BTC 5m</a><a href="15m.html" class="dash-nav-link">BTC 15m</a><a href="eth.html" class="dash-nav-link">ETH 5m</a><a href="kalshi.html" class="dash-nav-link">Kalshi</a><a href="bybit-perps.html" class="dash-nav-link">Bybit Perps</a></nav>
-    <p class="subtitle">Bybit BTCUSDT Perps</p>
-
-    <div class="status-bar">
-        <div class="status-item">
-            <span class="status-label">Status</span>
-            <span class="status-value" style="color:#238636">Active</span>
-        </div>
-        <div class="status-item">
-            <span class="status-label">Last Cycle</span>
-            <span class="status-value">2026-04-04 20:48 UTC</span>
-        </div>
-        <div class="status-item">
-            <span class="status-label">Markets</span>
-            <span class="status-value">468 / 469 resolved</span>
-        </div>
-        <div class="status-item">
-            <span class="status-label">Next Market</span>
-            <span class="status-value" id="countdown" data-next-market="2026-04-04T20:50:00+00:00">--</span>
-        </div>
+<nav class="nav"><a href="index.html">BTC 5m</a> <a href="15m.html">BTC 15m</a> <a href="eth.html">ETH 5m</a> <a href="kalshi.html">Kalshi</a> <a href="bybit-perps.html" class="active">Bybit Perps</a></nav>
+<div class="header">
+    <h1>Bybit BTC Perps <span class="badge badge-paper">PAPER</span></h1>
+    <div class="header-meta">
+        <span style="color:#f44336">&#9679; Stale</span>
+        &nbsp;&middot;&nbsp; Last cycle: 2026-04-04 20:48
+        &nbsp;&middot;&nbsp; 468/469 resolved
+        &nbsp;&middot;&nbsp; Health: 100.0%&nbsp;&middot;&nbsp; <span style="color:#eab308" title="[WARN] orphaned_predictions: 1 conv>=3 prediction(s) with no order: ids=464; [WARN] orphaned_predictions: 1 conv>=3 prediction(s) with no order: ids=458">&#9679; 2 warning(s)</span>
     </div>
-
-    <div style="background:rgba(88,166,255,0.12);border:1px solid #1f6feb;border-radius:8px;padding:16px 20px;margin-bottom:16px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#58a6ff;letter-spacing:1px">&#128203; PAPER TRADING — MOMENTUM</div>
-        <div style="color:#8b949e;font-size:13px;margin-top:4px">Ride the streak. Collecting data for validation.</div>
+</div>
+<div class="section section-paper">
+    <div class="section-title">Signal P&L</div>
+    <div class="hero hero-positive">+$300.00</div>
+    <div class="provenance"><span class="provenance-tag">Conviction simulation</span>2026-04-04 21:14 UTC</div>
+    <div class="chart-container d3-chart" data-chart-type="cumulative_pnl" data-chart-data='[{"date":"2026-04-03T03:03:39.973912+00:00","value":-25.0},{"date":"2026-04-03T03:15:05.873528+00:00","value":-50.0},{"date":"2026-04-03T05:16:20.107789+00:00","value":-25.0},{"date":"2026-04-03T05:22:07.690169+00:00","value":0.0},{"date":"2026-04-03T05:39:30.659457+00:00","value":25.0},{"date":"2026-04-03T05:45:16.988241+00:00","value":0.0},{"date":"2026-04-03T06:31:24.556710+00:00","value":-25.0},{"date":"2026-04-03T06:42:52.982425+00:00","value":0.0},{"date":"2026-04-03T06:48:32.617045+00:00","value":25.0},{"date":"2026-04-03T06:54:13.026019+00:00","value":0.0},{"date":"2026-04-03T07:05:49.067966+00:00","value":25.0},{"date":"2026-04-03T07:34:33.411488+00:00","value":50.0},{"date":"2026-04-03T07:51:44.746532+00:00","value":25.0},{"date":"2026-04-03T08:20:25.734295+00:00","value":0.0},{"date":"2026-04-03T10:49:31.705393+00:00","value":25.0},{"date":"2026-04-03T11:29:20.622900+00:00","value":50.0},{"date":"2026-04-03T11:35:01.861576+00:00","value":75.0},{"date":"2026-04-03T12:03:45.104631+00:00","value":100.0},{"date":"2026-04-03T15:35:31.566447+00:00","value":75.0},{"date":"2026-04-03T16:15:36.842231+00:00","value":100.0},{"date":"2026-04-03T16:26:57.468357+00:00","value":125.0},{"date":"2026-04-03T16:55:43.927996+00:00","value":100.0},{"date":"2026-04-03T17:12:54.477383+00:00","value":75.0},{"date":"2026-04-03T19:42:21.719357+00:00","value":100.0},{"date":"2026-04-03T19:48:12.872645+00:00","value":125.0},{"date":"2026-04-03T19:59:49.793863+00:00","value":150.0},{"date":"2026-04-03T20:17:06.859615+00:00","value":125.0},{"date":"2026-04-03T20:28:36.763933+00:00","value":100.0},{"date":"2026-04-03T21:14:44.004374+00:00","value":125.0},{"date":"2026-04-03T21:26:18.279295+00:00","value":150.0},{"date":"2026-04-03T21:37:39.423280+00:00","value":125.0},{"date":"2026-04-03T23:49:18.670825+00:00","value":150.0},{"date":"2026-04-03T23:55:05.677303+00:00","value":125.0},{"date":"2026-04-04T00:00:47.683158+00:00","value":100.0},{"date":"2026-04-04T00:12:09.097881+00:00","value":125.0},{"date":"2026-04-04T00:29:21.688570+00:00","value":100.0},{"date":"2026-04-04T00:52:32.825644+00:00","value":125.0},{"date":"2026-04-04T00:58:20.747457+00:00","value":150.0},{"date":"2026-04-04T01:04:02.714202+00:00","value":175.0},{"date":"2026-04-04T02:58:49.845900+00:00","value":200.0},{"date":"2026-04-04T03:39:22.523335+00:00","value":225.0},{"date":"2026-04-04T04:02:28.919316+00:00","value":250.0},{"date":"2026-04-04T04:48:25.037876+00:00","value":225.0},{"date":"2026-04-04T04:54:06.777200+00:00","value":250.0},{"date":"2026-04-04T04:59:48.022258+00:00","value":225.0},{"date":"2026-04-04T05:11:15.693506+00:00","value":200.0},{"date":"2026-04-04T06:55:04.103648+00:00","value":175.0},{"date":"2026-04-04T07:12:16.053242+00:00","value":200.0},{"date":"2026-04-04T07:23:42.060522+00:00","value":225.0},{"date":"2026-04-04T07:35:14.425740+00:00","value":200.0},{"date":"2026-04-04T07:58:25.215556+00:00","value":225.0},{"date":"2026-04-04T10:50:32.996960+00:00","value":250.0},{"date":"2026-04-04T12:10:31.613742+00:00","value":225.0},{"date":"2026-04-04T14:34:34.170695+00:00","value":250.0},{"date":"2026-04-04T14:52:02.102665+00:00","value":225.0},{"date":"2026-04-04T15:15:09.951711+00:00","value":250.0},{"date":"2026-04-04T15:20:59.475248+00:00","value":225.0},{"date":"2026-04-04T16:13:18.744113+00:00","value":200.0},{"date":"2026-04-04T16:24:42.977832+00:00","value":225.0},{"date":"2026-04-04T16:30:33.426691+00:00","value":200.0},{"date":"2026-04-04T17:05:09.413257+00:00","value":175.0},{"date":"2026-04-04T17:46:59.061453+00:00","value":150.0},{"date":"2026-04-04T17:58:43.463731+00:00","value":175.0},{"date":"2026-04-04T18:16:22.955651+00:00","value":200.0},{"date":"2026-04-04T19:12:23.561853+00:00","value":225.0},{"date":"2026-04-04T19:30:19.655624+00:00","value":250.0},{"date":"2026-04-04T19:42:46.352561+00:00","value":275.0},{"date":"2026-04-04T20:18:44.024586+00:00","value":300.0}]'></div>
+    <div class="metrics"><div class="metric">
+    <div class="metric-label">Win Rate</div>
+    <div class="metric-value" style="color:#3fb950">58.8%</div>
+</div><div class="metric">
+    <div class="metric-label">ROI</div>
+    <div class="metric-value" style="color:#3fb950">17.6%</div>
+</div><div class="metric">
+    <div class="metric-label">Record</div>
+    <div class="metric-value">40W-28L</div>
+</div><div class="metric">
+    <div class="metric-label">Streak</div>
+    <div class="metric-value">W6</div>
+</div><div class="metric">
+    <div class="metric-label">EV/Bet</div>
+    <div class="metric-value" style="color:#3fb950">$4.41</div>
+</div><div class="metric">
+    <div class="metric-label">Edge</div>
+    <div class="metric-value" style="color:#3fb950">8.8pp</div>
+</div></div>
+    <div style="margin-top:16px">
+        <div class="section-title" style="margin-bottom:8px">Per-Bet Waterfall</div>
+        <div class="chart-container d3-chart" data-chart-type="waterfall" data-chart-data='[{"date":"2026-04-03T03:03:39.973912+00:00","profit":-25,"won":false,"cumulative":-25},{"date":"2026-04-03T03:15:05.873528+00:00","profit":-25,"won":false,"cumulative":-50},{"date":"2026-04-03T05:16:20.107789+00:00","profit":25.0,"won":true,"cumulative":-25.0},{"date":"2026-04-03T05:22:07.690169+00:00","profit":25.0,"won":true,"cumulative":0.0},{"date":"2026-04-03T05:39:30.659457+00:00","profit":25.0,"won":true,"cumulative":25.0},{"date":"2026-04-03T05:45:16.988241+00:00","profit":-25,"won":false,"cumulative":0.0},{"date":"2026-04-03T06:31:24.556710+00:00","profit":-25,"won":false,"cumulative":-25.0},{"date":"2026-04-03T06:42:52.982425+00:00","profit":25.0,"won":true,"cumulative":0.0},{"date":"2026-04-03T06:48:32.617045+00:00","profit":25.0,"won":true,"cumulative":25.0},{"date":"2026-04-03T06:54:13.026019+00:00","profit":-25,"won":false,"cumulative":0.0},{"date":"2026-04-03T07:05:49.067966+00:00","profit":25.0,"won":true,"cumulative":25.0},{"date":"2026-04-03T07:34:33.411488+00:00","profit":25.0,"won":true,"cumulative":50.0},{"date":"2026-04-03T07:51:44.746532+00:00","profit":-25,"won":false,"cumulative":25.0},{"date":"2026-04-03T08:20:25.734295+00:00","profit":-25,"won":false,"cumulative":0.0},{"date":"2026-04-03T10:49:31.705393+00:00","profit":25.0,"won":true,"cumulative":25.0},{"date":"2026-04-03T11:29:20.622900+00:00","profit":25.0,"won":true,"cumulative":50.0},{"date":"2026-04-03T11:35:01.861576+00:00","profit":25.0,"won":true,"cumulative":75.0},{"date":"2026-04-03T12:03:45.104631+00:00","profit":25.0,"won":true,"cumulative":100.0},{"date":"2026-04-03T15:35:31.566447+00:00","profit":-25,"won":false,"cumulative":75.0},{"date":"2026-04-03T16:15:36.842231+00:00","profit":25.0,"won":true,"cumulative":100.0},{"date":"2026-04-03T16:26:57.468357+00:00","profit":25.0,"won":true,"cumulative":125.0},{"date":"2026-04-03T16:55:43.927996+00:00","profit":-25,"won":false,"cumulative":100.0},{"date":"2026-04-03T17:12:54.477383+00:00","profit":-25,"won":false,"cumulative":75.0},{"date":"2026-04-03T19:42:21.719357+00:00","profit":25.0,"won":true,"cumulative":100.0},{"date":"2026-04-03T19:48:12.872645+00:00","profit":25.0,"won":true,"cumulative":125.0},{"date":"2026-04-03T19:59:49.793863+00:00","profit":25.0,"won":true,"cumulative":150.0},{"date":"2026-04-03T20:17:06.859615+00:00","profit":-25,"won":false,"cumulative":125.0},{"date":"2026-04-03T20:28:36.763933+00:00","profit":-25,"won":false,"cumulative":100.0},{"date":"2026-04-03T21:14:44.004374+00:00","profit":25.0,"won":true,"cumulative":125.0},{"date":"2026-04-03T21:26:18.279295+00:00","profit":25.0,"won":true,"cumulative":150.0},{"date":"2026-04-03T21:37:39.423280+00:00","profit":-25,"won":false,"cumulative":125.0},{"date":"2026-04-03T23:49:18.670825+00:00","profit":25.0,"won":true,"cumulative":150.0},{"date":"2026-04-03T23:55:05.677303+00:00","profit":-25,"won":false,"cumulative":125.0},{"date":"2026-04-04T00:00:47.683158+00:00","profit":-25,"won":false,"cumulative":100.0},{"date":"2026-04-04T00:12:09.097881+00:00","profit":25.0,"won":true,"cumulative":125.0},{"date":"2026-04-04T00:29:21.688570+00:00","profit":-25,"won":false,"cumulative":100.0},{"date":"2026-04-04T00:52:32.825644+00:00","profit":25.0,"won":true,"cumulative":125.0},{"date":"2026-04-04T00:58:20.747457+00:00","profit":25.0,"won":true,"cumulative":150.0},{"date":"2026-04-04T01:04:02.714202+00:00","profit":25.0,"won":true,"cumulative":175.0},{"date":"2026-04-04T02:58:49.845900+00:00","profit":25.0,"won":true,"cumulative":200.0},{"date":"2026-04-04T03:39:22.523335+00:00","profit":25.0,"won":true,"cumulative":225.0},{"date":"2026-04-04T04:02:28.919316+00:00","profit":25.0,"won":true,"cumulative":250.0},{"date":"2026-04-04T04:48:25.037876+00:00","profit":-25,"won":false,"cumulative":225.0},{"date":"2026-04-04T04:54:06.777200+00:00","profit":25.0,"won":true,"cumulative":250.0},{"date":"2026-04-04T04:59:48.022258+00:00","profit":-25,"won":false,"cumulative":225.0},{"date":"2026-04-04T05:11:15.693506+00:00","profit":-25,"won":false,"cumulative":200.0},{"date":"2026-04-04T06:55:04.103648+00:00","profit":-25,"won":false,"cumulative":175.0},{"date":"2026-04-04T07:12:16.053242+00:00","profit":25.0,"won":true,"cumulative":200.0},{"date":"2026-04-04T07:23:42.060522+00:00","profit":25.0,"won":true,"cumulative":225.0},{"date":"2026-04-04T07:35:14.425740+00:00","profit":-25,"won":false,"cumulative":200.0},{"date":"2026-04-04T07:58:25.215556+00:00","profit":25.0,"won":true,"cumulative":225.0},{"date":"2026-04-04T10:50:32.996960+00:00","profit":25.0,"won":true,"cumulative":250.0},{"date":"2026-04-04T12:10:31.613742+00:00","profit":-25,"won":false,"cumulative":225.0},{"date":"2026-04-04T14:34:34.170695+00:00","profit":25.0,"won":true,"cumulative":250.0},{"date":"2026-04-04T14:52:02.102665+00:00","profit":-25,"won":false,"cumulative":225.0},{"date":"2026-04-04T15:15:09.951711+00:00","profit":25.0,"won":true,"cumulative":250.0},{"date":"2026-04-04T15:20:59.475248+00:00","profit":-25,"won":false,"cumulative":225.0},{"date":"2026-04-04T16:13:18.744113+00:00","profit":-25,"won":false,"cumulative":200.0},{"date":"2026-04-04T16:24:42.977832+00:00","profit":25.0,"won":true,"cumulative":225.0},{"date":"2026-04-04T16:30:33.426691+00:00","profit":-25,"won":false,"cumulative":200.0},{"date":"2026-04-04T17:05:09.413257+00:00","profit":-25,"won":false,"cumulative":175.0},{"date":"2026-04-04T17:46:59.061453+00:00","profit":-25,"won":false,"cumulative":150.0},{"date":"2026-04-04T17:58:43.463731+00:00","profit":25.0,"won":true,"cumulative":175.0},{"date":"2026-04-04T18:16:22.955651+00:00","profit":25.0,"won":true,"cumulative":200.0},{"date":"2026-04-04T19:12:23.561853+00:00","profit":25.0,"won":true,"cumulative":225.0},{"date":"2026-04-04T19:30:19.655624+00:00","profit":25.0,"won":true,"cumulative":250.0},{"date":"2026-04-04T19:42:46.352561+00:00","profit":25.0,"won":true,"cumulative":275.0},{"date":"2026-04-04T20:18:44.024586+00:00","profit":25.0,"won":true,"cumulative":300.0}]'></div>
     </div>
-
-    <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 20px;margin-bottom:16px">
-    <div style="font-size:12px;font-weight:700;color:#8b949e;letter-spacing:1.5px;margin-bottom:10px">CIRCUIT BREAKERS</div>
-    <div style="display:flex;flex-wrap:wrap;gap:20px;font-size:13px;color:#c9d1d9">
-        <div><span style="color:#8b949e">Kill Switch:</span> <span style="color:#3fb950">&#x2714; OFF</span></div>
-        <div><span style="color:#8b949e">Daily Loss:</span> <div style="display:inline-flex;align-items:center;gap:8px">
-        <div style="width:80px;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
-            <div style="width:0%;height:100%;background:#3fb950;border-radius:4px"></div>
+</div>
+<div class="section">
+    <div class="section-title">EV &amp; Risk</div>
+    <div class="metrics"><div class="metric">
+    <div class="metric-label">Breakeven WR</div>
+    <div class="metric-value">50.0%</div>
+</div><div class="metric">
+    <div class="metric-label">Current WR</div>
+    <div class="metric-value" style="color:#3fb950">58.8%</div>
+</div><div class="metric">
+    <div class="metric-label">Edge Margin</div>
+    <div class="metric-value" style="color:#3fb950">8.8pp</div>
+</div><div class="metric">
+    <div class="metric-label">Avg Win</div>
+    <div class="metric-value" style="color:#3fb950">$25.00</div>
+</div><div class="metric">
+    <div class="metric-label">Avg Loss</div>
+    <div class="metric-value" style="color:#f44336">$-25.00</div>
+</div><div class="metric">
+    <div class="metric-label">Max Drawdown</div>
+    <div class="metric-value" style="color:#f44336">$100.00</div>
+</div></div>
+</div>
+<div class="section">
+    <div class="section-title">Conviction Breakdown</div>
+    <table class="conv-table">
+        <thead><tr>
+            <th>Tier</th><th>Bets</th><th>WR</th><th>Record</th><th>P&L</th><th>Wagered</th><th>ROI</th>
+        </tr></thead>
+        <tbody><tr>
+    <td>High (4-5)</td>
+    <td>19</td>
+    <td style="color:#f44336">42.1%</td>
+    <td>8W-11L</td>
+    <td style="color:#f44336">$-75.00</td>
+    <td>$475</td>
+    <td style="color:#f44336">-15.8%</td>
+</tr><tr>
+    <td>Medium (3)</td>
+    <td>49</td>
+    <td style="color:#3fb950">65.3%</td>
+    <td>32W-17L</td>
+    <td style="color:#3fb950">$375.00</td>
+    <td>$1,225</td>
+    <td style="color:#3fb950">30.6%</td>
+</tr><tr>
+    <td>No Bet (0-1)</td>
+    <td>400</td>
+    <td style="color:#8b949e">49.2%</td>
+    <td>197W-203L</td>
+    <td style="color:#8b949e">$0.00</td>
+    <td>$0</td>
+    <td style="color:#8b949e">0%</td>
+</tr></tbody>
+    </table>
+</div>
+<div class="section">
+    <div class="section-title">Rolling Accuracy (10-bet window)</div>
+    <div class="chart-container d3-chart" data-chart-type="rolling_accuracy" data-chart-data='[{"date":"2026-04-02T21:33:31.713766+00:00","value":40.0},{"date":"2026-04-02T21:39:05.886058+00:00","value":30.0},{"date":"2026-04-02T21:44:39.058503+00:00","value":30.0},{"date":"2026-04-02T21:50:18.265428+00:00","value":40.0},{"date":"2026-04-02T21:56:02.831775+00:00","value":50.0},{"date":"2026-04-02T22:01:38.297813+00:00","value":60.0},{"date":"2026-04-02T22:07:19.502296+00:00","value":60.0},{"date":"2026-04-02T22:13:01.637928+00:00","value":50.0},{"date":"2026-04-02T22:18:37.369479+00:00","value":60.0},{"date":"2026-04-02T22:24:08.987017+00:00","value":50.0},{"date":"2026-04-02T22:29:43.357288+00:00","value":40.0},{"date":"2026-04-02T22:35:19.610019+00:00","value":50.0},{"date":"2026-04-02T22:40:54.736820+00:00","value":60.0},{"date":"2026-04-02T22:46:27.762133+00:00","value":50.0},{"date":"2026-04-02T22:51:59.761772+00:00","value":50.0},{"date":"2026-04-02T22:57:33.787020+00:00","value":40.0},{"date":"2026-04-02T23:03:20.581053+00:00","value":50.0},{"date":"2026-04-02T23:09:09.802436+00:00","value":50.0},{"date":"2026-04-02T23:15:01.511935+00:00","value":40.0},{"date":"2026-04-02T23:20:44.588399+00:00","value":50.0},{"date":"2026-04-02T23:26:24.160792+00:00","value":50.0},{"date":"2026-04-02T23:32:05.762564+00:00","value":40.0},{"date":"2026-04-02T23:37:46.056653+00:00","value":30.0},{"date":"2026-04-02T23:43:33.787643+00:00","value":30.0},{"date":"2026-04-02T23:49:14.781187+00:00","value":20.0},{"date":"2026-04-02T23:55:01.894860+00:00","value":20.0},{"date":"2026-04-03T00:00:46.978660+00:00","value":20.0},{"date":"2026-04-03T00:06:36.851703+00:00","value":20.0},{"date":"2026-04-03T00:12:41.924315+00:00","value":30.0},{"date":"2026-04-03T00:18:27.949747+00:00","value":20.0},{"date":"2026-04-03T00:24:11.856825+00:00","value":30.0},{"date":"2026-04-03T00:29:55.612090+00:00","value":30.0},{"date":"2026-04-03T00:35:38.687518+00:00","value":30.0},{"date":"2026-04-03T00:41:26.631420+00:00","value":40.0},{"date":"2026-04-03T00:47:15.510808+00:00","value":40.0},{"date":"2026-04-03T01:20:23.834244+00:00","value":50.0},{"date":"2026-04-03T01:26:06.542644+00:00","value":50.0},{"date":"2026-04-03T01:37:33.876546+00:00","value":50.0},{"date":"2026-04-03T01:43:14.950102+00:00","value":50.0},{"date":"2026-04-03T01:49:05.892977+00:00","value":60.0},{"date":"2026-04-03T01:54:50.766410+00:00","value":60.0},{"date":"2026-04-03T02:00:29.927864+00:00","value":60.0},{"date":"2026-04-03T02:06:13.350731+00:00","value":60.0},{"date":"2026-04-03T02:17:40.037323+00:00","value":60.0},{"date":"2026-04-03T02:23:25.261973+00:00","value":60.0},{"date":"2026-04-03T02:29:14.992894+00:00","value":50.0},{"date":"2026-04-03T02:34:59.986014+00:00","value":50.0},{"date":"2026-04-03T02:40:42.585833+00:00","value":60.0},{"date":"2026-04-03T02:46:25.861797+00:00","value":60.0},{"date":"2026-04-03T02:52:10.534991+00:00","value":60.0},{"date":"2026-04-03T02:57:54.841179+00:00","value":60.0},{"date":"2026-04-03T03:03:39.973912+00:00","value":60.0},{"date":"2026-04-03T03:09:22.884813+00:00","value":70.0},{"date":"2026-04-03T03:15:05.873528+00:00","value":60.0},{"date":"2026-04-03T03:20:44.744542+00:00","value":70.0},{"date":"2026-04-03T03:26:32.791955+00:00","value":70.0},{"date":"2026-04-03T03:32:17.857295+00:00","value":70.0},{"date":"2026-04-03T03:38:03.925033+00:00","value":60.0},{"date":"2026-04-03T03:43:53.588783+00:00","value":50.0},{"date":"2026-04-03T03:49:42.576650+00:00","value":50.0},{"date":"2026-04-03T03:55:30.335710+00:00","value":50.0},{"date":"2026-04-03T04:01:19.034539+00:00","value":60.0},{"date":"2026-04-03T04:07:04.008230+00:00","value":60.0},{"date":"2026-04-03T04:12:46.578757+00:00","value":60.0},{"date":"2026-04-03T04:18:31.724331+00:00","value":60.0},{"date":"2026-04-03T04:24:18.146643+00:00","value":60.0},{"date":"2026-04-03T04:30:07.578774+00:00","value":50.0},{"date":"2026-04-03T04:35:55.647406+00:00","value":50.0},{"date":"2026-04-03T04:41:47.902643+00:00","value":60.0},{"date":"2026-04-03T04:47:31.819386+00:00","value":60.0},{"date":"2026-04-03T04:53:17.786777+00:00","value":50.0},{"date":"2026-04-03T04:59:04.592271+00:00","value":50.0},{"date":"2026-04-03T05:04:44.928953+00:00","value":50.0},{"date":"2026-04-03T05:10:35.759049+00:00","value":50.0},{"date":"2026-04-03T05:16:20.107789+00:00","value":50.0},{"date":"2026-04-03T05:22:07.690169+00:00","value":60.0},{"date":"2026-04-03T05:27:59.103527+00:00","value":70.0},{"date":"2026-04-03T05:33:45.574425+00:00","value":80.0},{"date":"2026-04-03T05:39:30.659457+00:00","value":80.0},{"date":"2026-04-03T05:45:16.988241+00:00","value":70.0},{"date":"2026-04-03T05:50:55.765456+00:00","value":70.0},{"date":"2026-04-03T05:56:42.203540+00:00","value":70.0},{"date":"2026-04-03T06:02:29.204293+00:00","value":60.0},{"date":"2026-04-03T06:08:17.649690+00:00","value":70.0},{"date":"2026-04-03T06:14:01.666645+00:00","value":70.0},{"date":"2026-04-03T06:19:46.913789+00:00","value":60.0},{"date":"2026-04-03T06:25:35.926021+00:00","value":50.0},{"date":"2026-04-03T06:31:24.556710+00:00","value":40.0},{"date":"2026-04-03T06:37:06.869745+00:00","value":40.0},{"date":"2026-04-03T06:42:52.982425+00:00","value":50.0},{"date":"2026-04-03T06:48:32.617045+00:00","value":60.0},{"date":"2026-04-03T06:54:13.026019+00:00","value":50.0},{"date":"2026-04-03T07:00:02.412396+00:00","value":60.0},{"date":"2026-04-03T07:05:49.067966+00:00","value":60.0},{"date":"2026-04-03T07:11:28.869367+00:00","value":50.0},{"date":"2026-04-03T07:17:11.377681+00:00","value":60.0},{"date":"2026-04-03T07:22:58.884733+00:00","value":70.0},{"date":"2026-04-03T07:28:46.961330+00:00","value":80.0},{"date":"2026-04-03T07:34:33.411488+00:00","value":80.0},{"date":"2026-04-03T07:40:13.888053+00:00","value":70.0},{"date":"2026-04-03T07:45:59.675631+00:00","value":60.0},{"date":"2026-04-03T07:51:44.746532+00:00","value":60.0},{"date":"2026-04-03T07:57:23.878174+00:00","value":50.0},{"date":"2026-04-03T08:03:12.033200+00:00","value":50.0},{"date":"2026-04-03T08:09:01.620918+00:00","value":60.0},{"date":"2026-04-03T08:14:44.294333+00:00","value":50.0},{"date":"2026-04-03T08:20:25.734295+00:00","value":40.0},{"date":"2026-04-03T08:26:01.965748+00:00","value":30.0},{"date":"2026-04-03T08:31:46.670604+00:00","value":30.0},{"date":"2026-04-03T08:37:37.919599+00:00","value":30.0},{"date":"2026-04-03T08:43:28.009795+00:00","value":30.0},{"date":"2026-04-03T08:49:13.719438+00:00","value":40.0},{"date":"2026-04-03T08:54:56.655772+00:00","value":40.0},{"date":"2026-04-03T09:00:37.707476+00:00","value":30.0},{"date":"2026-04-03T09:06:20.981733+00:00","value":20.0},{"date":"2026-04-03T09:12:05.026654+00:00","value":20.0},{"date":"2026-04-03T09:17:42.399760+00:00","value":20.0},{"date":"2026-04-03T09:23:20.784238+00:00","value":20.0},{"date":"2026-04-03T09:29:04.024335+00:00","value":20.0},{"date":"2026-04-03T09:34:53.784105+00:00","value":30.0},{"date":"2026-04-03T09:40:41.208433+00:00","value":40.0},{"date":"2026-04-03T09:46:30.755165+00:00","value":30.0},{"date":"2026-04-03T09:52:13.890364+00:00","value":40.0},{"date":"2026-04-03T09:57:54.703130+00:00","value":50.0},{"date":"2026-04-03T10:03:36.501096+00:00","value":50.0},{"date":"2026-04-03T10:09:22.290787+00:00","value":50.0},{"date":"2026-04-03T10:15:02.976801+00:00","value":60.0},{"date":"2026-04-03T10:20:44.550864+00:00","value":60.0},{"date":"2026-04-03T10:26:28.062047+00:00","value":50.0},{"date":"2026-04-03T10:32:14.233093+00:00","value":40.0},{"date":"2026-04-03T10:38:04.113615+00:00","value":40.0},{"date":"2026-04-03T10:43:45.951193+00:00","value":50.0},{"date":"2026-04-03T10:49:31.705393+00:00","value":50.0},{"date":"2026-04-03T11:00:48.800022+00:00","value":50.0},{"date":"2026-04-03T11:06:37.838287+00:00","value":50.0},{"date":"2026-04-03T11:12:20.726293+00:00","value":50.0},{"date":"2026-04-03T11:18:01.457590+00:00","value":50.0},{"date":"2026-04-03T11:23:38.803510+00:00","value":60.0},{"date":"2026-04-03T11:29:20.622900+00:00","value":70.0},{"date":"2026-04-03T11:35:01.861576+00:00","value":80.0},{"date":"2026-04-03T11:40:43.767923+00:00","value":80.0},{"date":"2026-04-03T11:46:21.238323+00:00","value":70.0},{"date":"2026-04-03T11:52:08.912432+00:00","value":70.0},{"date":"2026-04-03T11:58:03.027605+00:00","value":70.0},{"date":"2026-04-03T12:03:45.104631+00:00","value":80.0},{"date":"2026-04-03T12:09:24.110129+00:00","value":90.0},{"date":"2026-04-03T12:15:15.966998+00:00","value":80.0},{"date":"2026-04-03T12:21:25.845987+00:00","value":70.0},{"date":"2026-04-03T12:27:12.816799+00:00","value":70.0},{"date":"2026-04-03T12:32:58.547442+00:00","value":60.0},{"date":"2026-04-03T12:38:47.204685+00:00","value":50.0},{"date":"2026-04-03T12:44:38.855675+00:00","value":60.0},{"date":"2026-04-03T12:50:27.096055+00:00","value":60.0},{"date":"2026-04-03T12:56:15.349010+00:00","value":50.0},{"date":"2026-04-03T13:02:03.717495+00:00","value":40.0},{"date":"2026-04-03T13:07:56.000970+00:00","value":30.0},{"date":"2026-04-03T13:13:51.035481+00:00","value":40.0},{"date":"2026-04-03T13:19:30.246109+00:00","value":40.0},{"date":"2026-04-03T13:25:19.995359+00:00","value":30.0},{"date":"2026-04-03T13:31:07.057576+00:00","value":30.0},{"date":"2026-04-03T13:36:54.699667+00:00","value":30.0},{"date":"2026-04-03T13:42:46.499244+00:00","value":20.0},{"date":"2026-04-03T13:48:35.979988+00:00","value":10.0},{"date":"2026-04-03T13:54:18.875200+00:00","value":20.0},{"date":"2026-04-03T15:06:48.040759+00:00","value":30.0},{"date":"2026-04-03T15:12:32.419890+00:00","value":30.0},{"date":"2026-04-03T15:18:12.994742+00:00","value":20.0},{"date":"2026-04-03T15:24:01.234755+00:00","value":30.0},{"date":"2026-04-03T15:29:51.044980+00:00","value":30.0},{"date":"2026-04-03T15:35:31.566447+00:00","value":30.0},{"date":"2026-04-03T15:41:14.602237+00:00","value":30.0},{"date":"2026-04-03T15:47:02.060180+00:00","value":30.0},{"date":"2026-04-03T15:52:41.963757+00:00","value":30.0},{"date":"2026-04-03T15:58:28.555449+00:00","value":20.0},{"date":"2026-04-03T16:04:13.372572+00:00","value":20.0},{"date":"2026-04-03T16:09:51.103180+00:00","value":30.0},{"date":"2026-04-03T16:15:36.842231+00:00","value":40.0},{"date":"2026-04-03T16:21:16.170560+00:00","value":40.0},{"date":"2026-04-03T16:26:57.468357+00:00","value":50.0},{"date":"2026-04-03T16:32:41.680853+00:00","value":60.0},{"date":"2026-04-03T16:38:23.071490+00:00","value":60.0},{"date":"2026-04-03T16:44:07.308413+00:00","value":70.0},{"date":"2026-04-03T16:49:51.318880+00:00","value":80.0},{"date":"2026-04-03T16:55:43.927996+00:00","value":80.0},{"date":"2026-04-03T17:01:31.375331+00:00","value":70.0},{"date":"2026-04-03T17:07:14.562778+00:00","value":70.0},{"date":"2026-04-03T17:12:54.477383+00:00","value":60.0},{"date":"2026-04-03T17:18:46.692571+00:00","value":50.0},{"date":"2026-04-03T17:24:36.998438+00:00","value":50.0},{"date":"2026-04-03T17:30:24.540137+00:00","value":40.0},{"date":"2026-04-03T17:36:14.384120+00:00","value":50.0},{"date":"2026-04-03T17:41:55.816006+00:00","value":50.0},{"date":"2026-04-03T17:47:38.252123+00:00","value":40.0},{"date":"2026-04-03T17:59:00.274067+00:00","value":40.0},{"date":"2026-04-03T18:04:40.331993+00:00","value":50.0},{"date":"2026-04-03T18:10:24.761347+00:00","value":50.0},{"date":"2026-04-03T18:16:04.990412+00:00","value":60.0},{"date":"2026-04-03T18:21:44.231514+00:00","value":70.0},{"date":"2026-04-03T18:27:25.530772+00:00","value":60.0},{"date":"2026-04-03T18:33:17.953997+00:00","value":70.0},{"date":"2026-04-03T18:39:05.419544+00:00","value":60.0},{"date":"2026-04-03T18:44:47.725481+00:00","value":50.0},{"date":"2026-04-03T18:50:27.813566+00:00","value":50.0},{"date":"2026-04-03T18:56:20.645671+00:00","value":60.0},{"date":"2026-04-03T19:02:11.220480+00:00","value":50.0},{"date":"2026-04-03T19:07:56.434262+00:00","value":40.0},{"date":"2026-04-03T19:13:45.956125+00:00","value":30.0},{"date":"2026-04-03T19:19:33.901362+00:00","value":30.0},{"date":"2026-04-03T19:25:18.546847+00:00","value":40.0},{"date":"2026-04-03T19:31:00.516243+00:00","value":40.0},{"date":"2026-04-03T19:36:42.958094+00:00","value":50.0},{"date":"2026-04-03T19:42:21.719357+00:00","value":60.0},{"date":"2026-04-03T19:48:12.872645+00:00","value":70.0},{"date":"2026-04-03T19:54:07.918649+00:00","value":70.0},{"date":"2026-04-03T19:59:49.793863+00:00","value":80.0},{"date":"2026-04-03T20:05:32.684597+00:00","value":90.0},{"date":"2026-04-03T20:11:22.186114+00:00","value":100.0},{"date":"2026-04-03T20:17:06.859615+00:00","value":90.0},{"date":"2026-04-03T20:22:48.249683+00:00","value":80.0},{"date":"2026-04-03T20:28:36.763933+00:00","value":70.0},{"date":"2026-04-03T20:34:28.789935+00:00","value":60.0},{"date":"2026-04-03T20:40:28.900639+00:00","value":50.0},{"date":"2026-04-03T20:46:10.783510+00:00","value":50.0},{"date":"2026-04-03T20:51:59.688440+00:00","value":40.0},{"date":"2026-04-03T20:57:40.675125+00:00","value":30.0},{"date":"2026-04-03T21:03:22.331556+00:00","value":30.0},{"date":"2026-04-03T21:09:03.030182+00:00","value":30.0},{"date":"2026-04-03T21:14:44.004374+00:00","value":40.0},{"date":"2026-04-03T21:20:32.915781+00:00","value":40.0},{"date":"2026-04-03T21:26:18.279295+00:00","value":50.0},{"date":"2026-04-03T21:31:56.680607+00:00","value":60.0},{"date":"2026-04-03T21:37:39.423280+00:00","value":60.0},{"date":"2026-04-03T21:43:18.007543+00:00","value":60.0},{"date":"2026-04-03T21:48:59.375931+00:00","value":70.0},{"date":"2026-04-03T21:54:45.931611+00:00","value":70.0},{"date":"2026-04-03T22:00:37.223997+00:00","value":60.0},{"date":"2026-04-03T22:06:27.604961+00:00","value":50.0},{"date":"2026-04-03T22:12:08.409789+00:00","value":50.0},{"date":"2026-04-03T22:17:56.544250+00:00","value":60.0},{"date":"2026-04-03T22:23:38.417683+00:00","value":50.0},{"date":"2026-04-03T22:29:15.608964+00:00","value":50.0},{"date":"2026-04-03T22:34:56.769452+00:00","value":60.0},{"date":"2026-04-03T22:40:46.612746+00:00","value":50.0},{"date":"2026-04-03T22:46:30.908032+00:00","value":40.0},{"date":"2026-04-03T22:52:15.065870+00:00","value":50.0},{"date":"2026-04-03T22:57:58.970842+00:00","value":50.0},{"date":"2026-04-03T23:03:40.340310+00:00","value":60.0},{"date":"2026-04-03T23:09:18.749862+00:00","value":50.0},{"date":"2026-04-03T23:15:06.613810+00:00","value":50.0},{"date":"2026-04-03T23:20:45.909522+00:00","value":50.0},{"date":"2026-04-03T23:26:29.681307+00:00","value":40.0},{"date":"2026-04-03T23:32:09.129986+00:00","value":30.0},{"date":"2026-04-03T23:37:47.742884+00:00","value":40.0},{"date":"2026-04-03T23:43:28.644660+00:00","value":50.0},{"date":"2026-04-03T23:49:18.670825+00:00","value":50.0},{"date":"2026-04-03T23:55:05.677303+00:00","value":50.0},{"date":"2026-04-04T00:00:47.683158+00:00","value":40.0},{"date":"2026-04-04T00:06:28.834443+00:00","value":40.0},{"date":"2026-04-04T00:12:09.097881+00:00","value":40.0},{"date":"2026-04-04T00:17:53.815957+00:00","value":40.0},{"date":"2026-04-04T00:23:36.061222+00:00","value":50.0},{"date":"2026-04-04T00:29:21.688570+00:00","value":50.0},{"date":"2026-04-04T00:35:12.867588+00:00","value":50.0},{"date":"2026-04-04T00:41:00.459795+00:00","value":40.0},{"date":"2026-04-04T00:46:51.873005+00:00","value":30.0},{"date":"2026-04-04T00:52:32.825644+00:00","value":40.0},{"date":"2026-04-04T00:58:20.747457+00:00","value":50.0},{"date":"2026-04-04T01:04:02.714202+00:00","value":60.0},{"date":"2026-04-04T01:09:45.080657+00:00","value":60.0},{"date":"2026-04-04T01:15:25.922174+00:00","value":70.0},{"date":"2026-04-04T01:21:04.593684+00:00","value":70.0},{"date":"2026-04-04T01:26:44.041714+00:00","value":70.0},{"date":"2026-04-04T01:32:31.529800+00:00","value":70.0},{"date":"2026-04-04T01:38:12.024208+00:00","value":70.0},{"date":"2026-04-04T01:43:53.697814+00:00","value":70.0},{"date":"2026-04-04T01:49:42.814461+00:00","value":60.0},{"date":"2026-04-04T01:55:24.427555+00:00","value":60.0},{"date":"2026-04-04T02:01:06.775530+00:00","value":60.0},{"date":"2026-04-04T02:06:53.383153+00:00","value":50.0},{"date":"2026-04-04T02:12:33.879256+00:00","value":40.0},{"date":"2026-04-04T02:18:12.823643+00:00","value":30.0},{"date":"2026-04-04T02:23:59.019561+00:00","value":30.0},{"date":"2026-04-04T02:29:46.406556+00:00","value":30.0},{"date":"2026-04-04T02:35:37.510792+00:00","value":30.0},{"date":"2026-04-04T02:41:20.194763+00:00","value":30.0},{"date":"2026-04-04T02:47:08.494935+00:00","value":40.0},{"date":"2026-04-04T02:52:59.417220+00:00","value":30.0},{"date":"2026-04-04T02:58:49.845900+00:00","value":30.0},{"date":"2026-04-04T03:04:31.405670+00:00","value":40.0},{"date":"2026-04-04T03:10:17.890644+00:00","value":50.0},{"date":"2026-04-04T03:16:07.544145+00:00","value":50.0},{"date":"2026-04-04T03:22:00.662454+00:00","value":50.0},{"date":"2026-04-04T03:27:44.682166+00:00","value":40.0},{"date":"2026-04-04T03:33:31.574653+00:00","value":40.0},{"date":"2026-04-04T03:39:22.523335+00:00","value":50.0},{"date":"2026-04-04T03:45:05.056549+00:00","value":50.0},{"date":"2026-04-04T03:50:48.085226+00:00","value":50.0},{"date":"2026-04-04T03:56:37.627625+00:00","value":40.0},{"date":"2026-04-04T04:02:28.919316+00:00","value":40.0},{"date":"2026-04-04T04:08:17.103396+00:00","value":40.0},{"date":"2026-04-04T04:14:05.543588+00:00","value":40.0},{"date":"2026-04-04T04:19:55.474312+00:00","value":40.0},{"date":"2026-04-04T04:25:38.377849+00:00","value":50.0},{"date":"2026-04-04T04:37:04.555499+00:00","value":60.0},{"date":"2026-04-04T04:42:45.570074+00:00","value":50.0},{"date":"2026-04-04T04:48:25.037876+00:00","value":40.0},{"date":"2026-04-04T04:54:06.777200+00:00","value":50.0},{"date":"2026-04-04T04:59:48.022258+00:00","value":50.0},{"date":"2026-04-04T05:05:37.681842+00:00","value":50.0},{"date":"2026-04-04T05:11:15.693506+00:00","value":40.0},{"date":"2026-04-04T05:17:06.554491+00:00","value":50.0},{"date":"2026-04-04T05:22:51.106554+00:00","value":50.0},{"date":"2026-04-04T05:28:32.772589+00:00","value":50.0},{"date":"2026-04-04T05:34:18.674302+00:00","value":50.0},{"date":"2026-04-04T05:40:10.755296+00:00","value":50.0},{"date":"2026-04-04T05:45:48.866818+00:00","value":60.0},{"date":"2026-04-04T05:51:30.939573+00:00","value":50.0},{"date":"2026-04-04T05:57:16.964022+00:00","value":60.0},{"date":"2026-04-04T06:03:05.948205+00:00","value":60.0},{"date":"2026-04-04T06:08:48.694223+00:00","value":70.0},{"date":"2026-04-04T06:14:34.040629+00:00","value":70.0},{"date":"2026-04-04T06:20:21.453278+00:00","value":80.0},{"date":"2026-04-04T06:26:06.849652+00:00","value":80.0},{"date":"2026-04-04T06:31:56.343315+00:00","value":70.0},{"date":"2026-04-04T06:37:45.993730+00:00","value":70.0},{"date":"2026-04-04T06:43:30.656827+00:00","value":70.0},{"date":"2026-04-04T06:49:11.687672+00:00","value":80.0},{"date":"2026-04-04T06:55:04.103648+00:00","value":70.0},{"date":"2026-04-04T07:00:50.672694+00:00","value":60.0},{"date":"2026-04-04T07:06:31.750288+00:00","value":50.0},{"date":"2026-04-04T07:12:16.053242+00:00","value":50.0},{"date":"2026-04-04T07:17:58.827350+00:00","value":40.0},{"date":"2026-04-04T07:23:42.060522+00:00","value":40.0},{"date":"2026-04-04T07:35:14.425740+00:00","value":40.0},{"date":"2026-04-04T07:41:00.881602+00:00","value":40.0},{"date":"2026-04-04T07:46:46.646937+00:00","value":40.0},{"date":"2026-04-04T07:52:35.609111+00:00","value":40.0},{"date":"2026-04-04T07:58:25.215556+00:00","value":50.0},{"date":"2026-04-04T08:04:07.053494+00:00","value":50.0},{"date":"2026-04-04T08:09:47.506231+00:00","value":50.0},{"date":"2026-04-04T08:15:27.827030+00:00","value":40.0},{"date":"2026-04-04T08:21:07.763896+00:00","value":50.0},{"date":"2026-04-04T08:32:38.505561+00:00","value":40.0},{"date":"2026-04-04T08:38:20.679694+00:00","value":50.0},{"date":"2026-04-04T08:44:09.408607+00:00","value":60.0},{"date":"2026-04-04T08:49:51.659268+00:00","value":50.0},{"date":"2026-04-04T08:55:42.205495+00:00","value":50.0},{"date":"2026-04-04T09:01:33.953387+00:00","value":40.0},{"date":"2026-04-04T09:07:27.213365+00:00","value":50.0},{"date":"2026-04-04T09:13:15.684083+00:00","value":60.0},{"date":"2026-04-04T09:18:54.486770+00:00","value":60.0},{"date":"2026-04-04T09:24:44.028906+00:00","value":50.0},{"date":"2026-04-04T09:30:34.488060+00:00","value":50.0},{"date":"2026-04-04T09:36:22.914315+00:00","value":50.0},{"date":"2026-04-04T09:42:04.410064+00:00","value":40.0},{"date":"2026-04-04T09:47:43.889897+00:00","value":50.0},{"date":"2026-04-04T09:53:21.900186+00:00","value":40.0},{"date":"2026-04-04T09:59:10.580168+00:00","value":50.0},{"date":"2026-04-04T10:04:51.773681+00:00","value":40.0},{"date":"2026-04-04T10:10:33.524165+00:00","value":30.0},{"date":"2026-04-04T10:16:13.693111+00:00","value":40.0},{"date":"2026-04-04T10:27:38.895416+00:00","value":50.0},{"date":"2026-04-04T10:33:20.851568+00:00","value":50.0},{"date":"2026-04-04T10:39:02.941073+00:00","value":50.0},{"date":"2026-04-04T10:44:46.961622+00:00","value":60.0},{"date":"2026-04-04T10:50:32.996960+00:00","value":60.0},{"date":"2026-04-04T10:56:23.641128+00:00","value":60.0},{"date":"2026-04-04T11:07:43.183641+00:00","value":60.0},{"date":"2026-04-04T11:13:24.523651+00:00","value":60.0},{"date":"2026-04-04T11:19:02.880199+00:00","value":60.0},{"date":"2026-04-04T11:30:20.786002+00:00","value":50.0},{"date":"2026-04-04T11:36:03.852265+00:00","value":50.0},{"date":"2026-04-04T11:41:43.878002+00:00","value":60.0},{"date":"2026-04-04T11:47:23.887450+00:00","value":50.0},{"date":"2026-04-04T11:53:01.861222+00:00","value":50.0},{"date":"2026-04-04T11:58:51.935147+00:00","value":50.0},{"date":"2026-04-04T12:04:41.781398+00:00","value":50.0},{"date":"2026-04-04T12:10:31.613742+00:00","value":40.0},{"date":"2026-04-04T12:16:17.474284+00:00","value":50.0},{"date":"2026-04-04T12:27:54.873947+00:00","value":50.0},{"date":"2026-04-04T12:33:41.961734+00:00","value":60.0},{"date":"2026-04-04T12:39:25.829176+00:00","value":50.0},{"date":"2026-04-04T12:45:08.542767+00:00","value":50.0},{"date":"2026-04-04T12:50:58.882461+00:00","value":60.0},{"date":"2026-04-04T12:56:53.147877+00:00","value":50.0},{"date":"2026-04-04T13:02:38.287448+00:00","value":40.0},{"date":"2026-04-04T13:08:24.880295+00:00","value":50.0},{"date":"2026-04-04T13:19:50.423291+00:00","value":60.0},{"date":"2026-04-04T13:25:27.813045+00:00","value":60.0},{"date":"2026-04-04T13:31:08.091179+00:00","value":60.0},{"date":"2026-04-04T13:36:56.659302+00:00","value":60.0},{"date":"2026-04-04T13:42:44.996957+00:00","value":70.0},{"date":"2026-04-04T13:48:24.827148+00:00","value":60.0},{"date":"2026-04-04T13:54:12.904134+00:00","value":50.0},{"date":"2026-04-04T13:59:54.932291+00:00","value":50.0},{"date":"2026-04-04T14:05:33.898073+00:00","value":60.0},{"date":"2026-04-04T14:11:21.384783+00:00","value":50.0},{"date":"2026-04-04T14:17:14.715004+00:00","value":50.0},{"date":"2026-04-04T14:23:03.294847+00:00","value":40.0},{"date":"2026-04-04T14:28:53.787576+00:00","value":40.0},{"date":"2026-04-04T14:34:34.170695+00:00","value":40.0},{"date":"2026-04-04T14:40:13.749620+00:00","value":40.0},{"date":"2026-04-04T14:46:17.071700+00:00","value":50.0},{"date":"2026-04-04T14:52:02.102665+00:00","value":50.0},{"date":"2026-04-04T14:57:47.552891+00:00","value":60.0},{"date":"2026-04-04T15:03:37.018386+00:00","value":50.0},{"date":"2026-04-04T15:09:21.488108+00:00","value":60.0},{"date":"2026-04-04T15:15:09.951711+00:00","value":60.0},{"date":"2026-04-04T15:20:59.475248+00:00","value":60.0},{"date":"2026-04-04T15:26:51.610138+00:00","value":60.0},{"date":"2026-04-04T15:32:46.959147+00:00","value":50.0},{"date":"2026-04-04T15:38:36.835008+00:00","value":50.0},{"date":"2026-04-04T15:44:26.779722+00:00","value":40.0},{"date":"2026-04-04T15:50:34.639324+00:00","value":40.0},{"date":"2026-04-04T16:01:59.790094+00:00","value":30.0},{"date":"2026-04-04T16:07:39.046803+00:00","value":30.0},{"date":"2026-04-04T16:13:18.744113+00:00","value":20.0},{"date":"2026-04-04T16:19:00.733111+00:00","value":20.0},{"date":"2026-04-04T16:24:42.977832+00:00","value":30.0},{"date":"2026-04-04T16:30:33.426691+00:00","value":30.0},{"date":"2026-04-04T16:36:16.778855+00:00","value":40.0},{"date":"2026-04-04T16:42:05.728014+00:00","value":40.0},{"date":"2026-04-04T16:47:48.439748+00:00","value":40.0},{"date":"2026-04-04T16:53:30.729110+00:00","value":40.0},{"date":"2026-04-04T16:59:19.540972+00:00","value":40.0},{"date":"2026-04-04T17:05:09.413257+00:00","value":40.0},{"date":"2026-04-04T17:10:57.350027+00:00","value":50.0},{"date":"2026-04-04T17:22:30.567238+00:00","value":50.0},{"date":"2026-04-04T17:28:25.816410+00:00","value":50.0},{"date":"2026-04-04T17:34:47.844774+00:00","value":50.0},{"date":"2026-04-04T17:46:59.061453+00:00","value":40.0},{"date":"2026-04-04T17:52:52.062633+00:00","value":40.0},{"date":"2026-04-04T17:58:43.463731+00:00","value":50.0},{"date":"2026-04-04T18:04:38.828674+00:00","value":50.0},{"date":"2026-04-04T18:10:30.629867+00:00","value":60.0},{"date":"2026-04-04T18:16:22.955651+00:00","value":70.0},{"date":"2026-04-04T18:22:32.904738+00:00","value":60.0},{"date":"2026-04-04T18:28:48.810535+00:00","value":50.0},{"date":"2026-04-04T18:35:04.112232+00:00","value":50.0},{"date":"2026-04-04T18:47:41.787524+00:00","value":60.0},{"date":"2026-04-04T18:53:56.919335+00:00","value":70.0},{"date":"2026-04-04T18:59:51.342184+00:00","value":60.0},{"date":"2026-04-04T19:06:02.107467+00:00","value":60.0},{"date":"2026-04-04T19:12:23.561853+00:00","value":70.0},{"date":"2026-04-04T19:18:20.816166+00:00","value":60.0},{"date":"2026-04-04T19:24:13.952574+00:00","value":50.0},{"date":"2026-04-04T19:30:19.655624+00:00","value":60.0},{"date":"2026-04-04T19:36:32.624707+00:00","value":60.0},{"date":"2026-04-04T19:42:46.352561+00:00","value":60.0},{"date":"2026-04-04T19:48:43.556005+00:00","value":60.0},{"date":"2026-04-04T19:54:38.852272+00:00","value":60.0},{"date":"2026-04-04T20:00:36.811510+00:00","value":60.0},{"date":"2026-04-04T20:06:30.439796+00:00","value":60.0},{"date":"2026-04-04T20:12:25.704343+00:00","value":60.0},{"date":"2026-04-04T20:18:44.024586+00:00","value":70.0},{"date":"2026-04-04T20:24:40.099881+00:00","value":80.0},{"date":"2026-04-04T20:30:31.639045+00:00","value":80.0},{"date":"2026-04-04T20:36:27.470393+00:00","value":80.0},{"date":"2026-04-04T20:42:50.533310+00:00","value":70.0}]'></div>
+</div>
+<div class="section">
+    <div class="section-title">Circuit Breakers</div>
+    <div class="breaker-row">
+        <div class="breaker-item"><span style="color:#8b949e">Kill Switch:</span> <span style="color:#3fb950">&#x2714; OFF</span></div>
+        <div class="breaker-item">
+            <span style="color:#8b949e">Daily Loss:</span>
+            <span class="loss-bar"><span class="loss-bar-fill" style="width:4%;background:#3fb950"></span></span>
+            <span>$2/$50</span>
         </div>
-        <span>$0/$50</span>
-    </div></div>
-        <div><span style="color:#8b949e">Consec Losses:</span> <span style="color:#c9d1d9;font-weight:600">0/5</span></div>
+        <div class="breaker-item"><span style="color:#8b949e">Consec Losses:</span> <span style="color:#f44336;font-weight:600">5/5</span></div>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:11px;color:#6e7681;margin-top:8px;border-top:1px solid #21262d;padding-top:8px">
         <span>Min Conv: 3</span>
         <span>Edge: 5%</span>
         <span>Price Gate: 15%–85%</span>
-        <span>Extreme Est: &lt;0.35 / &gt;0.65</span>
+        <span>Extreme: &lt;0.35 / &gt;0.65</span>
     </div>
 </div>
-
-    
-
-    <div class="pipeline-banner" style="background:rgba(63,185,80,0.08);border-color:#238636">
-        <div class="pipeline-main">
-            <div class="pipeline-fraction" style="color:#3fb950">
-                <span class="pipeline-big">49</span><span class="pipeline-slash">/49</span>
-            </div>
-            <div class="pipeline-labels">
-                <span class="pipeline-status" style="color:#3fb950">HEALTHY</span>
-                <span class="pipeline-desc">cycles on time (100%)</span>
-            </div>
-        </div>
-        <div class="pipeline-meta">
-            <div class="pipeline-detail">Avg gap: 6min &middot; 50 total &middot; 0 missed</div>
-            <div class='pipeline-ago'>Last cycle: 1m ago</div>
-        </div>
-    </div>
-
-    <div class="live-banner"><div class="live-card">
-            <div class="live-label">BTC Price</div>
-            <div class="live-value">$67,279</div>
-            <div class="live-detail" style="color:#3fb950">+0.051% &middot; NEUTRAL</div>
-        </div><div class="live-card live-result" style="background:rgba(244,67,54,0.15);border-color:#da3633">
-            <div class="live-label">Last Result</div>
-            <div class="live-verdict" style="color:#f44336">&#10007; ALL MISS</div>
-            <div class="live-outcome">Resolved <span style="color:#f44336;font-weight:700">DOWN &#9660;</span></div>
-            <div class="live-detail">Will BTC be above $67,287 at 20:45 UTC?</div>
-            <div class="result-chips"><span class="result-chip" style="background:rgba(244,67,54,0.15);border:1px solid #da3633;color:#da3633">&#10007; momentum_bybit 50%</span> </div>
-        </div><div class="live-card">
-            <div class="live-label">Current Prediction</div>
-            <div class="live-value" style="color:#58a6ff">Mkt 50%</div>
-            <div class="live-detail">Will BTC be above $67,279 at 20:50 UTC?</div>
-            <div class="live-sub">momentum_bybit:50%(low)</div>
-        </div></div>
-
-    <h2>Performance</h2>
-        <div class="perf-grid"><div class="perf-card" style="">
-                <div class="perf-agent" style="color:#c9d1d9">momentum_bybit</div>
-                <div class="perf-record">237W - 231L</div>
-                <div class="perf-accuracy" style="color:#ffc107">50.6%</div>
-                <div class="perf-vs" style="color:#3fb950">+0.6pp vs coin flip</div>
-                <div class="perf-streak"><span class="streak streak-l">L2</span></div>
-            </div><div class="perf-card perf-ensemble">
-            <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
-            <div class="perf-record">237W - 231L</div>
-            <div class="perf-accuracy" style="color:#ffc107">50.6%</div>
-            <div class="perf-vs" style="color:#3fb950">+0.6pp vs coin flip</div>
-            <div class="perf-streak"><span class="streak streak-l">L2</span></div>
-        </div></div>
-
-    <h2>Signal Performance P&amp;L</h2>
-        <p class="section-desc">Based on prediction outcomes. Flat $25 per bet. Wins variable (entry price dependent), losses fixed at bet size.</p>
-        <div class="consolidated-pnl">
-            <div class="consolidated-label">SIGNAL PERFORMANCE</div>
-            <div class="consolidated-return" style="color:#3fb950">+$300</div>
-            <div class="consolidated-detail">68 discrete bets &middot; +18% ROI (cumulative) &middot; <span style="color:#3fb950;font-weight:700">+18% ROI/bet</span></div>
-            <div class="pnl-asymmetry">
-                <div class="pnl-asym-row">
-                    <span class="pnl-asym-label" style="color:#3fb950">40W</span>
-                    <span class="pnl-asym-bar-wrap"><span class="pnl-asym-bar" style="background:#3fb950;width:100%"></span></span>
-                    <span class="pnl-asym-val" style="color:#3fb950">+$1,000</span>
-                    <span class="pnl-asym-avg">avg +$25/win</span>
-                </div>
-                <div class="pnl-asym-row">
-                    <span class="pnl-asym-label" style="color:#f44336">28L</span>
-                    <span class="pnl-asym-bar-wrap"><span class="pnl-asym-bar" style="background:#f44336;width:70%"></span></span>
-                    <span class="pnl-asym-val" style="color:#f44336">$-700</span>
-                    <span class="pnl-asym-avg">fixed $-25/loss</span>
-                </div>
-            </div>
-            <div class="consolidated-detail" style="margin-top:8px;font-size:0.75rem;color:#8b949e">
-                Max drawdown: <span style="color:#f44336">$100</span>
-                &middot; Cumulative risked: $1,700 (sequential, not simultaneous)
-            </div>
-        </div>
-        <div class="ev-box">
-                <div class="ev-row">
-                    <div class="ev-metric">
-                        <div class="ev-label">EV per bet</div>
-                        <div class="ev-value" style="color:#3fb950">+$4.4</div>
-                    </div>
-                    <div class="ev-metric">
-                        <div class="ev-label">Breakeven WR</div>
-                        <div class="ev-value">50.0%</div>
-                    </div>
-                    <div class="ev-metric">
-                        <div class="ev-label">Current WR</div>
-                        <div class="ev-value" style="color:#3fb950">58.8%</div>
-                    </div>
-                    <div class="ev-metric">
-                        <div class="ev-label">Edge</div>
-                        <div class="ev-value" style="color:#3fb950">+8.8pp</div>
-                    </div>
-                </div>
-                <div class="ev-gauge-wrap">
-                    <div class="ev-gauge-bg">
-                        <div class="ev-gauge-fill" style="width:59%;background:#3fb950"></div>
-                        <div class="ev-gauge-marker" style="left:50%" title="Breakeven: 50.0%"></div>
-                    </div>
-                    <div class="ev-gauge-labels">
-                        <span>0%</span>
-                        <span style="position:absolute;left:50%;transform:translateX(-50%);color:#c9d1d9;font-weight:700">BE</span>
-                        <span>100%</span>
-                    </div>
-                </div>
-            </div>
-        <div class="perf-grid"><div class="perf-card">
-                    <div class="perf-agent" style="color:#c9d1d9">momentum_bybit</div>
-                    <div class="perf-accuracy" style="color:#3fb950">+$300</div>
-                    <div class="perf-record">40W-28L (59% WR)</div>
-                    <div class="perf-vs" style="color:#3fb950">+$1,000 won (avg +$25)</div>
-                    <div class="perf-vs" style="color:#f44336">$-700 lost (fixed $-25)</div>
-                    <div class="perf-vs" style="color:#8b949e">Max DD: $100 &middot; +18% ROI</div>
-                </div><div class="perf-card perf-ensemble">
-                <div class="perf-agent" style="color:#f0883e">ENSEMBLE</div>
-                <div class="perf-accuracy" style="color:#3fb950">+$300</div>
-                <div class="perf-record">68 bets &middot; +18% ROI</div>
-                <div class="perf-vs">from $1,700 cumulative (400 skipped)</div>
-            </div></div>
-        <div class="chart-container" style="margin-top:16px">
-            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Per-Bet Waterfall</h3>
-            <svg viewBox="0 0 800 280" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:800px;height:auto;background:#161b22;border-radius:8px;"><line x1="60" y1="187.5" x2="780" y2="187.5" stroke="#484f58" stroke-width="1" stroke-dasharray="6,4" /><text x="52" y="191.5" fill="#8b949e" font-size="11" text-anchor="end">$0</text><line x1="60" y1="177.5" x2="780" y2="177.5" stroke="#21262d" stroke-width="1" /><text x="52" y="181.5" fill="#8b949e" font-size="10" text-anchor="end">$20</text><line x1="60" y1="125.0" x2="780" y2="125.0" stroke="#21262d" stroke-width="1" /><text x="52" y="129.0" fill="#8b949e" font-size="10" text-anchor="end">$125</text><line x1="60" y1="72.5" x2="780" y2="72.5" stroke="#21262d" stroke-width="1" /><text x="52" y="76.5" fill="#8b949e" font-size="10" text-anchor="end">$230</text><line x1="60" y1="20.0" x2="780" y2="20.0" stroke="#21262d" stroke-width="1" /><text x="52" y="24.0" fill="#8b949e" font-size="10" text-anchor="end">$335</text><rect x="60.0" y="187.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #1: LOSS $-25 (price: 0.50)</title></rect><rect x="70.6" y="200.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #2: LOSS $-25 (price: 0.50)</title></rect><rect x="81.2" y="200.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #3: WIN $+25 (price: 0.50)</title></rect><rect x="91.8" y="187.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #4: WIN $+25 (price: 0.50)</title></rect><rect x="102.4" y="175.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #5: WIN $+25 (price: 0.50)</title></rect><rect x="112.9" y="175.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #6: LOSS $-25 (price: 0.50)</title></rect><rect x="123.5" y="187.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #7: LOSS $-25 (price: 0.50)</title></rect><rect x="134.1" y="187.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #8: WIN $+25 (price: 0.50)</title></rect><rect x="144.7" y="175.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #9: WIN $+25 (price: 0.50)</title></rect><rect x="155.3" y="175.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #10: LOSS $-25 (price: 0.50)</title></rect><rect x="165.9" y="175.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #11: WIN $+25 (price: 0.50)</title></rect><rect x="176.5" y="162.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #12: WIN $+25 (price: 0.50)</title></rect><rect x="187.1" y="162.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #13: LOSS $-25 (price: 0.50)</title></rect><rect x="197.6" y="175.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #14: LOSS $-25 (price: 0.50)</title></rect><rect x="208.2" y="175.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #15: WIN $+25 (price: 0.50)</title></rect><rect x="218.8" y="162.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #16: WIN $+25 (price: 0.50)</title></rect><rect x="229.4" y="150.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #17: WIN $+25 (price: 0.50)</title></rect><rect x="240.0" y="137.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #18: WIN $+25 (price: 0.50)</title></rect><rect x="250.6" y="137.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #19: LOSS $-25 (price: 0.50)</title></rect><rect x="261.2" y="137.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #20: WIN $+25 (price: 0.50)</title></rect><rect x="271.8" y="125.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #21: WIN $+25 (price: 0.50)</title></rect><rect x="282.4" y="125.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #22: LOSS $-25 (price: 0.50)</title></rect><rect x="292.9" y="137.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #23: LOSS $-25 (price: 0.50)</title></rect><rect x="303.5" y="137.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #24: WIN $+25 (price: 0.50)</title></rect><rect x="314.1" y="125.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #25: WIN $+25 (price: 0.50)</title></rect><rect x="324.7" y="112.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #26: WIN $+25 (price: 0.50)</title></rect><rect x="335.3" y="112.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #27: LOSS $-25 (price: 0.50)</title></rect><rect x="345.9" y="125.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #28: LOSS $-25 (price: 0.50)</title></rect><rect x="356.5" y="125.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #29: WIN $+25 (price: 0.50)</title></rect><rect x="367.1" y="112.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #30: WIN $+25 (price: 0.50)</title></rect><rect x="377.6" y="112.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #31: LOSS $-25 (price: 0.50)</title></rect><rect x="388.2" y="112.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #32: WIN $+25 (price: 0.50)</title></rect><rect x="398.8" y="112.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #33: LOSS $-25 (price: 0.50)</title></rect><rect x="409.4" y="125.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #34: LOSS $-25 (price: 0.50)</title></rect><rect x="420.0" y="125.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #35: WIN $+25 (price: 0.50)</title></rect><rect x="430.6" y="125.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #36: LOSS $-25 (price: 0.50)</title></rect><rect x="441.2" y="125.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #37: WIN $+25 (price: 0.50)</title></rect><rect x="451.8" y="112.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #38: WIN $+25 (price: 0.50)</title></rect><rect x="462.4" y="100.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #39: WIN $+25 (price: 0.50)</title></rect><rect x="472.9" y="87.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #40: WIN $+25 (price: 0.50)</title></rect><rect x="483.5" y="75.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #41: WIN $+25 (price: 0.50)</title></rect><rect x="494.1" y="62.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #42: WIN $+25 (price: 0.50)</title></rect><rect x="504.7" y="62.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #43: LOSS $-25 (price: 0.50)</title></rect><rect x="515.3" y="62.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #44: WIN $+25 (price: 0.50)</title></rect><rect x="525.9" y="62.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #45: LOSS $-25 (price: 0.50)</title></rect><rect x="536.5" y="75.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #46: LOSS $-25 (price: 0.50)</title></rect><rect x="547.1" y="87.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #47: LOSS $-25 (price: 0.50)</title></rect><rect x="557.6" y="87.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #48: WIN $+25 (price: 0.50)</title></rect><rect x="568.2" y="75.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #49: WIN $+25 (price: 0.50)</title></rect><rect x="578.8" y="75.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #50: LOSS $-25 (price: 0.50)</title></rect><rect x="589.4" y="75.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #51: WIN $+25 (price: 0.50)</title></rect><rect x="600.0" y="62.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #52: WIN $+25 (price: 0.50)</title></rect><rect x="610.6" y="62.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #53: LOSS $-25 (price: 0.50)</title></rect><rect x="621.2" y="62.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #54: WIN $+25 (price: 0.50)</title></rect><rect x="631.8" y="62.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #55: LOSS $-25 (price: 0.50)</title></rect><rect x="642.4" y="62.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #56: WIN $+25 (price: 0.50)</title></rect><rect x="652.9" y="62.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #57: LOSS $-25 (price: 0.50)</title></rect><rect x="663.5" y="75.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #58: LOSS $-25 (price: 0.50)</title></rect><rect x="674.1" y="75.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #59: WIN $+25 (price: 0.50)</title></rect><rect x="684.7" y="75.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #60: LOSS $-25 (price: 0.50)</title></rect><rect x="695.3" y="87.5" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #61: LOSS $-25 (price: 0.50)</title></rect><rect x="705.9" y="100.0" width="9.6" height="12.5" fill="#f44336" opacity="0.85" rx="1"><title>Bet #62: LOSS $-25 (price: 0.50)</title></rect><rect x="716.5" y="100.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #63: WIN $+25 (price: 0.50)</title></rect><rect x="727.1" y="87.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #64: WIN $+25 (price: 0.50)</title></rect><rect x="737.6" y="75.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #65: WIN $+25 (price: 0.50)</title></rect><rect x="748.2" y="62.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #66: WIN $+25 (price: 0.50)</title></rect><rect x="758.8" y="50.0" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #67: WIN $+25 (price: 0.50)</title></rect><rect x="769.4" y="37.5" width="9.6" height="12.5" fill="#3fb950" opacity="0.85" rx="1"><title>Bet #68: WIN $+25 (price: 0.50)</title></rect><polyline points="64.8,200.0 75.4,212.5 86.0,200.0 96.6,187.5 107.1,175.0 117.7,187.5 128.3,200.0 138.9,187.5 149.5,175.0 160.1,187.5 170.7,175.0 181.3,162.5 191.9,175.0 202.4,187.5 213.0,175.0 223.6,162.5 234.2,150.0 244.8,137.5 255.4,150.0 266.0,137.5 276.6,125.0 287.1,137.5 297.7,150.0 308.3,137.5 318.9,125.0 329.5,112.5 340.1,125.0 350.7,137.5 361.3,125.0 371.9,112.5 382.4,125.0 393.0,112.5 403.6,125.0 414.2,137.5 424.8,125.0 435.4,137.5 446.0,125.0 456.6,112.5 467.1,100.0 477.7,87.5 488.3,75.0 498.9,62.5 509.5,75.0 520.1,62.5 530.7,75.0 541.3,87.5 551.9,100.0 562.4,87.5 573.0,75.0 583.6,87.5 594.2,75.0 604.8,62.5 615.4,75.0 626.0,62.5 636.6,75.0 647.1,62.5 657.7,75.0 668.3,87.5 678.9,75.0 689.5,87.5 700.1,100.0 710.7,112.5 721.3,100.0 731.9,87.5 742.4,75.0 753.0,62.5 763.6,50.0 774.2,37.5" fill="none" stroke="#c9d1d9" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.6" /><text x="420.0" y="272" fill="#8b949e" font-size="10" text-anchor="middle">68 bets (green = variable win, red = fixed loss)</text></svg>
-        </div>
-        <div class="chart-container" style="margin-top:16px">
-            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Win/Loss Distribution</h3>
-            <svg viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:800px;height:auto;background:#161b22;border-radius:8px;"><line x1="420.0" y1="20" x2="420.0" y2="170" stroke="#c9d1d9" stroke-width="1" stroke-dasharray="6,3" opacity="0.5" /><text x="420.0" y="16" fill="#c9d1d9" font-size="10" text-anchor="middle">$0</text><rect x="60.0" y="65.0" width="35.0" height="105.0" fill="#f44336" opacity="0.85" rx="1"><title>$-25 to $-22: 28 loss(es)</title></rect><rect x="744.0" y="20.0" width="35.0" height="150.0" fill="#3fb950" opacity="0.85" rx="1"><title>$+22 to $+25: 40 win(s)</title></rect><text x="77.5" y="184" fill="#8b949e" font-size="9" text-anchor="middle">$-25</text><text x="257.5" y="184" fill="#8b949e" font-size="9" text-anchor="middle">$-12</text><text x="437.5" y="184" fill="#8b949e" font-size="9" text-anchor="middle">$+0</text><text x="617.5" y="184" fill="#8b949e" font-size="9" text-anchor="middle">$+12</text><text x="761.5" y="184" fill="#8b949e" font-size="9" text-anchor="middle">$+22</text><text x="420.0" y="212" fill="#8b949e" font-size="10" text-anchor="middle">Losses cluster at fixed bet sizes. Wins spread based on entry price.</text><text x="52" y="95.0" fill="#8b949e" font-size="10" text-anchor="end" transform="rotate(-90,52,95.0)">Count</text></svg>
-        </div>
-        <div class="chart-container" style="margin-top:16px">
-            <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Cumulative P&amp;L</h3>
-            <svg viewBox="0 0 800 300" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:800px;height:auto;background:#161b22;border-radius:8px;"><line x1="60" y1="225.71428571428572" x2="780" y2="225.71428571428572" stroke="#484f58" stroke-width="1" stroke-dasharray="6,4" /><text x="52" y="229.71428571428572" fill="#8b949e" font-size="11" text-anchor="end">$0</text><line x1="60" y1="200.0" x2="780" y2="200.0" stroke="#21262d" stroke-width="1" /><text x="52" y="204.0" fill="#8b949e" font-size="10" text-anchor="end">$38</text><line x1="60" y1="140.0" x2="780" y2="140.0" stroke="#21262d" stroke-width="1" /><text x="52" y="144.0" fill="#8b949e" font-size="10" text-anchor="end">$125</text><line x1="60" y1="80.0" x2="780" y2="80.0" stroke="#21262d" stroke-width="1" /><text x="52" y="84.0" fill="#8b949e" font-size="10" text-anchor="end">$212</text><line x1="60" y1="20.0" x2="780" y2="20.0" stroke="#21262d" stroke-width="1" /><text x="52" y="24.0" fill="#8b949e" font-size="10" text-anchor="end">$300</text><polyline points="60.0,225.7 61.5,225.7 63.1,225.7 64.6,225.7 66.2,225.7 67.7,225.7 69.3,225.7 70.8,225.7 72.3,225.7 73.9,225.7 75.4,225.7 77.0,225.7 78.5,225.7 80.0,225.7 81.6,225.7 83.1,225.7 84.7,225.7 86.2,225.7 87.8,225.7 89.3,225.7 90.8,225.7 92.4,225.7 93.9,225.7 95.5,225.7 97.0,225.7 98.5,225.7 100.1,225.7 101.6,225.7 103.2,225.7 104.7,225.7 106.3,225.7 107.8,225.7 109.3,225.7 110.9,225.7 112.4,225.7 114.0,225.7 115.5,225.7 117.0,225.7 118.6,225.7 120.1,225.7 121.7,225.7 123.2,225.7 124.8,225.7 126.3,225.7 127.8,225.7 129.4,225.7 130.9,225.7 132.5,225.7 134.0,225.7 135.5,225.7 137.1,225.7 138.6,225.7 140.2,225.7 141.7,225.7 143.3,225.7 144.8,225.7 146.3,225.7 147.9,225.7 149.4,225.7 151.0,225.7 152.5,242.9 154.0,242.9 155.6,260.0 157.1,260.0 158.7,260.0 160.2,260.0 161.8,260.0 163.3,260.0 164.8,260.0 166.4,260.0 167.9,260.0 169.5,260.0 171.0,260.0 172.5,260.0 174.1,260.0 175.6,260.0 177.2,260.0 178.7,260.0 180.3,260.0 181.8,260.0 183.3,260.0 184.9,260.0 186.4,260.0 188.0,242.9 189.5,225.7 191.0,225.7 192.6,225.7 194.1,208.6 195.7,225.7 197.2,225.7 198.8,225.7 200.3,225.7 201.8,225.7 203.4,225.7 204.9,225.7 206.5,225.7 208.0,242.9 209.6,242.9 211.1,225.7 212.6,208.6 214.2,225.7 215.7,225.7 217.3,208.6 218.8,208.6 220.3,208.6 221.9,208.6 223.4,208.6 225.0,191.4 226.5,191.4 228.1,191.4 229.6,208.6 231.1,208.6 232.7,208.6 234.2,208.6 235.8,208.6 237.3,225.7 238.8,225.7 240.4,225.7 241.9,225.7 243.5,225.7 245.0,225.7 246.6,225.7 248.1,225.7 249.6,225.7 251.2,225.7 252.7,225.7 254.3,225.7 255.8,225.7 257.3,225.7 258.9,225.7 260.4,225.7 262.0,225.7 263.5,225.7 265.1,225.7 266.6,225.7 268.1,225.7 269.7,225.7 271.2,225.7 272.8,225.7 274.3,225.7 275.8,225.7 277.4,208.6 278.9,208.6 280.5,208.6 282.0,208.6 283.6,208.6 285.1,208.6 286.6,191.4 288.2,174.3 289.7,174.3 291.3,174.3 292.8,174.3 294.3,174.3 295.9,157.1 297.4,157.1 299.0,157.1 300.5,157.1 302.1,157.1 303.6,157.1 305.1,157.1 306.7,157.1 308.2,157.1 309.8,157.1 311.3,157.1 312.8,157.1 314.4,157.1 315.9,157.1 317.5,157.1 319.0,157.1 320.6,157.1 322.1,157.1 323.6,157.1 325.2,157.1 326.7,157.1 328.3,157.1 329.8,157.1 331.3,157.1 332.9,157.1 334.4,174.3 336.0,174.3 337.5,174.3 339.1,174.3 340.6,174.3 342.1,174.3 343.7,174.3 345.2,157.1 346.8,157.1 348.3,140.0 349.9,140.0 351.4,140.0 352.9,140.0 354.5,140.0 356.0,157.1 357.6,157.1 359.1,157.1 360.6,174.3 362.2,174.3 363.7,174.3 365.3,174.3 366.8,174.3 368.4,174.3 369.9,174.3 371.4,174.3 373.0,174.3 374.5,174.3 376.1,174.3 377.6,174.3 379.1,174.3 380.7,174.3 382.2,174.3 383.8,174.3 385.3,174.3 386.9,174.3 388.4,174.3 389.9,174.3 391.5,174.3 393.0,174.3 394.6,174.3 396.1,174.3 397.6,174.3 399.2,157.1 400.7,140.0 402.3,140.0 403.8,122.9 405.4,122.9 406.9,122.9 408.4,140.0 410.0,140.0 411.5,157.1 413.1,157.1 414.6,157.1 416.1,157.1 417.7,157.1 419.2,157.1 420.8,157.1 422.3,157.1 423.9,140.0 425.4,140.0 426.9,122.9 428.5,122.9 430.0,140.0 431.6,140.0 433.1,140.0 434.6,140.0 436.2,140.0 437.7,140.0 439.3,140.0 440.8,140.0 442.4,140.0 443.9,140.0 445.4,140.0 447.0,140.0 448.5,140.0 450.1,140.0 451.6,140.0 453.1,140.0 454.7,140.0 456.2,140.0 457.8,140.0 459.3,140.0 460.9,140.0 462.4,140.0 463.9,140.0 465.5,122.9 467.0,140.0 468.6,157.1 470.1,157.1 471.6,140.0 473.2,140.0 474.7,140.0 476.3,157.1 477.8,157.1 479.4,157.1 480.9,157.1 482.4,140.0 484.0,122.9 485.5,105.7 487.1,105.7 488.6,105.7 490.1,105.7 491.7,105.7 493.2,105.7 494.8,105.7 496.3,105.7 497.9,105.7 499.4,105.7 500.9,105.7 502.5,105.7 504.0,105.7 505.6,105.7 507.1,105.7 508.7,105.7 510.2,105.7 511.7,105.7 513.3,105.7 514.8,105.7 516.4,88.6 517.9,88.6 519.4,88.6 521.0,88.6 522.5,88.6 524.1,88.6 525.6,88.6 527.2,71.4 528.7,71.4 530.2,71.4 531.8,71.4 533.3,54.3 534.9,54.3 536.4,54.3 537.9,54.3 539.5,54.3 541.0,54.3 542.6,54.3 544.1,71.4 545.7,54.3 547.2,71.4 548.7,71.4 550.3,88.6 551.8,88.6 553.4,88.6 554.9,88.6 556.4,88.6 558.0,88.6 559.5,88.6 561.1,88.6 562.6,88.6 564.2,88.6 565.7,88.6 567.2,88.6 568.8,88.6 570.3,88.6 571.9,88.6 573.4,88.6 574.9,88.6 576.5,88.6 578.0,105.7 579.6,105.7 581.1,105.7 582.7,88.6 584.2,88.6 585.7,71.4 587.3,88.6 588.8,88.6 590.4,88.6 591.9,88.6 593.4,71.4 595.0,71.4 596.5,71.4 598.1,71.4 599.6,71.4 601.2,71.4 602.7,71.4 604.2,71.4 605.8,71.4 607.3,71.4 608.9,71.4 610.4,71.4 611.9,71.4 613.5,71.4 615.0,71.4 616.6,71.4 618.1,71.4 619.7,71.4 621.2,71.4 622.7,71.4 624.3,71.4 625.8,71.4 627.4,71.4 628.9,71.4 630.4,71.4 632.0,71.4 633.5,71.4 635.1,71.4 636.6,54.3 638.2,54.3 639.7,54.3 641.2,54.3 642.8,54.3 644.3,54.3 645.9,54.3 647.4,54.3 649.0,54.3 650.5,54.3 652.0,54.3 653.6,54.3 655.1,71.4 656.7,71.4 658.2,71.4 659.7,71.4 661.3,71.4 662.8,71.4 664.4,71.4 665.9,71.4 667.5,71.4 669.0,71.4 670.5,71.4 672.1,71.4 673.6,71.4 675.2,71.4 676.7,71.4 678.2,71.4 679.8,71.4 681.3,71.4 682.9,71.4 684.4,71.4 686.0,71.4 687.5,71.4 689.0,71.4 690.6,54.3 692.1,54.3 693.7,54.3 695.2,71.4 696.7,71.4 698.3,71.4 699.8,71.4 701.4,54.3 702.9,71.4 704.5,71.4 706.0,71.4 707.5,71.4 709.1,71.4 710.6,71.4 712.2,71.4 713.7,71.4 715.2,88.6 716.8,88.6 718.3,71.4 719.9,88.6 721.4,88.6 723.0,88.6 724.5,88.6 726.0,88.6 727.6,88.6 729.1,105.7 730.7,105.7 732.2,105.7 733.7,105.7 735.3,105.7 736.8,122.9 738.4,122.9 739.9,105.7 741.5,105.7 743.0,105.7 744.5,88.6 746.1,88.6 747.6,88.6 749.2,88.6 750.7,88.6 752.2,88.6 753.8,88.6 755.3,88.6 756.9,71.4 758.4,71.4 760.0,71.4 761.5,54.3 763.0,54.3 764.6,37.1 766.1,37.1 767.7,37.1 769.2,37.1 770.7,37.1 772.3,37.1 773.8,20.0 775.4,20.0 776.9,20.0 778.5,20.0 780.0,20.0" fill="none" stroke="#f0883e" stroke-width="3" /><polyline points="60.0,225.7 61.5,225.7 63.1,225.7 64.6,225.7 66.2,225.7 67.7,225.7 69.3,225.7 70.8,225.7 72.3,225.7 73.9,225.7 75.4,225.7 77.0,225.7 78.5,225.7 80.0,225.7 81.6,225.7 83.1,225.7 84.7,225.7 86.2,225.7 87.8,225.7 89.3,225.7 90.8,225.7 92.4,225.7 93.9,225.7 95.5,225.7 97.0,225.7 98.5,225.7 100.1,225.7 101.6,225.7 103.2,225.7 104.7,225.7 106.3,225.7 107.8,225.7 109.3,225.7 110.9,225.7 112.4,225.7 114.0,225.7 115.5,225.7 117.0,225.7 118.6,225.7 120.1,225.7 121.7,225.7 123.2,225.7 124.8,225.7 126.3,225.7 127.8,225.7 129.4,225.7 130.9,225.7 132.5,225.7 134.0,225.7 135.5,225.7 137.1,225.7 138.6,225.7 140.2,225.7 141.7,225.7 143.3,225.7 144.8,225.7 146.3,225.7 147.9,225.7 149.4,225.7 151.0,225.7 152.5,242.9 154.0,242.9 155.6,260.0 157.1,260.0 158.7,260.0 160.2,260.0 161.8,260.0 163.3,260.0 164.8,260.0 166.4,260.0 167.9,260.0 169.5,260.0 171.0,260.0 172.5,260.0 174.1,260.0 175.6,260.0 177.2,260.0 178.7,260.0 180.3,260.0 181.8,260.0 183.3,260.0 184.9,260.0 186.4,260.0 188.0,242.9 189.5,225.7 191.0,225.7 192.6,225.7 194.1,208.6 195.7,225.7 197.2,225.7 198.8,225.7 200.3,225.7 201.8,225.7 203.4,225.7 204.9,225.7 206.5,225.7 208.0,242.9 209.6,242.9 211.1,225.7 212.6,208.6 214.2,225.7 215.7,225.7 217.3,208.6 218.8,208.6 220.3,208.6 221.9,208.6 223.4,208.6 225.0,191.4 226.5,191.4 228.1,191.4 229.6,208.6 231.1,208.6 232.7,208.6 234.2,208.6 235.8,208.6 237.3,225.7 238.8,225.7 240.4,225.7 241.9,225.7 243.5,225.7 245.0,225.7 246.6,225.7 248.1,225.7 249.6,225.7 251.2,225.7 252.7,225.7 254.3,225.7 255.8,225.7 257.3,225.7 258.9,225.7 260.4,225.7 262.0,225.7 263.5,225.7 265.1,225.7 266.6,225.7 268.1,225.7 269.7,225.7 271.2,225.7 272.8,225.7 274.3,225.7 275.8,225.7 277.4,208.6 278.9,208.6 280.5,208.6 282.0,208.6 283.6,208.6 285.1,208.6 286.6,191.4 288.2,174.3 289.7,174.3 291.3,174.3 292.8,174.3 294.3,174.3 295.9,157.1 297.4,157.1 299.0,157.1 300.5,157.1 302.1,157.1 303.6,157.1 305.1,157.1 306.7,157.1 308.2,157.1 309.8,157.1 311.3,157.1 312.8,157.1 314.4,157.1 315.9,157.1 317.5,157.1 319.0,157.1 320.6,157.1 322.1,157.1 323.6,157.1 325.2,157.1 326.7,157.1 328.3,157.1 329.8,157.1 331.3,157.1 332.9,157.1 334.4,174.3 336.0,174.3 337.5,174.3 339.1,174.3 340.6,174.3 342.1,174.3 343.7,174.3 345.2,157.1 346.8,157.1 348.3,140.0 349.9,140.0 351.4,140.0 352.9,140.0 354.5,140.0 356.0,157.1 357.6,157.1 359.1,157.1 360.6,174.3 362.2,174.3 363.7,174.3 365.3,174.3 366.8,174.3 368.4,174.3 369.9,174.3 371.4,174.3 373.0,174.3 374.5,174.3 376.1,174.3 377.6,174.3 379.1,174.3 380.7,174.3 382.2,174.3 383.8,174.3 385.3,174.3 386.9,174.3 388.4,174.3 389.9,174.3 391.5,174.3 393.0,174.3 394.6,174.3 396.1,174.3 397.6,174.3 399.2,157.1 400.7,140.0 402.3,140.0 403.8,122.9 405.4,122.9 406.9,122.9 408.4,140.0 410.0,140.0 411.5,157.1 413.1,157.1 414.6,157.1 416.1,157.1 417.7,157.1 419.2,157.1 420.8,157.1 422.3,157.1 423.9,140.0 425.4,140.0 426.9,122.9 428.5,122.9 430.0,140.0 431.6,140.0 433.1,140.0 434.6,140.0 436.2,140.0 437.7,140.0 439.3,140.0 440.8,140.0 442.4,140.0 443.9,140.0 445.4,140.0 447.0,140.0 448.5,140.0 450.1,140.0 451.6,140.0 453.1,140.0 454.7,140.0 456.2,140.0 457.8,140.0 459.3,140.0 460.9,140.0 462.4,140.0 463.9,140.0 465.5,122.9 467.0,140.0 468.6,157.1 470.1,157.1 471.6,140.0 473.2,140.0 474.7,140.0 476.3,157.1 477.8,157.1 479.4,157.1 480.9,157.1 482.4,140.0 484.0,122.9 485.5,105.7 487.1,105.7 488.6,105.7 490.1,105.7 491.7,105.7 493.2,105.7 494.8,105.7 496.3,105.7 497.9,105.7 499.4,105.7 500.9,105.7 502.5,105.7 504.0,105.7 505.6,105.7 507.1,105.7 508.7,105.7 510.2,105.7 511.7,105.7 513.3,105.7 514.8,105.7 516.4,88.6 517.9,88.6 519.4,88.6 521.0,88.6 522.5,88.6 524.1,88.6 525.6,88.6 527.2,71.4 528.7,71.4 530.2,71.4 531.8,71.4 533.3,54.3 534.9,54.3 536.4,54.3 537.9,54.3 539.5,54.3 541.0,54.3 542.6,54.3 544.1,71.4 545.7,54.3 547.2,71.4 548.7,71.4 550.3,88.6 551.8,88.6 553.4,88.6 554.9,88.6 556.4,88.6 558.0,88.6 559.5,88.6 561.1,88.6 562.6,88.6 564.2,88.6 565.7,88.6 567.2,88.6 568.8,88.6 570.3,88.6 571.9,88.6 573.4,88.6 574.9,88.6 576.5,88.6 578.0,105.7 579.6,105.7 581.1,105.7 582.7,88.6 584.2,88.6 585.7,71.4 587.3,88.6 588.8,88.6 590.4,88.6 591.9,88.6 593.4,71.4 595.0,71.4 596.5,71.4 598.1,71.4 599.6,71.4 601.2,71.4 602.7,71.4 604.2,71.4 605.8,71.4 607.3,71.4 608.9,71.4 610.4,71.4 611.9,71.4 613.5,71.4 615.0,71.4 616.6,71.4 618.1,71.4 619.7,71.4 621.2,71.4 622.7,71.4 624.3,71.4 625.8,71.4 627.4,71.4 628.9,71.4 630.4,71.4 632.0,71.4 633.5,71.4 635.1,71.4 636.6,54.3 638.2,54.3 639.7,54.3 641.2,54.3 642.8,54.3 644.3,54.3 645.9,54.3 647.4,54.3 649.0,54.3 650.5,54.3 652.0,54.3 653.6,54.3 655.1,71.4 656.7,71.4 658.2,71.4 659.7,71.4 661.3,71.4 662.8,71.4 664.4,71.4 665.9,71.4 667.5,71.4 669.0,71.4 670.5,71.4 672.1,71.4 673.6,71.4 675.2,71.4 676.7,71.4 678.2,71.4 679.8,71.4 681.3,71.4 682.9,71.4 684.4,71.4 686.0,71.4 687.5,71.4 689.0,71.4 690.6,54.3 692.1,54.3 693.7,54.3 695.2,71.4 696.7,71.4 698.3,71.4 699.8,71.4 701.4,54.3 702.9,71.4 704.5,71.4 706.0,71.4 707.5,71.4 709.1,71.4 710.6,71.4 712.2,71.4 713.7,71.4 715.2,88.6 716.8,88.6 718.3,71.4 719.9,88.6 721.4,88.6 723.0,88.6 724.5,88.6 726.0,88.6 727.6,88.6 729.1,105.7 730.7,105.7 732.2,105.7 733.7,105.7 735.3,105.7 736.8,122.9 738.4,122.9 739.9,105.7 741.5,105.7 743.0,105.7 744.5,88.6 746.1,88.6 747.6,88.6 749.2,88.6 750.7,88.6 752.2,88.6 753.8,88.6 755.3,88.6 756.9,71.4 758.4,71.4 760.0,71.4 761.5,54.3 763.0,54.3 764.6,37.1 766.1,37.1 767.7,37.1 769.2,37.1 770.7,37.1 772.3,37.1 773.8,20.0 775.4,20.0 776.9,20.0 778.5,20.0 780.0,20.0" fill="none" stroke="#58a6ff" stroke-width="2" /></svg><div class="chart-legend"><span class="legend-item"><span class="legend-dot" style="background:#f0883e"></span>ENSEMBLE</span><span class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>momentum_bybit</span></div>
-        </div>
-
-    <h2>Conviction Scoreboard (Live Trading)</h2>
-            <p class="section-desc">Only bet when conviction &ge; 3. Flat $25 per bet.</p>
-            <div class="table-wrap"><table>
-                <thead><tr>
-                    <th>Tier</th><th>Markets</th><th>Accuracy</th><th>W</th><th>L</th><th>Bet Size</th><th>P&amp;L</th><th>ROI</th>
-                </tr></thead>
-                <tbody><tr>
-                    <td style="color:#3fb950;font-weight:700">HIGH (4-5)</td>
-                    <td>19</td>
-                    <td style="color:#f44336">42.1%</td>
-                    <td>8</td>
-                    <td>11</td>
-                    <td>$25</td>
-                    <td style="color:#f44336">$-75</td>
-                    <td>-16%</td>
-                </tr><tr>
-                    <td style="color:#58a6ff;font-weight:700">MEDIUM (3)</td>
-                    <td>49</td>
-                    <td style="color:#3fb950">65.3%</td>
-                    <td>32</td>
-                    <td>17</td>
-                    <td>$25</td>
-                    <td style="color:#3fb950">$+375</td>
-                    <td>+31%</td>
-                </tr><tr>
-                    <td style="color:#8b949e;font-weight:700">NO BET (0-1)</td>
-                    <td>400</td>
-                    <td style="color:#ffc107">49.2%</td>
-                    <td>197</td>
-                    <td>203</td>
-                    <td>$0</td>
-                    <td style="color:#3fb950">—</td>
-                    <td>—</td>
-                </tr>
-                <tr style="border-top:2px solid #30363d">
-                    <td style="font-weight:700;color:#f0883e">TOTAL (bets only)</td>
-                    <td></td><td></td><td></td><td></td>
-                    <td></td>
-                    <td style="color:#3fb950;font-weight:700">$+300</td>
-                    <td style="font-weight:700">+18%</td>
-                </tr></tbody>
-            </table></div>
-
-    <h2>Rolling Accuracy (last 10 predictions)</h2>
-    <div class="chart-container"><svg viewBox="0 0 800 300" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:800px;height:auto;background:#161b22;border-radius:8px;"><line x1="50" y1="260.0" x2="780" y2="260.0" stroke="#484f58" stroke-width="1"  /><text x="42" y="264.0" fill="#8b949e" font-size="11" text-anchor="end">0%</text><line x1="50" y1="200.0" x2="780" y2="200.0" stroke="#484f58" stroke-width="1"  /><text x="42" y="204.0" fill="#8b949e" font-size="11" text-anchor="end">25%</text><line x1="50" y1="140.0" x2="780" y2="140.0" stroke="#da3633" stroke-width="1" stroke-dasharray="6,4" /><text x="42" y="144.0" fill="#8b949e" font-size="11" text-anchor="end">50%</text><line x1="50" y1="80.0" x2="780" y2="80.0" stroke="#484f58" stroke-width="1"  /><text x="42" y="84.0" fill="#8b949e" font-size="11" text-anchor="end">75%</text><line x1="50" y1="20.0" x2="780" y2="20.0" stroke="#484f58" stroke-width="1"  /><text x="42" y="24.0" fill="#8b949e" font-size="11" text-anchor="end">100%</text><text x="50.0" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#1</text><text x="171.13537117903928" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#77</text><text x="292.27074235807856" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#153</text><text x="413.4061135371179" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#229</text><text x="534.5414847161571" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#305</text><text x="655.6768558951966" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#381</text><text x="776.8122270742358" y="292" fill="#8b949e" font-size="10" text-anchor="middle">#457</text><polyline points="50.0,164.0 51.6,188.0 53.2,188.0 54.8,164.0 56.4,140.0 58.0,116.0 59.6,116.0 61.2,140.0 62.8,116.0 64.3,140.0 65.9,164.0 67.5,140.0 69.1,116.0 70.7,140.0 72.3,140.0 73.9,164.0 75.5,140.0 77.1,140.0 78.7,164.0 80.3,140.0 81.9,140.0 83.5,164.0 85.1,188.0 86.7,188.0 88.3,212.0 89.8,212.0 91.4,212.0 93.0,212.0 94.6,188.0 96.2,212.0 97.8,188.0 99.4,188.0 101.0,188.0 102.6,164.0 104.2,164.0 105.8,140.0 107.4,140.0 109.0,140.0 110.6,140.0 112.2,116.0 113.8,116.0 115.3,116.0 116.9,116.0 118.5,116.0 120.1,116.0 121.7,140.0 123.3,140.0 124.9,116.0 126.5,116.0 128.1,116.0 129.7,116.0 131.3,116.0 132.9,92.0 134.5,116.0 136.1,92.0 137.7,92.0 139.3,92.0 140.9,116.0 142.4,140.0 144.0,140.0 145.6,140.0 147.2,116.0 148.8,116.0 150.4,116.0 152.0,116.0 153.6,116.0 155.2,140.0 156.8,140.0 158.4,116.0 160.0,116.0 161.6,140.0 163.2,140.0 164.8,140.0 166.4,140.0 167.9,140.0 169.5,116.0 171.1,92.0 172.7,68.0 174.3,68.0 175.9,92.0 177.5,92.0 179.1,92.0 180.7,116.0 182.3,92.0 183.9,92.0 185.5,116.0 187.1,140.0 188.7,164.0 190.3,164.0 191.9,140.0 193.4,116.0 195.0,140.0 196.6,116.0 198.2,116.0 199.8,140.0 201.4,116.0 203.0,92.0 204.6,68.0 206.2,68.0 207.8,92.0 209.4,116.0 211.0,116.0 212.6,140.0 214.2,140.0 215.8,116.0 217.4,140.0 219.0,164.0 220.5,188.0 222.1,188.0 223.7,188.0 225.3,188.0 226.9,164.0 228.5,164.0 230.1,188.0 231.7,212.0 233.3,212.0 234.9,212.0 236.5,212.0 238.1,212.0 239.7,188.0 241.3,164.0 242.9,188.0 244.5,164.0 246.0,140.0 247.6,140.0 249.2,140.0 250.8,116.0 252.4,116.0 254.0,140.0 255.6,164.0 257.2,164.0 258.8,140.0 260.4,140.0 262.0,140.0 263.6,140.0 265.2,140.0 266.8,140.0 268.4,116.0 270.0,92.0 271.6,68.0 273.1,68.0 274.7,92.0 276.3,92.0 277.9,92.0 279.5,68.0 281.1,44.0 282.7,68.0 284.3,92.0 285.9,92.0 287.5,116.0 289.1,140.0 290.7,116.0 292.3,116.0 293.9,140.0 295.5,164.0 297.1,188.0 298.6,164.0 300.2,164.0 301.8,188.0 303.4,188.0 305.0,188.0 306.6,212.0 308.2,236.0 309.8,212.0 311.4,188.0 313.0,188.0 314.6,212.0 316.2,188.0 317.8,188.0 319.4,188.0 321.0,188.0 322.6,188.0 324.1,188.0 325.7,212.0 327.3,212.0 328.9,188.0 330.5,164.0 332.1,164.0 333.7,140.0 335.3,116.0 336.9,116.0 338.5,92.0 340.1,68.0 341.7,68.0 343.3,92.0 344.9,92.0 346.5,116.0 348.1,140.0 349.7,140.0 351.2,164.0 352.8,140.0 354.4,140.0 356.0,164.0 357.6,164.0 359.2,140.0 360.8,140.0 362.4,116.0 364.0,92.0 365.6,116.0 367.2,92.0 368.8,116.0 370.4,140.0 372.0,140.0 373.6,116.0 375.2,140.0 376.7,164.0 378.3,188.0 379.9,188.0 381.5,164.0 383.1,164.0 384.7,140.0 386.3,116.0 387.9,92.0 389.5,92.0 391.1,68.0 392.7,44.0 394.3,20.0 395.9,44.0 397.5,68.0 399.1,92.0 400.7,116.0 402.2,140.0 403.8,140.0 405.4,164.0 407.0,188.0 408.6,188.0 410.2,188.0 411.8,164.0 413.4,164.0 415.0,140.0 416.6,116.0 418.2,116.0 419.8,116.0 421.4,92.0 423.0,92.0 424.6,116.0 426.2,140.0 427.8,140.0 429.3,116.0 430.9,140.0 432.5,140.0 434.1,116.0 435.7,140.0 437.3,164.0 438.9,140.0 440.5,140.0 442.1,116.0 443.7,140.0 445.3,140.0 446.9,140.0 448.5,164.0 450.1,188.0 451.7,164.0 453.3,140.0 454.8,140.0 456.4,140.0 458.0,164.0 459.6,164.0 461.2,164.0 462.8,164.0 464.4,140.0 466.0,140.0 467.6,140.0 469.2,164.0 470.8,188.0 472.4,164.0 474.0,140.0 475.6,116.0 477.2,116.0 478.8,92.0 480.3,92.0 481.9,92.0 483.5,92.0 485.1,92.0 486.7,92.0 488.3,116.0 489.9,116.0 491.5,116.0 493.1,140.0 494.7,164.0 496.3,188.0 497.9,188.0 499.5,188.0 501.1,188.0 502.7,188.0 504.3,164.0 505.9,188.0 507.4,188.0 509.0,164.0 510.6,140.0 512.2,140.0 513.8,140.0 515.4,164.0 517.0,164.0 518.6,140.0 520.2,140.0 521.8,140.0 523.4,164.0 525.0,164.0 526.6,164.0 528.2,164.0 529.8,164.0 531.4,140.0 532.9,116.0 534.5,140.0 536.1,164.0 537.7,140.0 539.3,140.0 540.9,140.0 542.5,164.0 544.1,140.0 545.7,140.0 547.3,140.0 548.9,140.0 550.5,140.0 552.1,116.0 553.7,140.0 555.3,116.0 556.9,116.0 558.4,92.0 560.0,92.0 561.6,68.0 563.2,68.0 564.8,92.0 566.4,92.0 568.0,92.0 569.6,68.0 571.2,92.0 572.8,116.0 574.4,140.0 576.0,140.0 577.6,164.0 579.2,164.0 580.8,164.0 582.4,164.0 584.0,164.0 585.5,164.0 587.1,140.0 588.7,140.0 590.3,140.0 591.9,164.0 593.5,140.0 595.1,164.0 596.7,140.0 598.3,116.0 599.9,140.0 601.5,140.0 603.1,164.0 604.7,140.0 606.3,116.0 607.9,116.0 609.5,140.0 611.0,140.0 612.6,140.0 614.2,164.0 615.8,140.0 617.4,164.0 619.0,140.0 620.6,164.0 622.2,188.0 623.8,164.0 625.4,140.0 627.0,140.0 628.6,140.0 630.2,116.0 631.8,116.0 633.4,116.0 635.0,116.0 636.6,116.0 638.1,116.0 639.7,140.0 641.3,140.0 642.9,116.0 644.5,140.0 646.1,140.0 647.7,140.0 649.3,140.0 650.9,164.0 652.5,140.0 654.1,140.0 655.7,116.0 657.3,140.0 658.9,140.0 660.5,116.0 662.1,140.0 663.6,164.0 665.2,140.0 666.8,116.0 668.4,116.0 670.0,116.0 671.6,116.0 673.2,92.0 674.8,116.0 676.4,140.0 678.0,140.0 679.6,116.0 681.2,140.0 682.8,140.0 684.4,164.0 686.0,164.0 687.6,164.0 689.1,164.0 690.7,140.0 692.3,140.0 693.9,116.0 695.5,140.0 697.1,116.0 698.7,116.0 700.3,116.0 701.9,116.0 703.5,140.0 705.1,140.0 706.7,164.0 708.3,164.0 709.9,188.0 711.5,188.0 713.1,212.0 714.7,212.0 716.2,188.0 717.8,188.0 719.4,164.0 721.0,164.0 722.6,164.0 724.2,164.0 725.8,164.0 727.4,164.0 729.0,140.0 730.6,140.0 732.2,140.0 733.8,140.0 735.4,164.0 737.0,164.0 738.6,140.0 740.2,140.0 741.7,116.0 743.3,92.0 744.9,116.0 746.5,140.0 748.1,140.0 749.7,116.0 751.3,92.0 752.9,116.0 754.5,116.0 756.1,92.0 757.7,116.0 759.3,140.0 760.9,116.0 762.5,116.0 764.1,116.0 765.7,116.0 767.2,116.0 768.8,116.0 770.4,116.0 772.0,116.0 773.6,92.0 775.2,68.0 776.8,68.0 778.4,68.0 780.0,92.0" fill="none" stroke="#d2a8ff" stroke-width="2" /></svg><div class="chart-legend"><span class="legend-item"><span class="legend-dot" style="background:#d2a8ff"></span>momentum_bybit</span><span class="legend-item"><span class="legend-line" style="border-color:#da3633"></span>50% (coin flip)</span></div></div>
-
-    <h2>Win/Loss &amp; Hit Rate</h2>
-        <div class="table-wrap"><table>
-            <thead><tr>
-                <th>Agent</th><th>Record</th><th>Accuracy</th><th>Last 10</th>
-                <th>Streak</th><th>Best W</th><th>Worst L</th>
-            </tr></thead>
-            <tbody><tr>
-                <td class="agent-name" style="color:#c9d1d9">momentum_bybit</td>
-                <td>237-231</td>
-                <td style="color:#ffc107">50.6%</td>
-                <td style="color:#3fb950">70.0%</td>
-                <td><span class="streak streak-l">L2</span></td>
-                <td><span class="streak streak-w">W10</span></td>
-                <td><span class="streak streak-l">L6</span></td>
-            </tr></tbody>
-        </table></div>
-
-    <h2>Agent vs Market vs Coin Flip</h2>
-        <div class="bar-chart"><div class="bar-group">
-                <div class="bar-label" style="color:#c9d1d9">momentum_bybit</div>
-                <div class="bar-row">
-                    <span class="bar-tag">Agent</span>
-                    <div class="bar-track"><div class="bar-fill" style="width:50.641025641025635%;background:#3fb950">50.6%</div></div>
-                </div>
-                <div class="bar-row">
-                    <span class="bar-tag">Market</span>
-                    <div class="bar-track"><div class="bar-fill" style="width:49.358974358974365%;background:#58a6ff">49.4%</div></div>
-                </div>
-                <div class="bar-row">
-                    <span class="bar-tag">Coin Flip</span>
-                    <div class="bar-track"><div class="bar-fill" style="width:50%;background:#484f58">50.0%</div></div>
-                </div>
-            </div></div>
-
-    <h2>Confidence Calibration</h2>
-        <p class="section-desc">When an agent says "high confidence", are they right more often?</p>
-        <div class="table-wrap"><table>
-            <thead><tr>
-                <th>Agent</th><th>Low</th><th>Medium</th><th>High</th>
-            </tr></thead>
-            <tbody><tr><td class="agent-name" style="color:#c9d1d9">momentum_bybit</td><td style="color:#ffc107">51% <span style="color:#484f58">(209)</span></td><td style="color:#3fb950">65% <span style="color:#484f58">(49)</span></td><td style="color:#f44336">42% <span style="color:#484f58">(19)</span></td></tr></tbody>
-        </table></div>
-
-    
-
-    
-        <h2>&#128203; Trade Execution</h2>
-        <div class="consolidated-pnl" style="margin-bottom:12px">
-            <div class="consolidated-label" style="font-size:1.1rem">
-                Mode: <span style="color:#58a6ff;font-weight:700">PAPER</span>
-                &middot; Bet size: <span style="font-weight:700">$25</span>
-            </div>
-            <div style="display:flex;gap:32px;margin-top:8px;flex-wrap:wrap">
-                <div>
-                    <span style="color:#8b949e">Today</span><br>
-                    <span style="font-weight:700;font-size:1.2rem">4</span> orders
-                    &middot; <span style="font-weight:700">$0</span> wagered
-                </div>
-                <div>
-                    <span style="color:#8b949e">All Time</span><br>
-                    <span style="font-weight:700;font-size:1.2rem">6</span> orders
-                    &middot; <span style="font-weight:700">$0</span> wagered
-                </div>
-                <div>
-                    <span style="color:#8b949e">P&amp;L</span><br>
-                    <span style="font-weight:700;font-size:1.2rem;color:#3fb950">$+0</span>
-                    (0W / 0L)
-                </div>
-            </div>
-        </div>
-        <div class="table-wrap">
-        <table>
-            <thead><tr>
-                <th>Direction</th><th>Size</th><th>Price</th><th>Status</th><th>P&amp;L</th><th>Time</th>
-            </tr></thead>
-            <tbody><tr>
-                <td style="color:#3fb950;font-weight:700">&#9650; UP</td>
-                <td>$0</td>
-                <td>68752.89</td>
-                <td style="color:#58a6ff">paper</td>
-                <td style="color:#8b949e">—</td>
-                <td style="color:#8b949e;font-size:0.85em">2026-04-04 19:12</td>
-            </tr><tr>
-                <td style="color:#3fb950;font-weight:700">&#9650; UP</td>
-                <td>$0</td>
-                <td>68702.94</td>
-                <td style="color:#58a6ff">paper</td>
-                <td style="color:#8b949e">—</td>
-                <td style="color:#8b949e;font-size:0.85em">2026-04-04 18:16</td>
-            </tr><tr>
-                <td style="color:#f44336;font-weight:700">&#9660; DOWN</td>
-                <td>$0</td>
-                <td>65965.77</td>
-                <td style="color:#58a6ff">paper</td>
-                <td style="color:#8b949e">—</td>
-                <td style="color:#8b949e;font-size:0.85em">2026-04-04 17:05</td>
-            </tr><tr>
-                <td style="color:#3fb950;font-weight:700">&#9650; UP</td>
-                <td>$0</td>
-                <td>68779.37</td>
-                <td style="color:#58a6ff">paper</td>
-                <td style="color:#8b949e">—</td>
-                <td style="color:#8b949e;font-size:0.85em">2026-04-04 16:30</td>
-            </tr><tr>
-                <td style="color:#f44336;font-weight:700">&#9660; DOWN</td>
-                <td>$0</td>
-                <td>65211.94</td>
-                <td style="color:#58a6ff">paper</td>
-                <td style="color:#8b949e">—</td>
-                <td style="color:#8b949e;font-size:0.85em">2026-04-03 05:16</td>
-            </tr><tr>
-                <td style="color:#3fb950;font-weight:700">&#9650; UP</td>
-                <td>$0</td>
-                <td>67844.18</td>
-                <td style="color:#58a6ff">paper</td>
-                <td style="color:#8b949e">—</td>
-                <td style="color:#8b949e;font-size:0.85em">2026-04-03 03:03</td>
-            </tr></tbody>
-        </table>
-        </div>
-
-    <h2>Recent Predictions</h2>
-    <div class="table-wrap">
-    <table>
-        <thead><tr>
-            <th>Agent</th>
-            <th>Market</th>
-            <th>Estimate</th>
-            <th>Market Price</th>
-            <th>Edge</th>
-            <th>Confidence</th>
-            <th>Outcome</th>
-            <th>Cycle</th>
-            <th>Spread %</th>
-            <th>Max Bet @2%</th>
-        </tr></thead>
-        <tbody><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,279 at 20:50 UTC?">Will BTC be above $67,279 at 20:50 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-                <td>C469</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,287 at 20:45 UTC?">Will BTC be above $67,287 at 20:45 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C468</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,283 at 20:40 UTC?">Will BTC be above $67,283 at 20:40 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C467</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,262 at 20:35 UTC?">Will BTC be above $67,262 at 20:35 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C466</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,244 at 20:25 UTC?">Will BTC be above $67,244 at 20:25 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C465</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,255 at 20:20 UTC?">Will BTC be above $67,255 at 20:20 UTC?</td>
-                <td>55.6%</td>
-                <td>50.0%</td>
-                <td>+5.6%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C464</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,226 at 20:15 UTC?">Will BTC be above $67,226 at 20:15 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C463</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,209 at 20:10 UTC?">Will BTC be above $67,209 at 20:10 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C462</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,276 at 20:05 UTC?">Will BTC be above $67,276 at 20:05 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C461</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,310 at 19:55 UTC?">Will BTC be above $67,310 at 19:55 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C460</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,305 at 19:50 UTC?">Will BTC be above $67,305 at 19:50 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C459</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,291 at 19:45 UTC?">Will BTC be above $67,291 at 19:45 UTC?</td>
-                <td>37.9%</td>
-                <td>50.0%</td>
-                <td>+12.1%</td>
-                <td>high</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C458</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,333 at 19:40 UTC?">Will BTC be above $67,333 at 19:40 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C457</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,355 at 19:35 UTC?">Will BTC be above $67,355 at 19:35 UTC?</td>
-                <td>40.7%</td>
-                <td>50.0%</td>
-                <td>+9.3%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C456</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,385 at 19:25 UTC?">Will BTC be above $67,385 at 19:25 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C455</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,395 at 19:20 UTC?">Will BTC be above $67,395 at 19:20 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>skip</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C454</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,405 at 19:15 UTC?">Will BTC be above $67,405 at 19:15 UTC?</td>
-                <td>57.4%</td>
-                <td>50.0%</td>
-                <td>+7.4%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C453</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,335 at 19:10 UTC?">Will BTC be above $67,335 at 19:10 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C452</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,284 at 19:00 UTC?">Will BTC be above $67,284 at 19:00 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C451</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,292 at 18:55 UTC?">Will BTC be above $67,292 at 18:55 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C450</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,290 at 18:50 UTC?">Will BTC be above $67,290 at 18:50 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C449</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,280 at 18:40 UTC?">Will BTC be above $67,280 at 18:40 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C448</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,336 at 18:30 UTC?">Will BTC be above $67,336 at 18:30 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C447</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,330 at 18:25 UTC?">Will BTC be above $67,330 at 18:25 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C446</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,356 at 18:20 UTC?">Will BTC be above $67,356 at 18:20 UTC?</td>
-                <td>55.6%</td>
-                <td>50.0%</td>
-                <td>+5.6%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C445</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,326 at 18:15 UTC?">Will BTC be above $67,326 at 18:15 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C444</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,278 at 18:05 UTC?">Will BTC be above $67,278 at 18:05 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C443</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,335 at 18:00 UTC?">Will BTC be above $67,335 at 18:00 UTC?</td>
-                <td>52.4%</td>
-                <td>50.0%</td>
-                <td>+2.4%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C442</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,305 at 17:55 UTC?">Will BTC be above $67,305 at 17:55 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C441</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,323 at 17:50 UTC?">Will BTC be above $67,323 at 17:50 UTC?</td>
-                <td>42.7%</td>
-                <td>50.0%</td>
-                <td>+7.3%</td>
-                <td>high</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C440</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,378 at 17:35 UTC?">Will BTC be above $67,378 at 17:35 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C439</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,394 at 17:30 UTC?">Will BTC be above $67,394 at 17:30 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C438</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,372 at 17:25 UTC?">Will BTC be above $67,372 at 17:25 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C437</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,330 at 17:15 UTC?">Will BTC be above $67,330 at 17:15 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C436</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,312 at 17:10 UTC?">Will BTC be above $67,312 at 17:10 UTC?</td>
-                <td>40.7%</td>
-                <td>50.0%</td>
-                <td>+9.3%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C435</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,400 at 17:00 UTC?">Will BTC be above $67,400 at 17:00 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>skip</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C434</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,443 at 16:55 UTC?">Will BTC be above $67,443 at 16:55 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>skip</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C433</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,479 at 16:50 UTC?">Will BTC be above $67,479 at 16:50 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>skip</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C432</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,476 at 16:45 UTC?">Will BTC be above $67,476 at 16:45 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>skip</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C431</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,386 at 16:40 UTC?">Will BTC be above $67,386 at 16:40 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C430</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,431 at 16:35 UTC?">Will BTC be above $67,431 at 16:35 UTC?</td>
-                <td>60.8%</td>
-                <td>50.0%</td>
-                <td>+10.8%</td>
-                <td>high</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C429</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,369 at 16:25 UTC?">Will BTC be above $67,369 at 16:25 UTC?</td>
-                <td>54.2%</td>
-                <td>50.0%</td>
-                <td>+4.2%</td>
-                <td>medium</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C428</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,334 at 16:20 UTC?">Will BTC be above $67,334 at 16:20 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C427</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,324 at 16:15 UTC?">Will BTC be above $67,324 at 16:15 UTC?</td>
-                <td>46.5%</td>
-                <td>50.0%</td>
-                <td>+3.5%</td>
-                <td>medium</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C426</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,344 at 16:10 UTC?">Will BTC be above $67,344 at 16:10 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C425</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,376 at 16:05 UTC?">Will BTC be above $67,376 at 16:05 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C424</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,300 at 15:55 UTC?">Will BTC be above $67,300 at 15:55 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C423</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,334 at 15:45 UTC?">Will BTC be above $67,334 at 15:45 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C422</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,330 at 15:40 UTC?">Will BTC be above $67,330 at 15:40 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#3fb950">&#10003;</span> <span class="badge badge-yes">UP</span></td>
-                <td>C421</td>
-                <td>—</td>
-                <td>—</td>
-            </tr><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td title="Will BTC be above $67,339 at 15:35 UTC?">Will BTC be above $67,339 at 15:35 UTC?</td>
-                <td>50.0%</td>
-                <td>50.0%</td>
-                <td>+0.0%</td>
-                <td>low</td>
-                <td><span style="color:#f44336">&#10007;</span> <span class="badge badge-no">DOWN</span></td>
-                <td>C420</td>
-                <td>—</td>
-                <td>—</td>
-            </tr></tbody>
-    </table>
-    </div>
-
-    <h2>Technical Metrics (Brier Scores)</h2>
-    <div class="table-wrap">
-    <table>
-        <thead><tr>
-            <th>Agent</th>
-            <th>Avg Brier Score</th>
-            <th>Resolved Markets</th>
-            <th>vs Market</th>
-        </tr></thead>
-        <tbody><tr>
-                <td class="agent-name">momentum_bybit</td>
-                <td style="color:#ffc107;font-weight:600">0.2492</td>
-                <td>468</td>
-                <td style="color:#4caf50">-0.0008 (BEATING market)</td>
-            </tr></tbody>
-    </table>
-    </div>
-
-    <h2>Markets <span style="color:#8b949e;font-size:0.85rem;font-weight:400">(latest 50 of 469)</span></h2>
-    <div class="table-wrap">
-    <table>
-        <thead><tr>
-            <th>Question</th>
-            <th>Category</th>
-            <th>Price (UP)</th>
-            <th>Volume</th>
-            <th>End Date</th>
-            <th>Status</th>
-        </tr></thead>
-        <tbody><tr>
-                <td title="Will BTC be above $67,279 at 20:50 UTC?">Will BTC be above $67,279 at 20:50 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-pending">Pending</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,287 at 20:45 UTC?">Will BTC be above $67,287 at 20:45 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,283 at 20:40 UTC?">Will BTC be above $67,283 at 20:40 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,262 at 20:35 UTC?">Will BTC be above $67,262 at 20:35 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,244 at 20:25 UTC?">Will BTC be above $67,244 at 20:25 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,255 at 20:20 UTC?">Will BTC be above $67,255 at 20:20 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,226 at 20:15 UTC?">Will BTC be above $67,226 at 20:15 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,209 at 20:10 UTC?">Will BTC be above $67,209 at 20:10 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,276 at 20:05 UTC?">Will BTC be above $67,276 at 20:05 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,310 at 19:55 UTC?">Will BTC be above $67,310 at 19:55 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,305 at 19:50 UTC?">Will BTC be above $67,305 at 19:50 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,291 at 19:45 UTC?">Will BTC be above $67,291 at 19:45 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,333 at 19:40 UTC?">Will BTC be above $67,333 at 19:40 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,355 at 19:35 UTC?">Will BTC be above $67,355 at 19:35 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,385 at 19:25 UTC?">Will BTC be above $67,385 at 19:25 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,395 at 19:20 UTC?">Will BTC be above $67,395 at 19:20 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,405 at 19:15 UTC?">Will BTC be above $67,405 at 19:15 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,335 at 19:10 UTC?">Will BTC be above $67,335 at 19:10 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,284 at 19:00 UTC?">Will BTC be above $67,284 at 19:00 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,292 at 18:55 UTC?">Will BTC be above $67,292 at 18:55 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,290 at 18:50 UTC?">Will BTC be above $67,290 at 18:50 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,280 at 18:40 UTC?">Will BTC be above $67,280 at 18:40 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,336 at 18:30 UTC?">Will BTC be above $67,336 at 18:30 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,330 at 18:25 UTC?">Will BTC be above $67,330 at 18:25 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,356 at 18:20 UTC?">Will BTC be above $67,356 at 18:20 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,326 at 18:15 UTC?">Will BTC be above $67,326 at 18:15 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,278 at 18:05 UTC?">Will BTC be above $67,278 at 18:05 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,335 at 18:00 UTC?">Will BTC be above $67,335 at 18:00 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,305 at 17:55 UTC?">Will BTC be above $67,305 at 17:55 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,323 at 17:50 UTC?">Will BTC be above $67,323 at 17:50 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,378 at 17:35 UTC?">Will BTC be above $67,378 at 17:35 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,394 at 17:30 UTC?">Will BTC be above $67,394 at 17:30 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,372 at 17:25 UTC?">Will BTC be above $67,372 at 17:25 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,330 at 17:15 UTC?">Will BTC be above $67,330 at 17:15 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,312 at 17:10 UTC?">Will BTC be above $67,312 at 17:10 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,400 at 17:00 UTC?">Will BTC be above $67,400 at 17:00 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,443 at 16:55 UTC?">Will BTC be above $67,443 at 16:55 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,479 at 16:50 UTC?">Will BTC be above $67,479 at 16:50 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,476 at 16:45 UTC?">Will BTC be above $67,476 at 16:45 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,386 at 16:40 UTC?">Will BTC be above $67,386 at 16:40 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,431 at 16:35 UTC?">Will BTC be above $67,431 at 16:35 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,369 at 16:25 UTC?">Will BTC be above $67,369 at 16:25 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,334 at 16:20 UTC?">Will BTC be above $67,334 at 16:20 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,324 at 16:15 UTC?">Will BTC be above $67,324 at 16:15 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,344 at 16:10 UTC?">Will BTC be above $67,344 at 16:10 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,376 at 16:05 UTC?">Will BTC be above $67,376 at 16:05 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,300 at 15:55 UTC?">Will BTC be above $67,300 at 15:55 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,334 at 15:45 UTC?">Will BTC be above $67,334 at 15:45 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,330 at 15:40 UTC?">Will BTC be above $67,330 at 15:40 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-yes">UP</span></td>
-            </tr><tr>
-                <td title="Will BTC be above $67,339 at 15:35 UTC?">Will BTC be above $67,339 at 15:35 UTC?</td>
-                <td>cryptocurrency</td>
-                <td>50.0%</td>
-                <td>$0</td>
-                <td>2026-04-04</td>
-                <td><span class="badge badge-no">DOWN</span></td>
-            </tr></tbody>
-    </table>
-    </div>
-
-
+<div class="footer">Generated 2026-04-04 21:14 UTC</div>
 </div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
 (function() {
-    var el = document.getElementById('countdown');
-    if (!el) return;
-    var endStr = el.getAttribute('data-next-market');
-    if (!endStr) { el.textContent = 'No upcoming market'; return; }
-    var end = new Date(endStr.replace('Z','+00:00'));
-    function update() {
-        var now = new Date();
-        var diff = Math.floor((end - now) / 1000);
-        if (diff <= 0) { el.textContent = 'Resolving...'; return; }
-        var h = Math.floor(diff / 3600);
-        var m = Math.floor((diff % 3600) / 60);
-        var s = diff % 60;
-        if (h > 0) {
-            el.textContent = h + 'h ' + m + 'm';
-        } else {
-            el.textContent = m + 'm ' + (s < 10 ? '0' : '') + s + 's';
-        }
+  const C = {
+    bg: '#161b22', grid: '#21262d', zero: '#484f58',
+    green: '#3fb950', red: '#f44336', line: '#58a6ff',
+    text: '#8b949e', textLight: '#c9d1d9'
+  };
+
+  function renderCumulativePnl(el, data) {
+    if (!data || data.length < 2) {
+      el.innerHTML = '<div class="chart-empty">Not enough data for chart.</div>';
+      return;
     }
-    update();
-    setInterval(update, 1000);
+    const margin = {top: 16, right: 16, bottom: 32, left: 56};
+    const width = el.clientWidth || 860;
+    const height = 260;
+    const iw = width - margin.left - margin.right;
+    const ih = height - margin.top - margin.bottom;
+
+    const svg = d3.select(el).append('svg')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const parseDate = d => new Date(d);
+    const x = d3.scaleTime()
+      .domain(d3.extent(data, d => parseDate(d.date)))
+      .range([0, iw]);
+    const yMin = Math.min(d3.min(data, d => d.value), 0);
+    const yMax = Math.max(d3.max(data, d => d.value), 0);
+    const yPad = (yMax - yMin) * 0.1 || 10;
+    const y = d3.scaleLinear()
+      .domain([yMin - yPad, yMax + yPad])
+      .range([ih, 0]);
+
+    // Grid
+    g.append('g').selectAll('line')
+      .data(y.ticks(5)).enter().append('line')
+      .attr('x1', 0).attr('x2', iw)
+      .attr('y1', d => y(d)).attr('y2', d => y(d))
+      .attr('stroke', C.grid).attr('stroke-width', 0.5);
+
+    // Zero line
+    g.append('line')
+      .attr('x1', 0).attr('x2', iw)
+      .attr('y1', y(0)).attr('y2', y(0))
+      .attr('stroke', C.zero).attr('stroke-width', 1)
+      .attr('stroke-dasharray', '6,4');
+
+    // Area (green above zero, red below)
+    const areaAbove = d3.area()
+      .x(d => x(parseDate(d.date)))
+      .y0(y(0))
+      .y1(d => y(Math.max(d.value, 0)))
+      .curve(d3.curveMonotoneX);
+    const areaBelow = d3.area()
+      .x(d => x(parseDate(d.date)))
+      .y0(y(0))
+      .y1(d => y(Math.min(d.value, 0)))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path').datum(data)
+      .attr('d', areaAbove)
+      .attr('fill', C.green).attr('fill-opacity', 0.15);
+    g.append('path').datum(data)
+      .attr('d', areaBelow)
+      .attr('fill', C.red).attr('fill-opacity', 0.15);
+
+    // Line
+    const line = d3.line()
+      .x(d => x(parseDate(d.date)))
+      .y(d => y(d.value))
+      .curve(d3.curveMonotoneX);
+    g.append('path').datum(data)
+      .attr('d', line)
+      .attr('fill', 'none')
+      .attr('stroke', data[data.length-1].value >= 0 ? C.green : C.red)
+      .attr('stroke-width', 2);
+
+    // Axes
+    g.append('g')
+      .attr('transform', `translate(0,${ih})`)
+      .call(d3.axisBottom(x).ticks(5).tickFormat(d3.timeFormat('%b %d')))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+    g.append('g')
+      .call(d3.axisLeft(y).ticks(5).tickFormat(d => '$' + d3.format(',.0f')(d)))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+
+    // Tooltip
+    const tooltip = d3.select(el).append('div').attr('class', 'd3-tooltip');
+    const bisect = d3.bisector(d => parseDate(d.date)).left;
+    const overlay = g.append('rect')
+      .attr('width', iw).attr('height', ih)
+      .attr('fill', 'none').attr('pointer-events', 'all');
+    const focus = g.append('circle').attr('r', 4)
+      .attr('fill', C.textLight).attr('display', 'none');
+
+    overlay.on('mousemove', function(event) {
+      const [mx] = d3.pointer(event);
+      const x0 = x.invert(mx);
+      const i = bisect(data, x0, 1);
+      const d0 = data[i-1], d1 = data[i];
+      if (!d0) return;
+      const d = d1 && (x0 - parseDate(d0.date) > parseDate(d1.date) - x0) ? d1 : d0;
+      focus.attr('cx', x(parseDate(d.date))).attr('cy', y(d.value)).attr('display', null);
+      const dt = new Date(d.date);
+      tooltip.style('opacity', 1)
+        .html(`<div>${dt.toLocaleDateString('en', {month:'short',day:'numeric'})} ${dt.toLocaleTimeString('en', {hour:'2-digit',minute:'2-digit'})}</div><div style="font-weight:700;color:${d.value >= 0 ? C.green : C.red}">$${d.value.toFixed(2)}</div>`)
+        .style('left', (event.offsetX + 12) + 'px')
+        .style('top', (event.offsetY - 28) + 'px');
+    }).on('mouseleave', function() {
+      focus.attr('display', 'none');
+      tooltip.style('opacity', 0);
+    });
+  }
+
+  function renderWaterfall(el, data) {
+    if (!data || data.length < 2) {
+      el.innerHTML = '<div class="chart-empty">Not enough data for chart.</div>';
+      return;
+    }
+    const margin = {top: 16, right: 16, bottom: 32, left: 56};
+    const width = el.clientWidth || 860;
+    const height = 220;
+    const iw = width - margin.left - margin.right;
+    const ih = height - margin.top - margin.bottom;
+
+    const svg = d3.select(el).append('svg')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const parseDate = d => new Date(d.date);
+    const x = d3.scaleBand()
+      .domain(data.map((d,i) => i))
+      .range([0, iw]).padding(0.3);
+    const yMin = Math.min(d3.min(data, d => d.cumulative), 0);
+    const yMax = Math.max(d3.max(data, d => d.cumulative), 0);
+    const yPad = (yMax - yMin) * 0.1 || 10;
+    const y = d3.scaleLinear()
+      .domain([yMin - yPad, yMax + yPad]).range([ih, 0]);
+
+    // Zero line
+    g.append('line')
+      .attr('x1', 0).attr('x2', iw)
+      .attr('y1', y(0)).attr('y2', y(0))
+      .attr('stroke', C.zero).attr('stroke-width', 1)
+      .attr('stroke-dasharray', '6,4');
+
+    // Bars
+    g.selectAll('.bar').data(data).enter().append('rect')
+      .attr('x', (d,i) => x(i))
+      .attr('width', x.bandwidth())
+      .attr('y', d => y(Math.max(d.cumulative, d.cumulative - d.profit)))
+      .attr('height', d => Math.max(1, Math.abs(y(0) - y(Math.abs(d.profit)))))
+      .attr('fill', d => d.won ? C.green : C.red)
+      .attr('rx', 2);
+
+    // Cumulative line
+    const line = d3.line()
+      .x((d,i) => x(i) + x.bandwidth()/2)
+      .y(d => y(d.cumulative))
+      .curve(d3.curveMonotoneX);
+    g.append('path').datum(data)
+      .attr('d', line).attr('fill', 'none')
+      .attr('stroke', C.line).attr('stroke-width', 1.5);
+
+    // Axes
+    const tickInterval = Math.max(1, Math.floor(data.length / 6));
+    g.append('g')
+      .attr('transform', `translate(0,${ih})`)
+      .call(d3.axisBottom(d3.scaleBand().domain(
+        data.filter((d,i) => i % tickInterval === 0).map((d,i) => {
+          const dt = new Date(d.date);
+          return dt.toLocaleDateString('en', {month:'short',day:'numeric'});
+        })
+      ).range([0, iw])))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+    g.append('g')
+      .call(d3.axisLeft(y).ticks(5).tickFormat(d => '$' + d3.format(',.0f')(d)))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+  }
+
+  function renderRollingAccuracy(el, data) {
+    if (!data || data.length < 2) {
+      el.innerHTML = '<div class="chart-empty">Not enough data for chart.</div>';
+      return;
+    }
+    const margin = {top: 16, right: 16, bottom: 32, left: 48};
+    const width = el.clientWidth || 860;
+    const height = 200;
+    const iw = width - margin.left - margin.right;
+    const ih = height - margin.top - margin.bottom;
+
+    const svg = d3.select(el).append('svg')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const parseDate = d => new Date(d.date);
+    const x = d3.scaleTime()
+      .domain(d3.extent(data, d => parseDate(d.date)))
+      .range([0, iw]);
+    const y = d3.scaleLinear().domain([0, 100]).range([ih, 0]);
+
+    // 50% baseline
+    g.append('line')
+      .attr('x1', 0).attr('x2', iw)
+      .attr('y1', y(50)).attr('y2', y(50))
+      .attr('stroke', C.zero).attr('stroke-width', 1)
+      .attr('stroke-dasharray', '6,4');
+    g.append('text')
+      .attr('x', iw - 4).attr('y', y(50) - 4)
+      .attr('text-anchor', 'end').attr('fill', C.text)
+      .attr('font-size', '10px').text('50%');
+
+    // Area above 50%
+    const areaAbove = d3.area()
+      .x(d => x(parseDate(d.date)))
+      .y0(y(50))
+      .y1(d => y(Math.max(d.value, 50)))
+      .curve(d3.curveMonotoneX);
+    g.append('path').datum(data)
+      .attr('d', areaAbove)
+      .attr('fill', C.green).attr('fill-opacity', 0.1);
+
+    // Line
+    const line = d3.line()
+      .x(d => x(parseDate(d.date)))
+      .y(d => y(d.value))
+      .curve(d3.curveMonotoneX);
+    g.append('path').datum(data)
+      .attr('d', line).attr('fill', 'none')
+      .attr('stroke', C.line).attr('stroke-width', 2);
+
+    // Axes
+    g.append('g')
+      .attr('transform', `translate(0,${ih})`)
+      .call(d3.axisBottom(x).ticks(5).tickFormat(d3.timeFormat('%b %d')))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+    g.append('g')
+      .call(d3.axisLeft(y).ticks(5).tickFormat(d => d + '%'))
+      .attr('color', C.text).attr('font-size', '10px')
+      .select('.domain').attr('stroke', C.grid);
+  }
+
+  // Dispatcher
+  document.addEventListener('DOMContentLoaded', function() {
+    const renderers = {
+      cumulative_pnl: renderCumulativePnl,
+      waterfall: renderWaterfall,
+      rolling_accuracy: renderRollingAccuracy
+    };
+    document.querySelectorAll('.d3-chart').forEach(function(el) {
+      const type = el.dataset.chartType;
+      try {
+        const data = JSON.parse(el.dataset.chartData);
+        if (renderers[type]) renderers[type](el, data);
+      } catch(e) {
+        el.innerHTML = '<div class="chart-empty">Chart unavailable.</div>';
+      }
+    });
+  });
 })();
 </script>
+
 </body>
 </html>
