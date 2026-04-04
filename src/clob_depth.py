@@ -14,6 +14,8 @@ Logs alongside each prediction:
 import requests
 from typing import Optional
 
+from config import API_TIMEOUT_CLOB
+
 CLOB_BASE = "https://clob.polymarket.com"
 SLIPPAGE_LEVELS = [25, 50, 100, 200, 300, 500, 1000]
 
@@ -246,6 +248,6 @@ def get_clob_tokens(market_id):
             clob_ids = raw_clob
         if len(clob_ids) >= 2:
             return {"yes": clob_ids[0], "no": clob_ids[1]}
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  [clob_depth] get_clob_tokens failed: {e}")
     return None

@@ -4,6 +4,26 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## Incident 9: Missing API_TIMEOUT_CLOB Import — ALL Live Orders Failing
+**Date:** April 4, 2026 | **Duration:** ongoing since config refactor | **Severity:** P0 — every live order fails
+
+**Symptom:** 5+ consecutive live orders failed with `missing_clob_token_id`. Incident 8 fix (import rename) was necessary but not sufficient — orders kept failing after deploy.
+
+**Root cause:** `clob_depth.py` references `API_TIMEOUT_CLOB` in `get_clob_tokens()` but never imports it from `config.py`. The variable was added to config during the centralization refactor (f270b280) and used in the function, but the import was never added. `requests.get(..., timeout=API_TIMEOUT_CLOB)` throws `NameError`, caught by `except Exception: pass`, function returns `None`. **Same silent-swallow pattern as Incident 8.**
+
+**Data:**
+- 5 orders affected: markets 1847910, 1848236, 1848252, 1848446, 1849054
+- All UP signals at $25, estimates 0.51–0.58
+- No money lost (orders never reached CLOB), but opportunity cost from all 5
+
+**Fix:** Added `from config import API_TIMEOUT_CLOB` to `clob_depth.py` (frozen file — user-approved exception).
+
+**Lesson:** Two bugs, same root cause pattern: `except Exception: pass` hiding `NameError`/`ImportError` on the critical trade path. The config centralization refactor (f270b280) introduced both — it moved constants to config.py but missed consumers in frozen files that couldn't be touched during normal development. Frozen file protection prevented the fix AND prevented catching the bug in normal test runs.
+
+**Regression test:** `TestClobTokenImport::test_clob_token_import_name_matches_predict` (from Incident 8). Additional: manual test bet script (`manual_test_bet.py`) proves end-to-end CLOB path.
+
+---
+
 ## Incident 8: CLOB Token Import Name Mismatch — 3 Live Orders Failed
 **Date:** April 4, 2026 | **Duration:** ~1 hour (3 orders) | **Severity:** P1 — live orders failing silently
 
