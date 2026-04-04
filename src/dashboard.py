@@ -1223,38 +1223,26 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
     calibration = compute_confidence_calibration(active_resolved)
     rolling = compute_rolling_accuracy(active_resolved)
 
-    # P&L: real (from Polymarket API) for live pipelines, simulated for paper
+    # P&L: always use conviction-based (signal performance) as primary view.
+    # Real P&L from Polymarket API shown as secondary section when available.
     real_pnl = _real_pnl_data
-    using_real_pnl = False
-
+    _real_pnl_settled = 0
     if _has_live_orders:
-        # Pipeline has real trades — use real P&L, no simulation
-        using_real_pnl = True
-        if real_pnl:
-            agent_pnl = real_pnl
-        else:
-            # No real fills yet — show $0
-            agent_pnl = {"portfolio": {
-                "total_pnl": 0, "total_wagered": 0, "num_bets": 0,
-                "num_wins": 0, "num_losses": 0, "gross_wins": 0,
-                "gross_losses": 0, "pnl_series": [], "bet_results": [],
-                "max_drawdown": 0, "roi": 0, "avg_win": 0, "avg_loss": 0,
-                "skipped": 0,
-            }}
-        p = agent_pnl["portfolio"]
-        ensemble_pnl = {
-            "total_pnl": p["total_pnl"],
-            "total_wagered": p["total_wagered"],
-            "num_bets": p["num_bets"],
-            "num_skipped": 0,
-            "roi": p["roi"],
-            "pnl_series": p["pnl_series"],
-        }
-        conviction_tiers = compute_conviction_breakdown(live_resolved, asset=asset)
-    else:
-        agent_pnl = compute_pnl(active_resolved, asset=asset)
-        ensemble_pnl = compute_ensemble_pnl(active_resolved, asset=asset)
-        conviction_tiers = compute_conviction_breakdown(active_resolved, asset=asset)
+        try:
+            db2 = get_db(db_path)
+            _real_pnl_settled = (db2.execute(
+                "SELECT COUNT(*) FROM orders WHERE mode='live' AND status='settled'"
+            ).fetchone()[0] or 0)
+            db2.close()
+        except Exception:
+            pass
+
+    # Primary P&L is always conviction-based (signal quality)
+    pnl_source = live_resolved if has_live else active_resolved
+    agent_pnl = compute_pnl(pnl_source, asset=asset)
+    ensemble_pnl = compute_ensemble_pnl(pnl_source, asset=asset)
+    conviction_tiers = compute_conviction_breakdown(pnl_source, asset=asset)
+    using_real_pnl = False  # primary view is always conviction-based
 
     paper_agent_pnl = {}
     paper_ensemble_pnl = {"total_pnl": 0, "pnl_series": []}
@@ -1525,7 +1513,7 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
         avg_win_all = (gross_wins_all / total_wins_all) if total_wins_all > 0 else 0
         avg_loss_all = (gross_losses_all / total_losses_all) if total_losses_all > 0 else 0
 
-        portfolio_label = "POLYMARKET PORTFOLIO" if using_real_pnl else "TOTAL PORTFOLIO"
+        portfolio_label = "SIGNAL PERFORMANCE" if has_live else "TOTAL PORTFOLIO"
         consolidated_html = f"""<div class="consolidated-pnl">
             <div class="consolidated-label">{portfolio_label}</div>
             <div class="consolidated-return" style="color:{all_color}">{all_sign}${total_pnl_all:,.0f}</div>
@@ -1630,12 +1618,9 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
                 </div>
             </div>"""
 
-        if using_real_pnl:
-            pnl_title = "Real Trading P&amp;L"
-            pnl_desc = "From Polymarket. Actual fill prices, actual costs."
-        elif has_live:
-            pnl_title = "Trading P&amp;L"
-            pnl_desc = "Flat $25 per bet. Wins variable (entry price dependent), losses fixed at bet size."
+        if has_live:
+            pnl_title = "Signal Performance P&amp;L"
+            pnl_desc = "Based on prediction outcomes. Flat $25 per bet. Wins variable (entry price dependent), losses fixed at bet size."
         else:
             pnl_title = "Paper Trading P&amp;L"
             pnl_desc = "Paper-era conviction-tiered sizing."
@@ -1655,6 +1640,27 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
         <div class="chart-container" style="margin-top:16px">
             <h3 style="color:#8b949e;font-size:0.9rem;margin-bottom:8px">Cumulative P&amp;L</h3>
             {build_pnl_svg(agent_pnl, ensemble_pnl)}
+        </div>"""
+
+        # -- Real P&L section (secondary, when live orders exist) --
+        if _has_live_orders and real_pnl and _real_pnl_settled > 0:
+            rp = real_pnl.get("portfolio", {})
+            rp_pnl = rp.get("total_pnl", 0)
+            rp_bets = rp.get("num_bets", 0)
+            rp_wins = rp.get("num_wins", 0)
+            rp_losses = rp.get("num_losses", 0)
+            rp_wagered = rp.get("total_wagered", 0)
+            rp_roi = rp.get("roi", 0)
+            rp_color = "#3fb950" if rp_pnl >= 0 else "#f44336"
+            rp_sign = "+" if rp_pnl >= 0 else ""
+            rp_wr = (rp_wins / rp_bets * 100) if rp_bets > 0 else 0
+            pnl_html += f"""
+        <h2 style="margin-top:32px">Polymarket Execution</h2>
+        <p class="section-desc">Actual on-chain results from {_real_pnl_settled} settled live orders. Reflects fill rate, slippage, and execution quality &mdash; not signal quality.</p>
+        <div class="consolidated-pnl" style="border-color:#30363d">
+            <div class="consolidated-label">POLYMARKET ACTUAL</div>
+            <div class="consolidated-return" style="color:{rp_color}">{rp_sign}${rp_pnl:,.0f}</div>
+            <div class="consolidated-detail">{rp_bets} bets ({rp_wins}W-{rp_losses}L, {rp_wr:.0f}% WR) &middot; ${rp_wagered:,.0f} wagered &middot; {rp_roi:+.0f}% ROI</div>
         </div>"""
 
         # Paper era section removed — user wants real money only
@@ -1711,10 +1717,8 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
             total_c = "#3fb950" if total_conv_pnl >= 0 else "#f44336"
 
             conv_era = "Live Trading" if has_live else "Paper Trading"
-            conv_sim_note = " &mdash; Simulated" if using_real_pnl else ""
-            conv_sim_desc = " Numbers below are simulated from prediction outcomes, not actual fills." if using_real_pnl else ""
-            conviction_html = f"""<h2>Conviction Scoreboard ({conv_era}{conv_sim_note})</h2>
-            <p class="section-desc">Only bet when conviction &ge; 3. Flat ${live_tiers.get(3, 25)} per bet.{conv_sim_desc}</p>
+            conviction_html = f"""<h2>Conviction Scoreboard ({conv_era})</h2>
+            <p class="section-desc">Only bet when conviction &ge; 3. Flat ${live_tiers.get(3, 25)} per bet.</p>
             <div class="table-wrap"><table>
                 <thead><tr>
                     <th>Tier</th><th>Markets</th><th>Accuracy</th><th>W</th><th>L</th><th>Bet Size</th><th>P&amp;L</th><th>ROI</th>
