@@ -24,7 +24,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import ETH_VOL_LOW, ETH_VOL_HIGH, PRICE_GATE_UPPER, PRICE_GATE_LOWER
+from config import ETH_VOL_LOW, ETH_VOL_HIGH, PRICE_GATE_UPPER, PRICE_GATE_LOWER, EXTREME_ESTIMATE_UPPER, EXTREME_ESTIMATE_LOWER
 
 # Import regime computation from BTC predict
 from predict import compute_regime_from_candles as _btc_regime
@@ -219,7 +219,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
         current_hour_utc = datetime.now(timezone.utc).hour
         if current_hour_utc in dead_hours:
             # Extreme-estimate override: estimates >0.65/<0.35 win at 80%+ WR regardless of gate
-            if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+            if signal["should_trade"] and (signal["estimate"] > EXTREME_ESTIMATE_UPPER or signal["estimate"] < EXTREME_ESTIMATE_LOWER):
                 shadow_signal = dict(signal, confidence="medium", reason=f"shadow_extreme_dead_hour (UTC {current_hour_utc})")
                 store_prediction_eth(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price)
                 db.execute("""
@@ -243,7 +243,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
         # Price gate: skip extreme prices
         if mkt_price > PRICE_GATE_UPPER or mkt_price < PRICE_GATE_LOWER:
             # Extreme-estimate override: estimates >0.65/<0.35 win at 80%+ WR regardless of gate
-            if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+            if signal["should_trade"] and (signal["estimate"] > EXTREME_ESTIMATE_UPPER or signal["estimate"] < EXTREME_ESTIMATE_LOWER):
                 shadow_signal = dict(signal, confidence="medium", reason=f"shadow_extreme_price_gate ({mkt_price:.0%})")
                 store_prediction_eth(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price)
                 db.execute("""
@@ -268,7 +268,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
         if regime["is_mean_reverting"]:
             # Extreme estimates (>0.65/<0.35) win at 80%+ WR regardless of regime (Phase 1 analysis).
             # Track at conv=2 for forward validation. Coin-flip zone skipped as before.
-            if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+            if signal["should_trade"] and (signal["estimate"] > EXTREME_ESTIMATE_UPPER or signal["estimate"] < EXTREME_ESTIMATE_LOWER):
                 mr_signal = dict(signal, confidence="medium", reason="mr_shadow_extreme_estimate")
                 store_prediction_eth(db, market["id"], mr_signal, regime, cycle, mkt_price=mkt_price)
                 # Force conv=2 (shadow) — store_prediction_eth sets conv=3 for medium+should_trade

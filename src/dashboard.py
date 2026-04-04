@@ -5,6 +5,7 @@ Run: python dashboard.py (from src/ directory)
 Serves on http://localhost:5050
 """
 
+import os
 import sqlite3
 import json
 import re
@@ -427,7 +428,10 @@ def compute_ensemble(resolved):
 from config import (
     PAPER_BTC_CONVICTION_BETS, PAPER_ETH_CONVICTION_BETS,
     LIVE_BTC_CONVICTION_BETS, LIVE_ETH_CONVICTION_BETS,
-    LIVE_START_DATE, CONVICTION_WEIGHT_CONTRARIAN, CONVICTION_WEIGHT_VOLUME
+    LIVE_START_DATE, CONVICTION_WEIGHT_CONTRARIAN, CONVICTION_WEIGHT_VOLUME,
+    DAILY_LOSS_LIMIT, CONSECUTIVE_LOSS_MAX, MIN_CONVICTION, EDGE_THRESHOLD,
+    PRICE_GATE_UPPER, PRICE_GATE_LOWER, EXTREME_ESTIMATE_UPPER, EXTREME_ESTIMATE_LOWER,
+    BYBIT_DAILY_LOSS_LIMIT, BYBIT_MIN_CONVICTION,
 )
 # Back-compat aliases
 BTC_CONVICTION_BETS = LIVE_BTC_CONVICTION_BETS
@@ -1142,6 +1146,125 @@ def vs_market_color(vs):
     return "#4caf50" if vs < 0 else "#f44336"
 
 
+def _get_breaker_status(db, asset="BTC", subtitle=""):
+    """Query DB and config for current circuit breaker state."""
+    is_bybit = "BYBIT" in (subtitle or "").upper()
+    loss_limit = BYBIT_DAILY_LOSS_LIMIT if is_bybit else DAILY_LOSS_LIMIT
+    min_conv = BYBIT_MIN_CONVICTION if is_bybit else MIN_CONVICTION
+    ks_file = "KILL_SWITCH_BYBIT" if is_bybit else "KILL_SWITCH"
+    ks_env = "KILL_SWITCH_BYBIT" if is_bybit else "KILL_SWITCH"
+
+    kill_switch = (
+        Path(__file__).parent.parent.joinpath("data", ks_file).exists()
+        or os.environ.get(ks_env, "").lower() == "true"
+    )
+
+    daily_loss = 0.0
+    consecutive_losses = 0
+    table_name = "positions" if is_bybit else "orders"
+    date_col = "opened_at" if is_bybit else "placed_at"
+    settled_col = "closed_at" if is_bybit else "settled_at"
+    status_settled = "closed" if is_bybit else "settled"
+
+    try:
+        # Check table exists
+        tbl = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,)
+        ).fetchone()
+        if tbl:
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            row = db.execute(f"""
+                SELECT COALESCE(SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END), 0)
+                FROM {table_name}
+                WHERE {date_col} LIKE ? AND status IN ('filled', ?)
+            """, (f"{today}%", status_settled)).fetchone()
+            daily_loss = abs(row[0]) if row else 0.0
+
+            rows = db.execute(f"""
+                SELECT pnl FROM {table_name}
+                WHERE status = ? AND pnl IS NOT NULL
+                ORDER BY {settled_col} DESC LIMIT 50
+            """, (status_settled,)).fetchall()
+            for (pnl,) in rows:
+                if pnl < 0:
+                    consecutive_losses += 1
+                else:
+                    break
+    except Exception:
+        pass
+
+    daily_pct = (daily_loss / loss_limit * 100) if loss_limit > 0 else 0
+
+    return {
+        "kill_switch": kill_switch,
+        "daily_loss": daily_loss,
+        "daily_loss_limit": loss_limit,
+        "daily_loss_pct": min(daily_pct, 100),
+        "consecutive_losses": consecutive_losses,
+        "consecutive_loss_max": CONSECUTIVE_LOSS_MAX,
+        "min_conviction": min_conv,
+        "edge_threshold": EDGE_THRESHOLD,
+        "price_gate": (PRICE_GATE_LOWER, PRICE_GATE_UPPER),
+        "extreme_estimate": (EXTREME_ESTIMATE_LOWER, EXTREME_ESTIMATE_UPPER),
+    }
+
+
+def _build_breaker_panel_html(status):
+    """Build compact circuit breaker status panel HTML."""
+    # Kill switch
+    if status["kill_switch"]:
+        ks_html = '<span style="color:#f44336;font-weight:700">&#x2716; ACTIVE</span>'
+    else:
+        ks_html = '<span style="color:#3fb950">&#x2714; OFF</span>'
+
+    # Daily loss bar
+    pct = status["daily_loss_pct"]
+    if pct >= 100:
+        bar_color = "#f44336"
+    elif pct >= 60:
+        bar_color = "#ffc107"
+    else:
+        bar_color = "#3fb950"
+    loss_val = status["daily_loss"]
+    loss_max = status["daily_loss_limit"]
+    bar_html = f"""<div style="display:inline-flex;align-items:center;gap:8px">
+        <div style="width:80px;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+            <div style="width:{pct:.0f}%;height:100%;background:{bar_color};border-radius:4px"></div>
+        </div>
+        <span>${loss_val:.0f}/${loss_max:.0f}</span>
+    </div>"""
+
+    # Consecutive losses
+    consec = status["consecutive_losses"]
+    consec_max = status["consecutive_loss_max"]
+    if consec >= consec_max:
+        consec_color = "#f44336"
+    elif consec >= consec_max - 1:
+        consec_color = "#ffc107"
+    else:
+        consec_color = "#c9d1d9"
+
+    # Config reference
+    pg_lo, pg_hi = status["price_gate"]
+    ee_lo, ee_hi = status["extreme_estimate"]
+
+    return f"""<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 20px;margin-bottom:16px">
+    <div style="font-size:12px;font-weight:700;color:#8b949e;letter-spacing:1.5px;margin-bottom:10px">CIRCUIT BREAKERS</div>
+    <div style="display:flex;flex-wrap:wrap;gap:20px;font-size:13px;color:#c9d1d9">
+        <div><span style="color:#8b949e">Kill Switch:</span> {ks_html}</div>
+        <div><span style="color:#8b949e">Daily Loss:</span> {bar_html}</div>
+        <div><span style="color:#8b949e">Consec Losses:</span> <span style="color:{consec_color};font-weight:600">{consec}/{consec_max}</span></div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:11px;color:#6e7681;margin-top:8px;border-top:1px solid #21262d;padding-top:8px">
+        <span>Min Conv: {status['min_conviction']}</span>
+        <span>Edge: {status['edge_threshold']:.0%}</span>
+        <span>Price Gate: {pg_lo:.0%}–{pg_hi:.0%}</span>
+        <span>Extreme Est: &lt;{ee_lo} / &gt;{ee_hi}</span>
+    </div>
+</div>"""
+
+
 def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=None):
     # Detect asset from subtitle
     sub_upper = (subtitle or "").upper()
@@ -1289,19 +1412,19 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
     elif is_live:
         # Check circuit breaker status
         daily_loss = abs(orders_data.get("today_pnl", 0)) if orders_data.get("today_pnl", 0) < 0 else 0
-        breaker_pct = (daily_loss / 300) * 100  # DAILY_LOSS_LIMIT=300
+        breaker_pct = (daily_loss / DAILY_LOSS_LIMIT) * 100
         if breaker_pct >= 100:
             obs_bg = "rgba(244,67,54,0.15)"
             obs_border = "#f44336"
             obs_title = "&#128308; CIRCUIT BREAKER TRIPPED"
             obs_color = "#f44336"
-            obs_detail = f"Daily loss limit reached (${daily_loss:.0f}/$300). Trading paused until tomorrow."
+            obs_detail = f"Daily loss limit reached (${daily_loss:.0f}/${DAILY_LOSS_LIMIT:.0f}). Trading paused until tomorrow."
         else:
             obs_bg = "rgba(63,185,80,0.12)"
             obs_border = "#238636"
             obs_title = "&#9889; LIVE TRADING ACTIVE"
             obs_color = "#3fb950"
-            breaker_bar = f"Circuit breaker: {breaker_pct:.0f}% (${daily_loss:.0f}/$300)"
+            breaker_bar = f"Circuit breaker: {breaker_pct:.0f}% (${daily_loss:.0f}/${DAILY_LOSS_LIMIT:.0f})"
             bet_size = orders_data.get("bet_size", 25)
             obs_detail = f"Flat ${bet_size:.0f} per bet &middot; {breaker_bar}"
     elif asset == "ETH":
@@ -1320,6 +1443,10 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
         <div style="font-size:18px;font-weight:700;color:{obs_color};letter-spacing:1px">{obs_title}</div>
         <div style="color:#8b949e;font-size:13px;margin-top:4px">{obs_detail}</div>
     </div>"""
+
+    # -- Circuit Breaker Panel (all dashboards) --
+    breaker_status = _get_breaker_status(db, asset=asset, subtitle=subtitle)
+    breaker_panel_html = _build_breaker_panel_html(breaker_status)
 
     # -- Pipeline Health Banner --
     health_pct = pipeline["health_pct"]
@@ -2586,6 +2713,8 @@ tr:hover {{
     {status_html}
 
     {observation_html}
+
+    {breaker_panel_html}
 
     {pipeline_html}
 

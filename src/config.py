@@ -88,6 +88,11 @@ AUTOCORR_MEAN_REVERTING_15M = -0.20  # < -0.20 = MEAN_REVERTING (15m, relaxed)
 PRICE_GATE_UPPER = 0.85         # Skip YES > 85%
 PRICE_GATE_LOWER = 0.15         # Skip YES < 15%
 
+# Extreme estimate override: estimates beyond these thresholds bypass
+# dead hour, price gate, and mean-reversion gates (80%+ WR, Phase 1 analysis).
+EXTREME_ESTIMATE_UPPER = 0.65    # estimate > 0.65 → bypass skip gates
+EXTREME_ESTIMATE_LOWER = 0.35    # estimate < 0.35 → bypass skip gates
+
 # UP conviction "sweet spot" — boost to conv=4 when market price in this range.
 # Source: empirical observation from 5m paper data. Needs formal validation.
 # TODO: Validate with 50+ bets in/out of sweet spot.

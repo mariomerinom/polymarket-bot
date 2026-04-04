@@ -23,7 +23,8 @@ from config import (
     PRICE_SWEET_SPOT_HIGH, CONFIDENCE_HIGH_STREAK, MAX_CONVICTION,
     AUTOCORR_MEAN_REVERTING_5M, AUTOCORR_MEAN_REVERTING_15M,
     SHADOW_CONFIGS, ESTIMATE_FALLBACK_UP, ESTIMATE_FALLBACK_DOWN,
-    DEFAULT_CANDLE_LIMIT, CONTEXT_LOOKBACK_MINUTES
+    DEFAULT_CANDLE_LIMIT, CONTEXT_LOOKBACK_MINUTES,
+    EXTREME_ESTIMATE_UPPER, EXTREME_ESTIMATE_LOWER,
 )
 
 # Optional dependencies handled gracefully
@@ -399,7 +400,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
             current_hour_utc = datetime.now(timezone.utc).hour
             if is_dead_hour(current_hour_utc, dead_hours):
                 # Extreme-estimate override: estimates >0.65/<0.35 win at 80%+ WR regardless of gate
-                if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+                if signal["should_trade"] and (signal["estimate"] > EXTREME_ESTIMATE_UPPER or signal["estimate"] < EXTREME_ESTIMATE_LOWER):
                     shadow_signal = dict(signal, confidence="medium", reason=f"shadow_extreme_dead_hour (UTC {current_hour_utc})")
                     store_prediction(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price)
                     db.execute("""
@@ -415,7 +416,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
             if is_price_extreme(mkt_price):
                 # Extreme-estimate override: estimates >0.65/<0.35 win at 80%+ WR regardless of gate
-                if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+                if signal["should_trade"] and (signal["estimate"] > EXTREME_ESTIMATE_UPPER or signal["estimate"] < EXTREME_ESTIMATE_LOWER):
                     shadow_signal = dict(signal, confidence="medium", reason=f"shadow_extreme_price_gate ({mkt_price:.0%})")
                     store_prediction(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price)
                     db.execute("""
@@ -432,7 +433,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
             if regime["is_mean_reverting"]:
                 # Shadow mode: extreme estimates in MR have 82.5% WR on 303 bets (Phase 1 analysis).
                 # Track them at conv=2 for forward validation. Coin-flip zone (0.35-0.65) is 46% WR — skip.
-                if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+                if signal["should_trade"] and (signal["estimate"] > EXTREME_ESTIMATE_UPPER or signal["estimate"] < EXTREME_ESTIMATE_LOWER):
                     mr_signal = dict(signal, confidence="medium", reason="mr_shadow_extreme_estimate")
                     store_prediction(db, market["id"], mr_signal, regime, cycle, mkt_price=mkt_price)
                     # Force conv=2 (shadow) — store_prediction sets conv=3 for medium+should_trade,
