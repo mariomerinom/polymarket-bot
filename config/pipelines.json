@@ -1,10 +1,30 @@
 {
   "_comment": "Pipeline control. mode: live | paper | paused. Commit + push for CI.",
   "pipelines": {
-    "btc_5m":  { "mode": "live",   "bet_size": 25,    "notes": "Production — live trading" },
-    "btc_15m": { "mode": "paper",  "bet_size": null,   "notes": "Paper only" },
-    "eth_5m":  { "mode": "paper",  "bet_size": null,   "notes": "Paper 2026-04-02 — thin books, asymmetric losses. Collecting data." },
-    "kalshi":  { "mode": "paper",  "bet_size": null,   "notes": "Phase 0 paper" },
-    "bybit":   { "mode": "paper",  "bet_size": 0.005,  "notes": "Bybit testnet perps" }
+    "btc_5m": {
+      "mode": "live",
+      "bet_size": 25,
+      "notes": "Production — live trading"
+    },
+    "btc_15m": {
+      "mode": "paper",
+      "bet_size": null,
+      "notes": "Paper only"
+    },
+    "eth_5m": {
+      "mode": "live",
+      "bet_size": 25,
+      "notes": "Live 2026-04-04."
+    },
+    "kalshi": {
+      "mode": "paper",
+      "bet_size": null,
+      "notes": "Phase 0 paper"
+    },
+    "bybit": {
+      "mode": "paper",
+      "bet_size": 0.005,
+      "notes": "Bybit testnet perps"
+    }
   }
 }
