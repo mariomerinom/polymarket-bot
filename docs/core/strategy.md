@@ -1,6 +1,6 @@
 # Trading Strategy — V4 Momentum System
 
-Last updated: 2026-04-01
+Last updated: 2026-04-04
 
 ---
 
@@ -49,22 +49,23 @@ Production uses flat $25 per bet. Paper trading retains tiered sizing for data c
 
 ## BTC 15-Minute Pipeline (Paper)
 
-### Signal Logic
-Same momentum signal as 5m with two adjustments:
-1. **min_streak = 2** (not 3) — a 2-candle streak on 15m is 30 minutes of directional movement
-2. **autocorr_threshold = -0.20** (not -0.15) — relaxed mean-reversion detection
+### Signal Logic — 5m as Atomic Unit
+The 15m pipeline does **not** use 15m candles. It uses the same 5m candles as the BTC 5m pipeline — same `min_streak=3`, same `autocorr_threshold=-0.15`, same regime classification. The 5m candle is the atomic signal unit across both pipelines.
+
+**Why:** A streak visible in 5m candles (3+ candles = 15 min of momentum) may not register in coarser 15m candles until the move is nearly over. 15m candles aggregate 3× the data, masking micro-trends. Using 5m candles gives the 15m pipeline the same resolution advantage as production.
+
+### 5m Confirmation Boost
+When the 5m pipeline has 2+ recent predictions in the same direction as the 15m signal, conviction gets a +1 boost (capped at 5). This is a cross-pipeline confirmation — if two independent pipelines agree, confidence is higher. Tracked in reasoning JSON as `sibling_5m_boost`.
 
 ### Loose Mode
-The 15m pipeline runs in `loose_mode` — all 5m-derived gates are **disabled**:
+The 15m pipeline runs in `loose_mode`:
 - No dead hour gate (derived from 5m data, unvalidated on 15m)
-- No DOWN+NEUTRAL filter (52% WR finding is 5m-only)
+- DOWN+NEUTRAL demotion applied **post-hoc** in `ci_run_15m.py` (not inline in predict.py)
 
 ### Active Filters (15m only)
 - **Price gate**: Same as 5m (skip > 0.85 or < 0.15)
-- **Mean-reversion regime gate**: Same logic, relaxed threshold (-0.20)
-
-### Performance
-- 12 resolved bets at 66.7% WR (small sample, still collecting)
+- **Mean-reversion regime gate**: Same threshold as 5m (-0.15, since we use 5m candles)
+- **DOWN+NEUTRAL demotion**: Post-prediction demotion to conv=2 (symmetric with 5m). HIGH_VOL/NEUTRAL+DOWN allowed through (64% WR on 50 bets on 5m).
 
 ---
 
@@ -94,9 +95,9 @@ Same momentum signal as BTC: streak >= 3 in non-mean-reverting regime → ride t
 
 ## Kalshi BTC Pipeline (Paper — Phase 0)
 
-Same momentum signal as BTC production, running against Kalshi BTC 15-min/1h markets. Uses Kraken/Coinbase 15-min candles (BTC is BTC regardless of venue). All predictions at conviction 2 (paper only). Goal: determine whether the momentum edge transfers to a different venue.
+Same momentum signal as BTC production, running against Kalshi BTC 15-min/1h markets. Uses Kraken/Coinbase candles. All predictions at conviction 2 (paper only). Goal: determine whether the momentum edge transfers to a different venue.
 
-- **Signal**: `momentum_signal(candles, min_streak=2)` — same as BTC 15m pipeline
+- **Signal**: `momentum_signal(candles, min_streak=2)`
 - **Regime gate**: `autocorr_threshold=-0.20` — skip mean-reverting regimes
 - **Entry point**: `src/ci_run_kalshi.py` → `data/predictions_kalshi.db` → `docs/kalshi.html`
 - **Phase 0 gate**: 200+ resolved predictions. WR > 55% → Phase 0.5. WR < 50% → signal is venue-specific.
