@@ -4,6 +4,30 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## Incident 7: Drawdown Breaker Cold Start — 36 Hours of Dead Trading
+**Date:** April 2–4, 2026 | **Duration:** ~36 hours | **Severity:** P0 — all live orders halted
+
+**Symptom:** Zero orders placed since April 2 16:50 UTC. Dashboard showed predictions firing (72% WR) but Trade Execution section missing from daily report. 42 qualifying predictions produced zero orders across April 3–4.
+
+**Root cause:** `max_drawdown_breaker` tripped at 78.5% drawdown, blocking all `should_trade()` calls. The drawdown was calculated against a peak cumulative P&L of **$17.36** (only 9 settled orders total). A single $25 loss after 2 wins created >100% percentage drawdown. The 15% threshold was designed for a mature book with hundreds in cumulative profit — not day 1 of live trading.
+
+**Data:**
+- Peak cumulative P&L: $17.36 (7 wins out of 9 orders)
+- Current cumulative P&L at trip: $3.74
+- Drawdown: 78.5% (threshold: 15%)
+- Orders blocked: 42 qualifying predictions, $0 placed
+- Counterfactual missed P&L: Apr 3 +$125 (76.5% WR), Apr 4 +$87 (68.0% WR) = **+$212 missed**
+
+**Contributing factor:** `DEFAULT_CANDLE_LIMIT` NameError (Incident 6) was also crashing predictions April 3 00:00–15:27 UTC, but the drawdown breaker would have blocked trades regardless.
+
+**Fix:** Removed `max_drawdown_breaker` entirely from `trade.py`, `bybit_trade.py`, `config.py`. Daily loss limit ($300) + consecutive loss breaker (5) remain as protection. Percentage drawdown is meaningless on a sub-$100 equity curve.
+
+**Lesson:** Circuit breakers must account for cold start. Percentage-based thresholds (drawdown from peak) are pathological when the denominator (peak equity) is tiny. Either use absolute thresholds or add a minimum peak floor before activating percentage-based breakers. In our case, the simpler answer was that the breaker was redundant — daily loss limit and consecutive loss cap cover the same ground without the cold start trap.
+
+**Regression test:** Removed `test_max_drawdown_breaker` and `test_drawdown_within_threshold_passes`.
+
+---
+
 ## Incident 6: Missing Config Dependencies During CI Sequence 
 **Date:** April 3, 2026 | **Duration:** < 1 hour | **Severity:** Degraded UI & CI Breaks
 
