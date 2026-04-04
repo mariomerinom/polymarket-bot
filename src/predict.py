@@ -398,13 +398,35 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
 
             current_hour_utc = datetime.now(timezone.utc).hour
             if is_dead_hour(current_hour_utc, dead_hours):
-                logger.info(f"  -> SKIP (dead hour: UTC {current_hour_utc})")
-                store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": f"time_gate_dead_hour (UTC {current_hour_utc})"}, regime, cycle)
+                # Extreme-estimate override: estimates >0.65/<0.35 win at 80%+ WR regardless of gate
+                if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+                    shadow_signal = dict(signal, confidence="medium", reason=f"shadow_extreme_dead_hour (UTC {current_hour_utc})")
+                    store_prediction(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price)
+                    db.execute("""
+                        UPDATE predictions SET conviction_score = 2
+                        WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
+                    """, (market["id"], cycle))
+                    db.commit()
+                    logger.info(f"  -> DEAD HOUR SHADOW: {signal['direction']} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+                else:
+                    logger.info(f"  -> SKIP (dead hour: UTC {current_hour_utc})")
+                    store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": f"time_gate_dead_hour (UTC {current_hour_utc})"}, regime, cycle)
                 continue
 
             if is_price_extreme(mkt_price):
-                logger.info(f"  -> SKIP (price gate: {mkt_price:.0%})")
-                store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": f"price_gate_extreme ({mkt_price:.0%})"}, regime, cycle)
+                # Extreme-estimate override: estimates >0.65/<0.35 win at 80%+ WR regardless of gate
+                if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+                    shadow_signal = dict(signal, confidence="medium", reason=f"shadow_extreme_price_gate ({mkt_price:.0%})")
+                    store_prediction(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price)
+                    db.execute("""
+                        UPDATE predictions SET conviction_score = 2
+                        WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
+                    """, (market["id"], cycle))
+                    db.commit()
+                    logger.info(f"  -> PRICE GATE SHADOW: {signal['direction']} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+                else:
+                    logger.info(f"  -> SKIP (price gate: {mkt_price:.0%})")
+                    store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": f"price_gate_extreme ({mkt_price:.0%})"}, regime, cycle)
                 continue
 
             if regime["is_mean_reverting"]:

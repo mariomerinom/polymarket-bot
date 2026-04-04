@@ -218,38 +218,77 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
         # Dead hours gate — data-driven from ETH predictions
         current_hour_utc = datetime.now(timezone.utc).hour
         if current_hour_utc in dead_hours:
-            skip_signal = {
-                "estimate": mkt_price,
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": f"time_gate_dead_hour (UTC {current_hour_utc})",
-            }
-            store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
-            print(f"    → SKIP (dead hour: UTC {current_hour_utc})")
+            # Extreme-estimate override: estimates >0.65/<0.35 win at 80%+ WR regardless of gate
+            if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+                shadow_signal = dict(signal, confidence="medium", reason=f"shadow_extreme_dead_hour (UTC {current_hour_utc})")
+                store_prediction_eth(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price)
+                db.execute("""
+                    UPDATE predictions SET conviction_score = 2
+                    WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
+                """, (market["id"], cycle))
+                db.commit()
+                direction = "UP" if signal["estimate"] > 0.5 else "DOWN"
+                print(f"    → DEAD HOUR SHADOW: {direction} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+            else:
+                skip_signal = {
+                    "estimate": mkt_price,
+                    "should_trade": False,
+                    "confidence": "skip",
+                    "reason": f"time_gate_dead_hour (UTC {current_hour_utc})",
+                }
+                store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
+                print(f"    → SKIP (dead hour: UTC {current_hour_utc})")
             continue
 
         # Price gate: skip extreme prices
         if mkt_price > PRICE_GATE_UPPER or mkt_price < PRICE_GATE_LOWER:
-            skip_signal = {
-                "estimate": mkt_price,
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": f"price_gate_extreme ({mkt_price:.0%})",
-            }
-            store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
-            print(f"    → SKIP (price gate: {mkt_price:.0%})")
+            # Extreme-estimate override: estimates >0.65/<0.35 win at 80%+ WR regardless of gate
+            if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+                shadow_signal = dict(signal, confidence="medium", reason=f"shadow_extreme_price_gate ({mkt_price:.0%})")
+                store_prediction_eth(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price)
+                db.execute("""
+                    UPDATE predictions SET conviction_score = 2
+                    WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
+                """, (market["id"], cycle))
+                db.commit()
+                direction = "UP" if signal["estimate"] > 0.5 else "DOWN"
+                print(f"    → PRICE GATE SHADOW: {direction} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+            else:
+                skip_signal = {
+                    "estimate": mkt_price,
+                    "should_trade": False,
+                    "confidence": "skip",
+                    "reason": f"price_gate_extreme ({mkt_price:.0%})",
+                }
+                store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
+                print(f"    → SKIP (price gate: {mkt_price:.0%})")
             continue
 
-        # Regime gate
+        # Regime gate — MR shadow mode for extreme estimates
         if regime["is_mean_reverting"]:
-            skip_signal = {
-                "estimate": mkt_price,
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": "regime_skip_mean_reverting",
-            }
-            store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
-            print(f"    → SKIP (mean-reverting regime)")
+            # Extreme estimates (>0.65/<0.35) win at 80%+ WR regardless of regime (Phase 1 analysis).
+            # Track at conv=2 for forward validation. Coin-flip zone skipped as before.
+            if signal["should_trade"] and (signal["estimate"] > 0.65 or signal["estimate"] < 0.35):
+                mr_signal = dict(signal, confidence="medium", reason="mr_shadow_extreme_estimate")
+                store_prediction_eth(db, market["id"], mr_signal, regime, cycle, mkt_price=mkt_price)
+                # Force conv=2 (shadow) — store_prediction_eth sets conv=3 for medium+should_trade
+                db.execute("""
+                    UPDATE predictions SET conviction_score = 2
+                    WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
+                    AND regime LIKE '%MEAN_REVERTING%'
+                """, (market["id"], cycle))
+                db.commit()
+                direction = "UP" if signal["estimate"] > 0.5 else "DOWN"
+                print(f"    → MR SHADOW: {direction} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+            else:
+                skip_signal = {
+                    "estimate": mkt_price,
+                    "should_trade": False,
+                    "confidence": "skip",
+                    "reason": "regime_skip_mean_reverting",
+                }
+                store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
+                print(f"    → SKIP (mean-reverting regime)")
             continue
 
         # Apply momentum signal

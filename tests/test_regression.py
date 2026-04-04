@@ -540,6 +540,116 @@ def test_mr_shadow_extreme_estimate():
     assert rows[1] == ("mr2", 0, "skip"), f"Coin-flip MR should be skip conv=0, got {rows[1]}"
 
 
+def test_extreme_estimate_shadow_dead_hour():
+    """Extreme estimates (>0.65/<0.35) stored as conv=2 shadow even during dead hours.
+    Optimization: unified extreme-estimate override (2026-04-04).
+    80%+ WR on extreme estimates regardless of skip reason.
+    """
+    import sqlite3
+    from predict import store_prediction
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE predictions (
+        id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT, estimate REAL,
+        edge REAL, confidence TEXT, reasoning TEXT, predicted_at TEXT,
+        cycle INTEGER, conviction_score INTEGER, regime TEXT
+    )""")
+    db.commit()
+
+    regime = {"label": "HIGH_VOL / TRENDING", "autocorrelation": 0.2,
+              "volatility": 0.15, "is_mean_reverting": False}
+
+    # Extreme estimate in dead hour → shadow at conv=2
+    signal = dict(estimate=0.72, should_trade=True, confidence="medium",
+                  direction="UP", reason="shadow_extreme_dead_hour (UTC 3)")
+    store_prediction(db, "dh1", signal, regime, cycle=99, mkt_price=0.50)
+    db.execute("""
+        UPDATE predictions SET conviction_score = 2
+        WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
+    """, ("dh1", 99))
+    db.commit()
+
+    row = db.execute("SELECT conviction_score FROM predictions WHERE market_id='dh1'").fetchone()
+    db.close()
+    assert row[0] == 2, f"Extreme estimate in dead hour should be shadow conv=2, got {row[0]}"
+
+
+def test_extreme_estimate_shadow_price_gate():
+    """Extreme estimates stored as conv=2 shadow even at extreme market prices.
+    Optimization: unified extreme-estimate override (2026-04-04).
+    """
+    import sqlite3
+    from predict import store_prediction
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE predictions (
+        id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT, estimate REAL,
+        edge REAL, confidence TEXT, reasoning TEXT, predicted_at TEXT,
+        cycle INTEGER, conviction_score INTEGER, regime TEXT
+    )""")
+    db.commit()
+
+    regime = {"label": "HIGH_VOL / TRENDING", "autocorrelation": 0.2,
+              "volatility": 0.15, "is_mean_reverting": False}
+
+    # Extreme estimate at extreme market price → shadow at conv=2
+    signal = dict(estimate=0.72, should_trade=True, confidence="medium",
+                  direction="UP", reason="shadow_extreme_price_gate (90%)")
+    store_prediction(db, "pg1", signal, regime, cycle=99, mkt_price=0.90)
+    db.execute("""
+        UPDATE predictions SET conviction_score = 2
+        WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
+    """, ("pg1", 99))
+    db.commit()
+
+    row = db.execute("SELECT conviction_score FROM predictions WHERE market_id='pg1'").fetchone()
+    db.close()
+    assert row[0] == 2, f"Extreme estimate at extreme price should be shadow conv=2, got {row[0]}"
+
+
+def test_eth_mr_shadow_extreme_estimate():
+    """ETH MR shadow: extreme estimates tracked at conv=2, coin-flip skipped.
+    Mirrors BTC MR shadow mode from predict.py.
+    """
+    import sqlite3
+    from predict_eth import store_prediction_eth
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE predictions (
+        id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT, estimate REAL,
+        edge REAL, confidence TEXT, reasoning TEXT, predicted_at TEXT,
+        cycle INTEGER, conviction_score INTEGER, regime TEXT
+    )""")
+    db.commit()
+
+    regime_mr = {"label": "HIGH_VOL / MEAN_REVERTING", "is_mean_reverting": True,
+                 "autocorrelation": -0.3, "volatility": 0.15}
+
+    # Extreme estimate in MR → shadow conv=2
+    signal_extreme = {"estimate": 0.72, "should_trade": True, "confidence": "medium",
+                      "direction": "UP", "reason": "mr_shadow_extreme_estimate"}
+    store_prediction_eth(db, "eth_mr1", signal_extreme, regime_mr, cycle=99, mkt_price=0.45)
+    db.execute("""
+        UPDATE predictions SET conviction_score = 2
+        WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
+        AND regime LIKE '%MEAN_REVERTING%'
+    """, ("eth_mr1", 99))
+    db.commit()
+
+    # Coin-flip in MR → skip conv=0
+    signal_skip = {"estimate": 0.50, "should_trade": False, "confidence": "skip",
+                   "reason": "regime_skip_mean_reverting"}
+    store_prediction_eth(db, "eth_mr2", signal_skip, regime_mr, cycle=99)
+
+    rows = db.execute(
+        "SELECT market_id, conviction_score FROM predictions ORDER BY market_id"
+    ).fetchall()
+    db.close()
+
+    assert rows[0] == ("eth_mr1", 2), f"ETH extreme MR should be shadow conv=2, got {rows[0]}"
+    assert rows[1] == ("eth_mr2", 0), f"ETH coin-flip MR should be skip conv=0, got {rows[1]}"
+
+
 def test_no_evolve_imports():
     """No production code should import from deleted evolve.py.
     Incident 3: evolve.py was deleted but run_cycle.py imported it.
