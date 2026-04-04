@@ -1208,9 +1208,18 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
     has_live = len(live_resolved) > 0
     has_paper = len(paper_resolved) > 0
 
+    # Detect shadow agents: never produced conv >= 3 in active window
+    _agent_max_conv = defaultdict(int)
+    for r in active_resolved:
+        cs = r.get("conviction_score") or 0
+        _agent_max_conv[r["agent"]] = max(_agent_max_conv[r["agent"]], cs)
+    shadow_agents = {a for a, mc in _agent_max_conv.items() if mc < 3}
+
     # Compute stats on active agents only
     agent_stats = compute_agent_stats(active_resolved)
-    ensemble = compute_ensemble(active_resolved)
+    # Ensemble excludes shadow agents — they never produce real bets
+    production_resolved = [r for r in active_resolved if r["agent"] not in shadow_agents]
+    ensemble = compute_ensemble(production_resolved) if production_resolved else compute_ensemble(active_resolved)
     calibration = compute_confidence_calibration(active_resolved)
     rolling = compute_rolling_accuracy(active_resolved)
 
@@ -1456,8 +1465,9 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
     # -- Aggregate Performance Banner --
     if has_data:
         perf_cards = ""
-        # Agent cards
-        for agent in sorted(agent_stats.keys()):
+        # Agent cards — production first, then shadow
+        sorted_agents = sorted(agent_stats.keys(), key=lambda a: (a in shadow_agents, a))
+        for agent in sorted_agents:
             a = agent_stats[agent]
             acc = a["accuracy"]
             ac = accuracy_color(acc)
@@ -1465,8 +1475,11 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
             vs_sign = "+" if vs_flip >= 0 else ""
             vs_color = "#3fb950" if vs_flip > 0 else ("#ffc107" if vs_flip == 0 else "#f44336")
             color = AGENT_COLORS.get(agent, "#c9d1d9")
-            perf_cards += f"""<div class="perf-card">
-                <div class="perf-agent" style="color:{color}">{agent}</div>
+            is_shadow = agent in shadow_agents
+            shadow_badge = ' <span style="background:#484f58;color:#8b949e;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle">SHADOW</span>' if is_shadow else ""
+            card_style = "opacity:0.6;" if is_shadow else ""
+            perf_cards += f"""<div class="perf-card" style="{card_style}">
+                <div class="perf-agent" style="color:{color}">{agent}{shadow_badge}</div>
                 <div class="perf-record">{a["wins"]}W - {a["losses"]}L</div>
                 <div class="perf-accuracy" style="color:{ac}">{acc:.1f}%</div>
                 <div class="perf-vs" style="color:{vs_color}">{vs_sign}{vs_flip:.1f}pp vs coin flip</div>
@@ -1698,8 +1711,10 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
             total_c = "#3fb950" if total_conv_pnl >= 0 else "#f44336"
 
             conv_era = "Live Trading" if has_live else "Paper Trading"
-            conviction_html = f"""<h2>Conviction Scoreboard ({conv_era})</h2>
-            <p class="section-desc">Only bet when conviction &ge; 3. Flat ${live_tiers.get(3, 25)} per bet.</p>
+            conv_sim_note = " &mdash; Simulated" if using_real_pnl else ""
+            conv_sim_desc = " Numbers below are simulated from prediction outcomes, not actual fills." if using_real_pnl else ""
+            conviction_html = f"""<h2>Conviction Scoreboard ({conv_era}{conv_sim_note})</h2>
+            <p class="section-desc">Only bet when conviction &ge; 3. Flat ${live_tiers.get(3, 25)} per bet.{conv_sim_desc}</p>
             <div class="table-wrap"><table>
                 <thead><tr>
                     <th>Tier</th><th>Markets</th><th>Accuracy</th><th>W</th><th>L</th><th>Bet Size</th><th>P&amp;L</th><th>ROI</th>
@@ -1721,12 +1736,15 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
     # -- Hit Rate Table --
     if has_data:
         hitrate_rows = ""
-        for agent in sorted(agent_stats.keys()):
+        for agent in sorted(agent_stats.keys(), key=lambda a: (a in shadow_agents, a)):
             a = agent_stats[agent]
             color = AGENT_COLORS.get(agent, "#c9d1d9")
             last10_color = accuracy_color(a["last10_acc"])
-            hitrate_rows += f"""<tr>
-                <td class="agent-name" style="color:{color}">{agent}</td>
+            is_shadow = agent in shadow_agents
+            shadow_label = ' <span style="background:#484f58;color:#8b949e;font-size:0.65rem;padding:1px 4px;border-radius:3px">SHADOW</span>' if is_shadow else ""
+            row_style = ' style="opacity:0.6"' if is_shadow else ""
+            hitrate_rows += f"""<tr{row_style}>
+                <td class="agent-name" style="color:{color}">{agent}{shadow_label}</td>
                 <td>{a["wins"]}-{a["losses"]}</td>
                 <td style="color:{accuracy_color(a["accuracy"])}">{a["accuracy"]:.1f}%</td>
                 <td style="color:{last10_color}">{a["last10_acc"]:.1f}%</td>
