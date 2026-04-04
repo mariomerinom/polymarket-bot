@@ -264,6 +264,18 @@ def main():
           f"{summary['positions_closed']} closed, "
           f"PnL=${summary['total_pnl']:.2f} ({summary['mode']})")
 
+    # [INTEGRITY] Per-cycle checks
+    try:
+        from pipeline_integrity import run_integrity_checks
+        results = run_integrity_checks(db, pipeline="bybit", cycle=cycle,
+                                        api_ok=bybit_data is not None,
+                                        data_fetched=bool(bybit_data))
+        for r in results:
+            if r["status"] != "OK":
+                print(f"  [{r['status']}] {r['check_name']}: {r['detail']}")
+    except Exception as e:
+        print(f"  [INTEGRITY] check failed: {e}")
+
     db.close()
 
     # [7/7] Generate dashboard

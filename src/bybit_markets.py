@@ -25,6 +25,7 @@ def init_db_bybit():
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
     db.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
+    db.execute("PRAGMA foreign_keys=ON")
 
     # Markets table — identical schema to other pipelines
     db.execute("""

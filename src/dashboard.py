@@ -1210,6 +1210,33 @@ def _get_breaker_status(db, asset="BTC", subtitle=""):
     }
 
 
+def _get_integrity_status(db):
+    """Get pipeline integrity summary, or None if module unavailable."""
+    try:
+        from pipeline_integrity import get_integrity_summary
+        return get_integrity_summary(db)
+    except (ImportError, Exception):
+        return None
+
+
+def _build_integrity_indicator_html(summary):
+    """Build a compact integrity status indicator line."""
+    if summary is None:
+        return ""
+    status = summary.get("status", "green")
+    warnings = summary.get("warnings_24h", 0)
+    failures = summary.get("failures_24h", 0)
+    issues = summary.get("recent_issues", [])
+    title_text = "; ".join(issues[:5]) if issues else ""
+    title_attr = f' title="{title_text}"' if title_text else ""
+    if status == "red":
+        return f'<div style="font-size:13px;color:#c9d1d9;margin-bottom:12px"><span style="color:#ef4444"{title_attr}>&#9679; {failures} failure(s)</span></div>'
+    elif status == "yellow":
+        return f'<div style="font-size:13px;color:#c9d1d9;margin-bottom:12px"><span style="color:#eab308"{title_attr}>&#9679; {warnings} warning(s)</span></div>'
+    else:
+        return '<div style="font-size:13px;color:#c9d1d9;margin-bottom:12px"><span style="color:#22c55e">&#9679; Integrity OK</span></div>'
+
+
 def _build_breaker_panel_html(status):
     """Build compact circuit breaker status panel HTML."""
     # Kill switch
@@ -1447,6 +1474,10 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
     # -- Circuit Breaker Panel (all dashboards) --
     breaker_status = _get_breaker_status(db, asset=asset, subtitle=subtitle)
     breaker_panel_html = _build_breaker_panel_html(breaker_status)
+
+    # -- Integrity Status Indicator --
+    integrity_summary = _get_integrity_status(db)
+    integrity_html = _build_integrity_indicator_html(integrity_summary)
 
     # -- Pipeline Health Banner --
     health_pct = pipeline["health_pct"]
@@ -2715,6 +2746,8 @@ tr:hover {{
     {observation_html}
 
     {breaker_panel_html}
+
+    {integrity_html}
 
     {pipeline_html}
 

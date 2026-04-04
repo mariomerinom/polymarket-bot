@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
+from config import DB_BUSY_TIMEOUT_MS
 
 KALSHI_BASE_URL = os.getenv(
     "KALSHI_BASE_URL",
@@ -30,6 +31,9 @@ def init_db_kalshi():
     DB_PATH_KALSHI.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(DB_PATH_KALSHI)
     db.row_factory = sqlite3.Row
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
+    db.execute("PRAGMA foreign_keys=ON")
     db.execute("""
         CREATE TABLE IF NOT EXISTS markets (
             id TEXT PRIMARY KEY,

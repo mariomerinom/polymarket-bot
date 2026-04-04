@@ -11,6 +11,7 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from config import DB_BUSY_TIMEOUT_MS
 
 GAMMA_API = "https://gamma-api.polymarket.com"
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
@@ -37,6 +38,9 @@ def _is_5min_window(title):
 
 def init_db():
     db = sqlite3.connect(DB_PATH)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
+    db.execute("PRAGMA foreign_keys=ON")
     db.execute("""
         CREATE TABLE IF NOT EXISTS markets (
             id TEXT PRIMARY KEY,
@@ -103,6 +107,9 @@ DB_PATH_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
 def init_db_15m():
     """Initialize the 15-minute database (identical schema, separate file)."""
     db = sqlite3.connect(DB_PATH_15M)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
+    db.execute("PRAGMA foreign_keys=ON")
     db.execute("""
         CREATE TABLE IF NOT EXISTS markets (
             id TEXT PRIMARY KEY,
@@ -275,6 +282,9 @@ DB_PATH_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 def init_db_eth():
     """Initialize the ETH 5-minute database (identical schema, separate file)."""
     db = sqlite3.connect(DB_PATH_ETH)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
+    db.execute("PRAGMA foreign_keys=ON")
     db.execute("""
         CREATE TABLE IF NOT EXISTS markets (
             id TEXT PRIMARY KEY,

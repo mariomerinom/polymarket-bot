@@ -141,6 +141,18 @@ def main():
     else:
         print("  No resolved markets to score yet")
 
+    # [INTEGRITY] Per-cycle checks
+    try:
+        from pipeline_integrity import run_integrity_checks
+        results = run_integrity_checks(db, pipeline="eth_5m", cycle=cycle,
+                                        api_ok=eth_data is not None,
+                                        data_fetched=bool(eth_data))
+        for r in results:
+            if r["status"] != "OK":
+                print(f"  [{r['status']}] {r['check_name']}: {r['detail']}")
+    except Exception as e:
+        print(f"  [INTEGRITY] check failed: {e}")
+
     db.close()
 
     # 5. Generate dashboard

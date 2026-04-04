@@ -46,6 +46,15 @@ REVERSAL_CANDLES = SAMPLE_CANDLES + [
 ]
 
 
+def _insert_dummy_market(db, market_id):
+    """Insert a minimal market row so FK constraints pass in tests."""
+    db.execute("""
+        INSERT OR IGNORE INTO markets (id, question, category, end_date, volume, price_yes, price_no, fetched_at)
+        VALUES (?, 'test', 'crypto', '2099-01-01T00:00:00Z', 0, 0.5, 0.5, '2026-01-01T00:00:00Z')
+    """, (market_id,))
+    db.commit()
+
+
 @pytest.fixture
 def bybit_db(tmp_path):
     """Create a temporary Bybit DB for testing."""
@@ -417,6 +426,13 @@ class TestPaperOrderPlacement:
         from bybit_trade import place_bybit_order
         from bybit_markets import get_open_position
 
+        _insert_dummy_market(bybit_db, "BTCUSDT-test")
+        # Insert a dummy prediction so the orders FK(prediction_id) is satisfied
+        bybit_db.execute("""
+            INSERT INTO predictions (id, market_id, agent, estimate, edge, confidence, reasoning, predicted_at, cycle)
+            VALUES (1, 'BTCUSDT-test', 'test', 0.6, 0.1, 'medium', '{}', '2026-01-01T00:00:00Z', 1)
+        """)
+        bybit_db.commit()
         order_params = {
             "direction": "UP", "side": "Buy", "qty": 0.005,
             "price": 84050.0, "stop_loss": 83850.0,
@@ -535,6 +551,7 @@ class TestBybitConsensus:
 
     def test_consensus_conviction_boost(self, bybit_db):
         from ci_run_bybit import store_prediction_bybit
+        _insert_dummy_market(bybit_db, "test-boost")
         signal = {"estimate": 0.60, "should_trade": True, "confidence": "medium",
                   "direction": "UP", "streak": 3, "reason": "ride_streak_UP"}
         regime = {"label": "MEDIUM_VOL / TRENDING", "is_mean_reverting": False,
@@ -548,6 +565,7 @@ class TestBybitConsensus:
 
     def test_consensus_no_boost_on_skip(self, bybit_db):
         from ci_run_bybit import store_prediction_bybit
+        _insert_dummy_market(bybit_db, "test-skip")
         signal = {"estimate": 0.5, "should_trade": False, "confidence": "skip",
                   "reason": "regime_gate"}
         regime = {"label": "MEDIUM_VOL / MEAN_REVERTING", "is_mean_reverting": True,

@@ -567,7 +567,7 @@ def analyze_orders(db_path, date_str):
         return None
 
 
-def generate_alerts(summary, rolling, orders=None):
+def generate_alerts(summary, rolling, orders=None, integrity_issues=None):
     """Flag concerning patterns."""
     alerts = []
 
@@ -615,6 +615,17 @@ def generate_alerts(summary, rolling, orders=None):
                 f"⚠️ Circuit breaker at {orders['breaker_pct']:.0f}% "
                 f"(${orders['daily_loss']:.0f} / ${orders['breaker_limit']:.0f})"
             )
+
+    # Integrity alerts
+    if integrity_issues:
+        fail_count = sum(1 for i in integrity_issues if i["status"] == "FAIL")
+        warn_count = sum(1 for i in integrity_issues if i["status"] == "WARN")
+        if fail_count:
+            alerts.append(f"🚨 {fail_count} integrity check failure(s) today")
+        # Surface specific high-value alerts
+        for issue in integrity_issues[:3]:  # Cap at 3 most recent
+            if issue["check_name"] in ("orphaned_predictions", "expired_would_win", "failed_orders"):
+                alerts.append(f"⚠️ {issue['check_name']}: {issue['detail']}")
 
     return alerts
 
@@ -1345,12 +1356,30 @@ def analyze_pipeline(db_path, date_str):
         filters = analyze_filter_breakdown(predictions, resolved)
         rolling = rolling_trend(db, date_str, window=7)
         orders = analyze_orders(db_path, date_str)
-        alerts = generate_alerts(summary, rolling, orders=orders)
         shadow = analyze_shadow_indicators(predictions, resolved)
         shadow_conviction = analyze_shadow_conviction(resolved)
     finally:
         db.close()
         CONVICTION_BETS = old_bets
+
+    # Query integrity issues for this date
+    integrity_issues = []
+    try:
+        db2 = sqlite3.connect(str(db_path))
+        db2.row_factory = sqlite3.Row
+        rows = db2.execute("""
+            SELECT timestamp, check_name, status, detail
+            FROM integrity_log
+            WHERE date(timestamp) = ? AND status != 'OK'
+            ORDER BY timestamp DESC
+        """, (date_str,)).fetchall()
+        integrity_issues = [dict(r) for r in rows]
+        db2.close()
+    except Exception:
+        pass  # Table doesn't exist yet or DB issue
+
+    # Re-generate alerts with integrity data
+    alerts = generate_alerts(summary, rolling, orders=orders, integrity_issues=integrity_issues)
 
     return {
         "summary": summary,
@@ -1365,6 +1394,7 @@ def analyze_pipeline(db_path, date_str):
         "filters": filters,
         "shadow": shadow,
         "shadow_conviction": shadow_conviction,
+        "integrity_issues": integrity_issues,
     }
 
 

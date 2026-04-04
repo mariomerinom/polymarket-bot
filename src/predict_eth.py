@@ -24,7 +24,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import ETH_VOL_LOW, ETH_VOL_HIGH, PRICE_GATE_UPPER, PRICE_GATE_LOWER, EXTREME_ESTIMATE_UPPER, EXTREME_ESTIMATE_LOWER
+from config import ETH_VOL_LOW, ETH_VOL_HIGH, PRICE_GATE_UPPER, PRICE_GATE_LOWER, EXTREME_ESTIMATE_UPPER, EXTREME_ESTIMATE_LOWER, DB_BUSY_TIMEOUT_MS
 
 # Import regime computation from BTC predict
 from predict import compute_regime_from_candles as _btc_regime
@@ -59,6 +59,9 @@ def momentum_signal_eth(candles, min_streak=3):
 
 def ensure_schema(db):
     """Create tables if they don't exist."""
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
+    db.execute("PRAGMA foreign_keys=ON")
     db.execute("""
         CREATE TABLE IF NOT EXISTS markets (
             id TEXT PRIMARY KEY,
