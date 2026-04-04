@@ -4,6 +4,26 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## Incident 8: CLOB Token Import Name Mismatch — 3 Live Orders Failed
+**Date:** April 4, 2026 | **Duration:** ~1 hour (3 orders) | **Severity:** P1 — live orders failing silently
+
+**Symptom:** Three consecutive live orders failed with `missing_clob_token_id`. Dashboard showed UP predictions firing with conviction 3+ but all trades failed.
+
+**Root cause:** `trade.py` line 668 imported `from predict import _get_clob_tokens`, but the function was renamed to `_get_clob_tokens_safe` in the April 3 refactor commit (f270b280). The `except Exception: pass` handler silently swallowed the `ImportError`, so `clob_token_id` stayed `None` and every live order hit the `missing_clob_token_id` guard.
+
+**Data:**
+- 3 orders affected: markets 1847910, 1848236, 1848252
+- All were UP signals at $25, estimates 0.51–0.58
+- No money lost (orders never reached CLOB), but opportunity cost unknown
+
+**Fix:** Updated import to `_get_clob_tokens_safe`. Changed bare `except Exception: pass` to log the error (`print(f"CLOB token lookup failed: {e}")`).
+
+**Lesson:** Silent exception swallowing (`except Exception: pass`) on critical execution paths turns bugs into ghosts. Always log what you catch, especially in trade execution. The function rename was safe in predict.py but the consumer in trade.py was never updated — a classic cross-file rename hazard.
+
+**Regression test:** `TestClobTokenImport::test_clob_token_import_name_matches_predict` — verifies trade.py imports the correct function name.
+
+---
+
 ## Incident 7: Drawdown Breaker Cold Start — 36 Hours of Dead Trading
 **Date:** April 2–4, 2026 | **Duration:** ~36 hours | **Severity:** P0 — all live orders halted
 

@@ -411,3 +411,24 @@ class TestExecuteTrades:
         assert len(orders_1) == 1
         assert len(orders_2) == 0  # No duplicate
         db.close()
+
+
+class TestClobTokenImport:
+    """Regression: trade.py must import the correct clob token function name."""
+
+    def test_clob_token_import_name_matches_predict(self):
+        """Verify trade.py imports _get_clob_tokens_safe (not the old name _get_clob_tokens).
+
+        Bug: trade.py imported _get_clob_tokens which was renamed to _get_clob_tokens_safe
+        in the refactor commit. The silent except swallowed the ImportError, causing all
+        live orders to fail with missing_clob_token_id.
+        """
+        source = Path(__file__).parent.parent / "src" / "trade.py"
+        content = source.read_text()
+        assert "_get_clob_tokens_safe" in content, \
+            "trade.py must import _get_clob_tokens_safe from predict"
+        # Ensure the old broken import is gone (could appear in comments, so check code lines)
+        code_lines = [l for l in content.splitlines() if not l.strip().startswith("#")]
+        code_only = "\n".join(code_lines)
+        assert "from predict import _get_clob_tokens\n" not in code_only, \
+            "trade.py still has old broken import 'from predict import _get_clob_tokens'"

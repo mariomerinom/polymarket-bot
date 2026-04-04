@@ -665,12 +665,12 @@ def execute_trades(db, cycle):
         clob_token_id = None
         if TRADING_ENABLED:
             try:
-                from predict import _get_clob_tokens
-                tokens = _get_clob_tokens(pred["market_id"])
+                from predict import _get_clob_tokens_safe
+                tokens = _get_clob_tokens_safe(pred["market_id"])
                 if tokens:
                     clob_token_id = tokens[order_params["token"]]
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"    CLOB token lookup failed: {e}")
 
         # Place order
         order = place_order(
