@@ -26,7 +26,7 @@ DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 # ── Configuration (from centralized config.py, env-overridable) ──────────────
 
 from config import (
-    BET_SIZE, DAILY_LOSS_LIMIT, CONSECUTIVE_LOSS_MAX, MAX_DRAWDOWN_PCT,
+    BET_SIZE, DAILY_LOSS_LIMIT, CONSECUTIVE_LOSS_MAX,
     MIN_CONVICTION, MAX_SLIPPAGE_PCT, EDGE_THRESHOLD, MAX_SLIPPAGE_SPREAD,
     ETH_BET_SIZES, ETH_MAX_BET_CEILING_PCT, POLYMARKET_FEE_FACTOR,
     BOOK_DEPTH_SAFETY_MARGIN, MIN_BET_SIZE, FILL_PRIORITY_SPREAD, _env,
@@ -115,11 +115,6 @@ def should_trade(prediction_row, db):
     if consec >= CONSECUTIVE_LOSS_MAX:
         return False, f"consecutive_loss_breaker ({consec} >= {CONSECUTIVE_LOSS_MAX})"
 
-    # Max drawdown breaker — halt if drawdown from peak exceeds threshold
-    dd_pct = _check_drawdown_pct(db)
-    if dd_pct >= MAX_DRAWDOWN_PCT:
-        return False, f"max_drawdown_breaker ({dd_pct:.1f}% >= {MAX_DRAWDOWN_PCT}%)"
-
     return True, "ok"
 
 
@@ -139,28 +134,6 @@ def _check_consecutive_losses(db):
     return streak
 
 
-def _check_drawdown_pct(db):
-    """Compute current drawdown from peak cumulative P&L."""
-    rows = db.execute("""
-        SELECT pnl FROM orders
-        WHERE status = 'settled' AND pnl IS NOT NULL
-        ORDER BY settled_at ASC
-    """).fetchall()
-    if not rows:
-        return 0.0
-
-    cumulative = 0.0
-    peak = 0.0
-    for (pnl,) in rows:
-        cumulative += pnl
-        if cumulative > peak:
-            peak = cumulative
-
-    if peak <= 0:
-        return 0.0
-
-    drawdown = peak - cumulative
-    return (drawdown / peak) * 100
 
 
 def _agent_to_pipeline(agent: str) -> str:
@@ -757,7 +730,6 @@ def get_trading_summary(db):
     """, (f"{today}%",)).fetchone()
 
     consec_losses = _check_consecutive_losses(db)
-    drawdown_pct = _check_drawdown_pct(db)
 
     return {
         "total_orders": row[0],
@@ -770,10 +742,7 @@ def get_trading_summary(db):
         "daily_loss_limit": DAILY_LOSS_LIMIT,
         "consecutive_losses": consec_losses,
         "consecutive_loss_max": CONSECUTIVE_LOSS_MAX,
-        "drawdown_pct": drawdown_pct,
-        "max_drawdown_pct": MAX_DRAWDOWN_PCT,
         "breakers": {
             "consecutive_loss": consec_losses >= CONSECUTIVE_LOSS_MAX,
-            "max_drawdown": drawdown_pct >= MAX_DRAWDOWN_PCT,
         },
     }

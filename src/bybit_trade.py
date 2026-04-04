@@ -24,7 +24,7 @@ from pathlib import Path
 from config import (
     BYBIT_BET_SIZE, BYBIT_DAILY_LOSS_LIMIT, BYBIT_MAX_HOLD_CYCLES,
     BYBIT_STOP_ATR_MULT, BYBIT_FEE_RATE, BYBIT_MIN_CONVICTION,
-    CONSECUTIVE_LOSS_MAX, MAX_DRAWDOWN_PCT, EDGE_THRESHOLD,
+    CONSECUTIVE_LOSS_MAX, EDGE_THRESHOLD,
     FILL_PRIORITY_SPREAD, API_TIMEOUT_BYBIT, _env,
 )
 from bybit_markets import (
@@ -74,11 +74,6 @@ def should_trade_bybit(prediction_row, db):
     consec = _check_consecutive_losses(db)
     if consec >= CONSECUTIVE_LOSS_MAX:
         return False, f"consecutive_loss_breaker ({consec} >= {CONSECUTIVE_LOSS_MAX})"
-
-    # Max drawdown breaker
-    dd_pct = _check_drawdown_pct(db)
-    if dd_pct >= MAX_DRAWDOWN_PCT:
-        return False, f"max_drawdown_breaker ({dd_pct:.1f}% >= {MAX_DRAWDOWN_PCT}%)"
 
     # Check if same-direction position already open
     pos = get_open_position(db)

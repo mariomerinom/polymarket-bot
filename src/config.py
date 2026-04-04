@@ -32,7 +32,8 @@ BET_SIZE = float(_env("BET_SIZE", "25"))              # Flat $25 medium grind (P
 DAILY_LOSS_LIMIT = float(_env("DAILY_LOSS_LIMIT", "300"))  # Circuit breaker
 CONSECUTIVE_LOSS_MAX = int(_env("CONSECUTIVE_LOSS_MAX", "5"))
 MAX_LOSS_LOOKBACK = 50                                     # Orders history lookback
-MAX_DRAWDOWN_PCT = float(_env("MAX_DRAWDOWN_PCT", "15"))   # % from peak equity
+# MAX_DRAWDOWN_PCT removed — cold start bug tripped at 78.5% on $17 peak equity.
+# Daily loss limit + consecutive loss breaker are sufficient protection.
 MIN_CONVICTION = int(_env("MIN_CONVICTION", "3"))          # Conv < 3 = paper only
 MAX_SLIPPAGE_PCT = float(_env("MAX_SLIPPAGE_PCT", "2.0"))  # 2% max
 EDGE_THRESHOLD = float(_env("EDGE_THRESHOLD", "0.05"))     # 5% min edge to trade
