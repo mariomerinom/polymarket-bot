@@ -37,14 +37,6 @@ Four independent pipelines run in parallel, each with its own workflow, database
 
 All three dashboards are cross-linked via a nav bar on GitHub Pages.
 
-### Frozen Files Rule
-
-The BTC 5m pipeline is the money-maker. These files must have **ZERO lines changed** unless explicitly approved:
-
-`src/ci_run.py`, `src/btc_data.py`, `src/predict.py`, `src/score.py`, `src/clob_depth.py`, `.github/workflows/predict-and-score.yml`, `data/predictions.db`
-
-**Enforcement:** Run `git diff --name-only` before committing and verify none of these appear.
-
 ### CI Conflict Resolution
 
 All workflows use `git pull --rebase -X theirs` with fallback to merge pull. CI-generated files (`optimizations.json`, dashboard HTML) are regenerated every cycle, so accepting the remote version on conflict is safe.

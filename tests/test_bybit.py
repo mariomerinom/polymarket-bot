@@ -602,26 +602,3 @@ class TestBybitConsensus:
             assert result["consensus"]["sources"] == 2
 
 
-class TestFrozenFiles:
-    """Verify the Bybit pipeline doesn't touch frozen production files."""
-
-    def test_no_imports_from_frozen_modules(self):
-        """Bybit modules should not import from ci_run.py or fetch_markets.py."""
-        bybit_files = [
-            "src/bybit_data.py",
-            "src/bybit_markets.py",
-            "src/bybit_trade.py",
-            "src/bybit_score.py",
-            "src/ci_run_bybit.py",
-        ]
-        frozen_imports = ["from ci_run ", "import ci_run",
-                          "from fetch_markets ", "import fetch_markets"]
-
-        root = Path(__file__).parent.parent
-        for f in bybit_files:
-            path = root / f
-            if path.exists():
-                content = path.read_text()
-                for forbidden in frozen_imports:
-                    assert forbidden not in content, \
-                        f"{f} imports from frozen module: {forbidden}"

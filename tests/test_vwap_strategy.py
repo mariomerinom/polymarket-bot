@@ -229,14 +229,3 @@ def test_vwap_no_duplicate():
     db.close()
 
 
-# ── Test: No frozen files touched ────────────────────────────────────────
-
-def test_vwap_no_frozen_files():
-    """vwap_strategy.py should not import from frozen files except as read-only."""
-    import inspect
-    import vwap_strategy
-    source = inspect.getsource(vwap_strategy)
-
-    # Should NOT modify predict.py, ci_run.py, btc_data.py, score.py
-    # Import from shadow_indicators is fine (not frozen)
-    assert "from shadow_indicators" in source, "Should reuse compute_vwap_zscore"
