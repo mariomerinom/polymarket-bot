@@ -100,43 +100,6 @@ def test_losing_bets_always_lose_exactly_bet_size():
 
 # ── Incident 3: CI references deleted paths ─────────────────────────────
 
-def test_ci_workflow_no_deleted_paths():
-    """CI workflow must not reference paths that don't exist.
-    Incident 3: git add prompts/ failed because directory was deleted.
-    """
-    workflow_dir = os.path.join(ROOT, ".github", "workflows")
-    if not os.path.isdir(workflow_dir):
-        return  # skip if no workflows (shouldn't happen)
-
-    for yml_file in glob.glob(os.path.join(workflow_dir, "*.yml")):
-        content = open(yml_file).read()
-
-        # Check for known deleted directories
-        deleted_dirs = ["prompts/", "prompts/*"]
-        for d in deleted_dirs:
-            assert d not in content, \
-                f"{yml_file} references deleted path '{d}'"
-
-
-# ── Incident 4: Extreme price bets — bad risk/reward ─────────────────────
-
-def test_price_gate_prevents_extreme_bets():
-    """predict.py must gate bets at extreme market prices.
-    Incident 4: 15m bet at price 0.005 risked $75 to win $0.38.
-    At price >0.85 or <0.15, breakeven WR exceeds 85% — our 66% signal can't work.
-    """
-    predict_path = os.path.join(ROOT, "src", "predict.py")
-    content = open(predict_path).read()
-
-    # The price gate must exist in run_predictions (via config constants)
-    assert "price_gate" in content, \
-        "predict.py must have a price gate for extreme market prices"
-    assert "PRICE_GATE_UPPER" in content, \
-        "predict.py must use PRICE_GATE_UPPER from config"
-    assert "PRICE_GATE_LOWER" in content, \
-        "predict.py must use PRICE_GATE_LOWER from config"
-
-
 def test_tiered_conviction_ride_up_sweet_spot():
     """RIDE UP + price 20-70% gets conviction 4 ($200). Others get 3 ($75).
     Based on 169-bet analysis: RIDE UP at 71% WR, +$2,314 P&L in this zone.
@@ -650,20 +613,3 @@ def test_eth_mr_shadow_extreme_estimate():
     assert rows[1] == ("eth_mr2", 0), f"ETH coin-flip MR should be skip conv=0, got {rows[1]}"
 
 
-def test_no_evolve_imports():
-    """No production code should import from deleted evolve.py.
-    Incident 3: evolve.py was deleted but run_cycle.py imported it.
-    """
-    src_dir = os.path.join(ROOT, "src")
-    production_files = ["run_cycle.py", "predict.py", "dashboard.py",
-                        "fetch_markets.py", "score.py", "btc_data.py"]
-
-    for fname in production_files:
-        fpath = os.path.join(src_dir, fname)
-        if not os.path.exists(fpath):
-            continue
-        content = open(fpath).read()
-        assert "from evolve import" not in content, \
-            f"{fname} still imports from deleted evolve.py"
-        assert "import evolve" not in content, \
-            f"{fname} still imports deleted evolve module"

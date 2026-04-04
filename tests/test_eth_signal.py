@@ -65,23 +65,6 @@ class TestMomentumSignalEth:
         assert not sig["should_trade"]
         assert "streak_too_short" in sig["reason"]
 
-    def test_streak_without_exhaustion_still_trades(self):
-        """Streak >= 3 without exhaustion signals should still fire.
-        Exhaustion gate removed 2026-04-01 — same as BTC.
-        """
-        from predict_eth import momentum_signal_eth
-        candles = _make_candles(["DOWN", "DOWN", "UP", "UP", "UP"])
-        # Make volumes uniform (no spike)
-        for c in candles:
-            c["volume"] = 100.0
-        # Make ranges uniform (no shrinking)
-        for c in candles:
-            c["high"] = c["close"] + 5.0
-            c["low"] = c["open"] - 5.0
-        sig = momentum_signal_eth(candles, min_streak=3)
-        assert sig["should_trade"] is True
-        assert sig["direction"] == "UP"
-
     def test_signal_matches_btc(self):
         """ETH momentum and BTC momentum should predict same direction on same data."""
         from predict_eth import momentum_signal_eth

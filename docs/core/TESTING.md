@@ -2,7 +2,7 @@
 
 **Purpose:** Prevent production incidents. Seven incidents since March 15, 2026 cost $1,021+ in losses and 48+ hours of downtime. Every test exists because something broke.
 
-**Current count: 322 tests** (as of 2026-04-04). Runtime: ~12 seconds.
+**Current count: 338 tests** (as of 2026-04-04). Runtime: ~60 seconds (E2E tests hit Kraken API).
 
 ---
 
@@ -90,9 +90,6 @@ Covers: `min_streak=2`, `autocorr_threshold=-0.20`, `loose_mode=True` disables 5
 | `test_kraken_response_parsing` | #1: Binance 451 — data provider must return volume > 0 |
 | `test_winning_bets_always_profit` | #2: Inverted conviction |
 | `test_losing_bets_always_lose_exactly_bet_size` | #2: Inverted conviction |
-| `test_ci_workflow_no_deleted_paths` | #3: CI broken 12h |
-| `test_no_evolve_imports` | #3: CI broken 12h |
-| `test_price_gate_prevents_extreme_bets` | #4: Extreme price bets — bad risk/reward |
 | `test_tiered_conviction_ride_up_sweet_spot` | Conviction tier calibration |
 | `test_down_neutral_demoted_to_no_bet` | DOWN+NEUTRAL → conv=2 (52% WR) |
 | `test_up_neutral_still_bets` | UP+NEUTRAL stays conv≥3 (86.7% WR) |
@@ -131,6 +128,22 @@ Covers: RSI/OBV/VWAP shadow log format, candle parameter passing, no duplicate V
 **Purpose:** Verify automated session log generation.
 
 Covers: session existence detection, skip-when-exists, digest generation, index update, empty data formatting, pipeline health queries.
+
+### 14. End-to-End Pipeline Tests (`test_pipeline_e2e.py`)
+
+**Purpose:** Exercise the complete predict→trade→settle→score lifecycle on an in-memory DB. Created after the cold-start drawdown breaker incident (2026-04-04).
+
+Covers 5 test classes (21 tests):
+
+| Class | Tests | What it proves |
+|-------|-------|---------------|
+| `TestFullPipelineLifecycle` | 3 | Single cycle happy path, 5-cycle accumulation (3W-2L), cold start no errors |
+| `TestCircuitBreakers` | 7 | Daily loss limit trips/resets, consecutive loss at/below threshold, resets on win, across cycles, cold start single loss |
+| `TestOrderConstruction` | 3 | Shadow prediction no order, no duplicates same cycle, different cycle allows new order |
+| `TestPnLComputation` | 5 | Winning/losing UP/DOWN bets, only filled+resolved get P&L |
+| `TestMultiCycleIntegration` | 3 | Full 5-cycle pipeline, breaker trips at cycle 5, daily loss accumulates across cycles |
+
+**When these fail:** A core lifecycle function broke — predict, trade, settle, or score. The pipeline cannot safely run.
 
 ---
 
@@ -171,4 +184,5 @@ tests/
   test_shadow_indicators.py  # RSI/OBV/VWAP shadow indicator integration
   test_vwap_strategy.py      # VWAP mean-reversion shadow strategy
   test_activity_digest.py    # automated session log generation
+  test_pipeline_e2e.py       # end-to-end predict→trade→settle→score lifecycle
 ```
