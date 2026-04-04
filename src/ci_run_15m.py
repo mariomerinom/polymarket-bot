@@ -2,12 +2,9 @@ from config import DEFAULT_CANDLE_LIMIT
 """
 ci_run_15m.py — One-shot cycle for 15-minute BTC markets.
 
-Fully isolated from 5-min pipeline:
-- Separate DB: data/predictions_15m.db
-- Separate dashboard: docs/15m.html
-- Same signal logic (momentum_signal, regime filter)
-
-If this crashes, the 5-min pipeline is unaffected.
+Uses 5m candles as atomic signal source (higher resolution streak
+detection), with 5m predictions as confirmation signal. Isolated DB
+and dashboard — if this crashes, the 5-min pipeline is unaffected.
 """
 
 import sqlite3
@@ -72,10 +69,10 @@ def main():
         _generate_dashboard()
         return
 
-    # 3. Predict using momentum rule with 15-min candles
+    # 3. Predict using momentum rule with 5m candles (atomic unit)
     cycle = get_next_cycle(db)
-    print(f"[15M 3/5] Predictions — momentum rule 15m (cycle {cycle})...")
-    btc_data = fetch_btc_candles(interval="15m", limit=DEFAULT_CANDLE_LIMIT)
+    print(f"[15M 3/5] Predictions — momentum rule 5m→15m (cycle {cycle})...")
+    btc_data = fetch_btc_candles(limit=DEFAULT_CANDLE_LIMIT)  # 5m candles — atomic unit
     if btc_data:
         print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}% | Trend: {btc_data['trend']}")
     else:
@@ -84,12 +81,10 @@ def main():
     if has_unpredicted_market(db):
         db.close()
         try:
-            # 15m thresholds: streak ≥ 2 (30 min ≈ 5m streak ≥ 3), relaxed regime gate
-            # loose_mode=True: disable 5m-derived gates (dead hours, cooldown,
-            # DOWN+NEUTRAL filter) to gather data for 15m-specific optimization
+            # Uses 5m candles with standard thresholds (min_streak=3, autocorr=-0.15)
+            # loose_mode=True: disable dead hours, enable 5m sibling confirmation
             run_predictions(cycle=cycle, market_limit=1, btc_data=btc_data,
                             db_path=str(DB_PATH_15M),
-                            min_streak=2, autocorr_threshold=-0.20,
                             loose_mode=True)
         except Exception as e:
             print(f"  Prediction error: {e}")
@@ -114,7 +109,7 @@ def main():
     # Shadow indicators — log RSI/OBV/VWAP for BTC 15m predictions
     try:
         from shadow_indicators import shadow_log_indicators
-        btc_15m_shadow = fetch_btc_candles(limit=SHADOW_CANDLE_LIMIT, interval="15m")
+        btc_15m_shadow = fetch_btc_candles(limit=SHADOW_CANDLE_LIMIT)  # 5m candles
         if btc_15m_shadow and btc_15m_shadow.get("candles"):
             shadow = shadow_log_indicators(db, cycle, candles=btc_15m_shadow["candles"])
             if shadow:

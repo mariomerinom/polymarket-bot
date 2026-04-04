@@ -133,15 +133,17 @@ def test_15m_write_does_not_touch_5m_db():
         assert count == 0, "15m write contaminated 5m database"
 
 
-def test_15m_uses_relaxed_thresholds():
-    """ci_run_15m passes min_streak=2 and autocorr_threshold=-0.20."""
-    import inspect
-    # Read ci_run_15m source to verify it passes the right thresholds
+def test_15m_uses_5m_candles_as_atomic_unit():
+    """ci_run_15m uses 5m candles and inherits standard thresholds from config."""
     ci_run_15m_path = os.path.join(os.path.dirname(__file__), "..", "src", "ci_run_15m.py")
     with open(ci_run_15m_path) as f:
         source = f.read()
-    assert "min_streak=2" in source, "15m must use min_streak=2"
-    assert "autocorr_threshold=-0.20" in source, "15m must use autocorr_threshold=-0.20"
+    # Should NOT pass min_streak or autocorr_threshold to run_predictions — inherits 5m defaults
+    # Filter out comments (lines starting with #) to avoid false positives
+    code_lines = [l for l in source.splitlines() if not l.strip().startswith("#")]
+    code_only = "\n".join(code_lines)
+    assert "min_streak=" not in code_only, "15m should inherit min_streak from config, not override"
+    assert "autocorr_threshold=" not in code_only, "15m should inherit autocorr_threshold from config, not override"
 
 
 def test_run_predictions_accepts_threshold_params():
@@ -179,6 +181,85 @@ def test_store_prediction_accepts_loose_mode():
     import inspect
     sig = inspect.signature(store_prediction)
     assert "loose_mode" in sig.parameters
+
+
+def test_sibling_5m_boost_increases_conviction():
+    """5m confirmation (2+ bets same direction) boosts 15m conviction by 1."""
+    import sqlite3
+    import json
+    from predict import store_prediction
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE predictions (
+        id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT,
+        estimate REAL, edge REAL, confidence TEXT, reasoning TEXT,
+        predicted_at TEXT, cycle INTEGER, conviction_score INTEGER, regime TEXT
+    )""")
+    db.execute("""CREATE TABLE markets (
+        id TEXT PRIMARY KEY, question TEXT, category TEXT, end_date TEXT,
+        volume REAL, price_yes REAL, price_no REAL, fetched_at TEXT,
+        resolved INTEGER DEFAULT 0, outcome INTEGER DEFAULT NULL
+    )""")
+
+    # Use DOWN direction to avoid UP sweet spot boost (mkt_price 0.20-0.70 → +1)
+    signal = {"estimate": 0.42, "should_trade": True, "confidence": "medium",
+              "direction": "DOWN", "streak": -3, "reason": "ride_streak_DOWN"}
+    regime = {"label": "MEDIUM_VOL / TRENDING", "is_mean_reverting": False,
+              "autocorrelation": 0.20, "volatility": 0.08}
+
+    # Without sibling context → conv=3 (base)
+    store_prediction(db, "m1", signal, regime, cycle=1, mkt_price=0.50)
+    row = db.execute("SELECT conviction_score, reasoning FROM predictions WHERE market_id='m1'").fetchone()
+    assert row[0] == 3, f"Base conviction should be 3, got {row[0]}"
+
+    # With sibling context confirming same direction → conv=4 (boosted)
+    sibling = {"bets": 3, "direction": "DOWN", "up": 0, "down": 3,
+               "streak_direction": "DOWN", "streak_length": 3}
+    store_prediction(db, "m2", signal, regime, cycle=1, mkt_price=0.50, sibling_context=sibling)
+    row2 = db.execute("SELECT conviction_score, reasoning FROM predictions WHERE market_id='m2'").fetchone()
+    assert row2[0] == 4, f"Boosted conviction should be 4, got {row2[0]}"
+    reasoning = json.loads(row2[1])
+    assert reasoning.get("sibling_5m_boost") is True
+
+    # With sibling context in opposite direction → no boost, stays conv=3
+    sibling_opp = {"bets": 3, "direction": "UP", "up": 3, "down": 0,
+                   "streak_direction": "UP", "streak_length": 3}
+    store_prediction(db, "m3", signal, regime, cycle=1, mkt_price=0.50, sibling_context=sibling_opp)
+    row3 = db.execute("SELECT conviction_score FROM predictions WHERE market_id='m3'").fetchone()
+    assert row3[0] == 3, f"Opposite sibling should not boost, got {row3[0]}"
+    db.close()
+
+
+def test_sibling_boost_does_not_affect_5m():
+    """5m pipeline (loose_mode=False) never gets sibling boost — sibling_context is None."""
+    from predict import store_prediction
+    import sqlite3
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE predictions (
+        id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT,
+        estimate REAL, edge REAL, confidence TEXT, reasoning TEXT,
+        predicted_at TEXT, cycle INTEGER, conviction_score INTEGER, regime TEXT
+    )""")
+
+    # Use DOWN direction to avoid UP sweet spot boost (mkt_price 0.20-0.70 → +1)
+    signal = {"estimate": 0.42, "should_trade": True, "confidence": "medium",
+              "direction": "DOWN", "streak": -3, "reason": "ride_streak_DOWN"}
+    regime = {"label": "MEDIUM_VOL / TRENDING", "is_mean_reverting": False,
+              "autocorrelation": 0.20, "volatility": 0.08}
+
+    # 5m pipeline: no sibling_context passed
+    store_prediction(db, "m1", signal, regime, cycle=1, mkt_price=0.50, loose_mode=False)
+    row = db.execute("SELECT conviction_score FROM predictions WHERE market_id='m1'").fetchone()
+    assert row[0] == 3, f"5m base conviction should be 3, got {row[0]}"
+    db.close()
+
+
+def test_15m_config_matches_5m():
+    """btc_15m shadow config should match btc_5m (uses 5m candles now)."""
+    from config import SHADOW_CONFIGS
+    assert SHADOW_CONFIGS["btc_15m"]["min_streak"] == SHADOW_CONFIGS["btc_5m"]["min_streak"]
+    assert SHADOW_CONFIGS["btc_15m"]["baseline_streak"] == SHADOW_CONFIGS["btc_5m"]["baseline_streak"]
 
 
 def test_5m_workflow_does_not_commit_15m_files():

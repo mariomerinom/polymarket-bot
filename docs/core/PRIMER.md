@@ -11,7 +11,7 @@ A bot that bets on 5-minute "Bitcoin/Ethereum Up or Down" markets on Polymarket,
 | Pipeline | Schedule | Signal | Status | Database |
 |----------|----------|--------|--------|----------|
 | **BTC 5m** | Every 5 min | Momentum | **LIVE** ($25/bet) | `predictions.db` |
-| **BTC 15m** | Every 15 min | Momentum (relaxed) | Paper | `predictions_15m.db` |
+| **BTC 15m** | Every 15 min | Momentum (5m signal) | Paper | `predictions_15m.db` |
 | **ETH 5m** | Every 5 min | Momentum | Paper | `predictions_eth.db` |
 | **Bybit BTCUSDT** | Every 5 min | Momentum | Paper (0.005 BTC) | `predictions_bybit.db` |
 | **Kalshi BTC** | Every 15 min | Momentum | Phase 0 (mock) | `predictions_kalshi.db` |
@@ -35,13 +35,13 @@ This is the complete lifecycle. Every step is a real function call, not a concep
 
 ### Stage 1: Data Fetch
 
-Every cycle fetches 20 candles (5-min or 15-min) from exchange APIs.
+Every cycle fetches 20 candles from exchange APIs. All pipelines use 5-minute candles — the atomic unit for streak detection.
 
-| Asset | Primary Source | Secondary Source | Consensus |
-|-------|---------------|-----------------|-----------|
-| BTC | Kraken | Coinbase | Yes — both must see streak for conv boost |
-| ETH | Coinbase | — | No |
-| Bybit | Bybit API | — | No |
+| Asset | Primary Source | Secondary Source | Consensus                                 |
+| ----- | -------------- | ---------------- | ----------------------------------------- |
+| BTC   | Kraken         | Coinbase         | Yes — both must see streak for conv boost |
+| ETH   | Coinbase       | —                | No                                        |
+| Bybit | Bybit API      | —                | No                                        |
 
 ### Stage 2: Regime Classification
 
@@ -57,17 +57,17 @@ Two dimensions computed from candle returns:
 
 **Trend** (autocorrelation of returns):
 
-| Label | Threshold (5m) | Threshold (15m) | Effect |
-|-------|---------------|-----------------|--------|
-| TRENDING | > 0.15 | > 0.15 | Momentum works — trade |
-| NEUTRAL | -0.15 to 0.15 | -0.20 to 0.15 | Trade with caution |
-| MEAN_REVERTING | < -0.15 | < -0.20 | Momentum fails — **skip** |
+| Label | Threshold | Effect |
+|-------|-----------|--------|
+| TRENDING | > 0.15 | Momentum works — trade |
+| NEUTRAL | -0.15 to 0.15 | Trade with caution |
+| MEAN_REVERTING | < -0.15 | Momentum fails — **skip** |
 
-Mean-reverting markets lost $1,533 in backtesting. The regime gate is the single most important filter.
+Mean-reverting markets lost $1,533 paper money in backtesting. The regime gate is the single most important filter.
 
 ### Stage 3: Streak Detection
 
-Count consecutive candles closing in the same direction. If the streak is >= 3 candles (2 for 15m), the signal fires. **We ride the streak** — UP streak means predict UP. DOWN streak means predict DOWN.
+Count consecutive 5-minute candles closing in the same direction. If the streak is >= 3 candles, the signal fires. **We ride the streak** — UP streak means predict UP. DOWN streak means predict DOWN. The 5m candle is the atomic unit — all pipelines (including 15m and Bybit) use 5m candle data for streak detection.
 
 The estimate is computed dynamically, not hardcoded:
 ```
@@ -98,7 +98,11 @@ Conviction determines whether a prediction becomes a real bet.
 | **conv=2** | $0 (shadow) | DOWN+NEUTRAL regime, extreme estimate override, or shadow-only |
 | **conv=3** | $25 | Base tradeable — medium confidence in valid regime |
 | **conv=4** | $25 | UP direction + market price in sweet spot (20%–70%) |
-| **conv=5** | $25 | Conv 4 + cross-exchange consensus (Kraken and Coinbase agree) |
+| **conv=5** | $25 | Conv 4 + cross-exchange consensus or 5m confirmation boost |
+
+Two independent boosts can increase conviction by +1 each (capped at 5):
+- **Cross-exchange consensus:** Kraken and Coinbase both detect the same streak (score=2)
+- **5m confirmation boost:** The 5m pipeline has 2+ recent predictions in the same direction (15m pipeline only)
 
 All tiers bet the same $25 in production (Phase 1 flat grind). Tiers exist to track whether higher conviction predicts better outcomes.
 
@@ -204,10 +208,10 @@ Every dashboard shows a circuit breaker panel with live status. Here's the compl
 
 | Gate | Config Key | Value | Scope |
 |------|-----------|-------|-------|
-| Min streak | `SHADOW_CONFIGS[pipeline].min_streak` | 3 (5m) / 2 (15m) | Per-signal |
+| Min streak | `SHADOW_CONFIGS[pipeline].min_streak` | 3 (all pipelines) | Per-signal |
 | Dead hour | `compute_dead_hours()` | Data-driven, fallback {3,16,21} UTC | Per-market |
 | Price gate | `PRICE_GATE_UPPER/LOWER` | 85% / 15% | Per-market |
-| MR regime | `AUTOCORR_MEAN_REVERTING_*` | -0.15 (5m) / -0.20 (15m) | Per-cycle |
+| MR regime | `AUTOCORR_MEAN_REVERTING_5M` | -0.15 | Per-cycle |
 | Extreme override | `EXTREME_ESTIMATE_UPPER/LOWER` | 0.65 / 0.35 | Per-market |
 | DOWN+NEUTRAL | Hardcoded in `store_prediction` | Demotes to conv=2 | Per-prediction |
 
@@ -242,7 +246,7 @@ All config values live in `src/config.py` and are env-overridable where noted. T
 | File | Role |
 |------|------|
 | `ci_run.py` | BTC 5m orchestrator. Fetch → predict → trade → score → dashboard. |
-| `ci_run_15m.py` | BTC 15m orchestrator. Same flow, relaxed thresholds. |
+| `ci_run_15m.py` | BTC 15m orchestrator. Uses 5m candles + 5m confirmation boost. |
 | `ci_run_eth.py` | ETH 5m orchestrator. Same flow, ETH-specific vol thresholds. |
 | `ci_run_bybit.py` | Bybit orchestrator. Perpetual futures lifecycle. |
 | `ci_run_kalshi.py` | Kalshi orchestrator. Phase 0, mock mode. |
@@ -305,7 +309,7 @@ Each workflow has a `*/30 * * * *` cron fallback. The primary mechanism is `repo
 | `test_pnl.py` | P&L math | Win/loss calculation, conviction tiers |
 | `test_trade.py` | Execution | Sizing, circuit breakers, kill switch, CLOB |
 | `test_btc_data.py` | Candles | Parsing, summary stats, null handling |
-| `test_15m.py` | 15m pipeline | Relaxed params, loose mode |
+| `test_15m.py` | 15m pipeline | 5m atomic unit, sibling boost, loose mode |
 | `test_regression.py` | Incidents | One test per past production incident |
 | `test_shadow_conviction.py` | Shadow scorer | Tier mapping, production isolation |
 | `test_shadow_indicators.py` | Indicators | RSI/OBV/VWAP logging |

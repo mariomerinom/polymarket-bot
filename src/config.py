@@ -136,9 +136,9 @@ SHADOW_CONFIGS = {
         "conv_thresholds": [0.02, 0.05, 0.08, 0.12],  # edge → tier 2/3/4/5
     },
     "btc_15m": {
-        "min_streak": 2,            # 15m × 2 = 30min ≈ 5m × 6
-        "baseline_streak": 5,
-        "magnitude_multiplier": 2.5,
+        "min_streak": 3,            # Now using 5m candles — same as btc_5m
+        "baseline_streak": 8,       # Match btc_5m (was 5)
+        "magnitude_multiplier": 2.0, # Match btc_5m (was 2.5)
         "max_edge": 0.14,
         "high_confidence_threshold": 0.80,
         "conv_thresholds": [0.02, 0.05, 0.08, 0.12],

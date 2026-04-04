@@ -238,6 +238,12 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         consensus_score = consensus.get("score", 0) if consensus else 0
         if consensus_score == 2 and conviction >= 3:
             conviction = min(conviction + 1, MAX_CONVICTION)
+
+        # 5m confirmation boost: if 5m pipeline has 2+ recent bets in same direction
+        if sibling_context and sibling_context.get("bets", 0) >= 2:
+            sibling_dir = sibling_context.get("direction")
+            if sibling_dir == direction and conviction >= 3:
+                conviction = min(conviction + 1, MAX_CONVICTION)
     elif signal["should_trade"]:
         conviction = 2
     else:
@@ -250,7 +256,13 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         "conviction_tier": conviction,
         "mkt_price": mkt_price,
     }
-    if sibling_context: reasoning_data["sibling_5m"] = sibling_context
+    if sibling_context:
+        reasoning_data["sibling_5m"] = sibling_context
+        direction = signal.get("direction", "")
+        reasoning_data["sibling_5m_boost"] = (
+            sibling_context.get("bets", 0) >= 2
+            and sibling_context.get("direction") == direction
+        )
     if consensus: reasoning_data["consensus"] = consensus
     if liquidity: reasoning_data["liquidity"] = liquidity
     reasoning = json.dumps(reasoning_data)
