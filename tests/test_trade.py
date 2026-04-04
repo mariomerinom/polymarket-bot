@@ -247,36 +247,42 @@ class TestGetBetSize:
         assert get_bet_size(row) == 25
 
     def test_eth_conv4(self):
+        """ETH is flat $25 via pipelines.json (same as BTC)."""
         from trade import get_bet_size
         row = {"agent": "momentum_eth", "conviction_score": 4}
-        assert get_bet_size(row) == 50
+        assert get_bet_size(row) == 25
 
     def test_eth_conv5(self):
+        """ETH is flat $25 via pipelines.json (same as BTC)."""
         from trade import get_bet_size
         row = {"agent": "momentum_eth", "conviction_score": 5}
-        assert get_bet_size(row) == 75
+        assert get_bet_size(row) == 25
 
     def test_eth_capped_by_liquidity(self):
+        """ETH flat $25 from pipelines.json override — liquidity cap doesn't apply."""
         from trade import get_bet_size
         row = {"agent": "momentum_eth", "conviction_score": 5}
-        liq = {"max_bet_2pct": 60}  # 50% of 60 = 30, less than base 75
-        assert get_bet_size(row, liquidity=liq) == 30
+        liq = {"max_bet_2pct": 60}
+        assert get_bet_size(row, liquidity=liq) == 25
 
     def test_eth_no_liquidity_returns_base(self):
+        """ETH flat $25 from pipelines.json override."""
         from trade import get_bet_size
         row = {"agent": "momentum_eth", "conviction_score": 4}
-        assert get_bet_size(row, liquidity=None) == 50
+        assert get_bet_size(row, liquidity=None) == 25
 
     def test_eth_liquidity_error_returns_base(self):
+        """ETH flat $25 from pipelines.json override."""
         from trade import get_bet_size
         row = {"agent": "momentum_eth", "conviction_score": 4}
         liq = {"error": "no data"}
-        assert get_bet_size(row, liquidity=liq) == 50
+        assert get_bet_size(row, liquidity=liq) == 25
 
-    def test_eth_conv0_returns_zero(self):
+    def test_eth_conv0_returns_flat(self):
+        """ETH flat $25 from pipelines.json override — conviction doesn't matter."""
         from trade import get_bet_size
         row = {"agent": "momentum_eth", "conviction_score": 0}
-        assert get_bet_size(row) == 0
+        assert get_bet_size(row) == 25
 
 
 class TestKillSwitch:
