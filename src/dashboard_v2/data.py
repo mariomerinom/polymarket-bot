@@ -180,8 +180,40 @@ def get_trade_execution(db):
 # Recent bets (last N orders with resolution status)
 # ---------------------------------------------------------------------------
 
+def _fetch_onchain_fills():
+    """Fetch on-chain activity and build a lookup by market title.
+
+    Returns dict: {market_title: {"cost": float, "payout": float, "filled": bool}}
+    """
+    try:
+        from polymarket_pnl import fetch_activity
+        activities = fetch_activity()
+        if not activities:
+            return {}
+        from collections import defaultdict
+        markets = defaultdict(lambda: {"cost": 0, "payout": 0, "filled": False})
+        for a in activities:
+            title = a.get("title", "")
+            if not title:
+                continue
+            if a.get("type") == "TRADE":
+                markets[title]["cost"] += a.get("usdcSize", 0)
+                markets[title]["filled"] = True
+            elif a.get("type") == "REDEEM":
+                markets[title]["payout"] += a.get("usdcSize", 0)
+        return dict(markets)
+    except Exception:
+        return {}
+
+
 def get_recent_bets(db, limit=10):
-    """Last N orders with market resolution data. Works for both paper and live."""
+    """Last N orders with market resolution data. Works for both paper and live.
+
+    Cross-references Polymarket Data API to detect orders that filled
+    on-chain but are stuck as 'submitted' in the orders table.
+    """
+    import re
+
     try:
         tbl = db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='orders'"
@@ -200,31 +232,43 @@ def get_recent_bets(db, limit=10):
             LIMIT ?
         """, (limit,)).fetchall()
 
+        # Fetch on-chain fills for cross-referencing
+        onchain = _fetch_onchain_fills()
+
         bets = []
         for r in rows:
             question = r["question"] or ""
-            # Extract short time label from question like "April 4, 4:40PM-4:45PM ET"
-            import re
             time_match = re.search(r'(\w+ \d+, \d+:\d+(?:AM|PM)-\d+:\d+(?:AM|PM) ET)', question)
             time_label = time_match.group(1) if time_match else (r["placed_at"] or "")[:16].replace("T", " ")
 
-            # Determine result
             status = r["status"]
             outcome = r["outcome"]
             resolved = r["resolved"]
             direction = r["direction"]
 
+            # Check if this order actually filled on-chain despite orders table status
+            chain_data = onchain.get(question)
+            chain_filled = chain_data["filled"] if chain_data else False
+
             if status == "failed":
                 result = "FAILED"
                 result_detail = (r["reason"] or "")[:40] if r["reason"] else "API error"
             elif status in ("submitted", "pending"):
-                if resolved and outcome is not None:
-                    # Order was submitted but never settled — likely expired
+                if chain_filled and resolved and outcome is not None:
+                    # Order filled on-chain! Compute real P&L from chain data
+                    cost = chain_data["cost"]
+                    payout = chain_data["payout"]
+                    profit = payout - cost
+                    won = payout > 0
+                    result = "WIN" if won else "LOSS"
+                    result_detail = f"${profit:+.2f} (on-chain)"
+                elif resolved and outcome is not None:
                     would_win = (direction == "UP" and outcome == 1) or (direction == "DOWN" and outcome == 0)
                     result = "EXPIRED (would have won)" if would_win else "EXPIRED (would have lost)"
+                    result_detail = ""
                 else:
                     result = "PENDING"
-                result_detail = ""
+                    result_detail = ""
             elif status == "settled":
                 if r["pnl"] is not None and r["pnl"] > 0:
                     result = "WIN"
