@@ -691,8 +691,9 @@ def get_breaker_status(db, asset="BTC", subtitle=""):
             rows = db.execute(f"""
                 SELECT pnl FROM {table_name}
                 WHERE status = ? AND pnl IS NOT NULL
+                  AND {settled_col} LIKE ?
                 ORDER BY {settled_col} DESC LIMIT 50
-            """, (status_settled,)).fetchall()
+            """, (status_settled, f"{today}%")).fetchall()
             for r in rows:
                 if r[0] < 0:
                     consecutive_losses += 1
