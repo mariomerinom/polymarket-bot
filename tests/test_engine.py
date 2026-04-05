@@ -130,7 +130,19 @@ class TestBotsyEngineInit:
         assert "eth_5m" in all_pipelines
         assert "bybit" in all_pipelines
         assert "kalshi" in all_pipelines
-        assert "btc_15m_check" in all_pipelines
+        assert "btc_15m" in all_pipelines
+
+    def test_engine_has_candle_buffer(self):
+        from botsy_engine import BotsyEngine
+        engine = BotsyEngine()
+        assert hasattr(engine, "candle_buffer")
+        assert hasattr(engine, "ta_engine")
+
+    def test_native_15m_routing(self):
+        from botsy_engine import ROUTING
+        key = ("bybit_spot", "BTCUSDT", "15")
+        assert key in ROUTING
+        assert "btc_15m" in ROUTING[key]
 
     def test_dedup_prevents_double_dispatch(self):
         """Verify dedup key prevents same candle from being dispatched twice."""

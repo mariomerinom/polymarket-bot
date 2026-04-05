@@ -6,16 +6,22 @@ Replaces vps-loop.sh (bash while-loop with sleep 300) with an event-driven
 process that reacts to exchange candle-close events in real-time.
 
 Three WS feeds:
-  1. Polygon.io — BTC/ETH spot 5m candle triggers (sub-20ms latency)
-  2. Bybit v5   — BTC linear 5m kline (perps pipeline)
-  3. Polymarket  — Live CLOB orderbook (kills stale snapshot problem)
+  1. Bybit v5 spot  — BTC/ETH 1m/5m/15m kline triggers (241ms avg latency)
+  2. Bybit v5 linear — BTC 1m/5m kline (perps pipeline)
+  3. Polymarket       — Live CLOB orderbook (kills stale snapshot problem)
+
+Candle Buffer + TA Engine:
+  All kline events (including 1m) feed a rolling ring buffer (100 candles
+  per symbol/timeframe). On 5m/15m close, the TA Engine computes indicators
+  (RSI, BB, VWAP, OBV, Stoch, RVOL, Z-Score, EMA) from the buffer and
+  passes them to the pipeline.
 
 Pipelines (existing code, called as functions via asyncio.to_thread):
-  - BTC 5m:  ci_run.main()       — triggered by Polygon BTC candle close
-  - BTC 15m: ci_run_15m.main()   — triggered every 3rd BTC candle close
-  - ETH 5m:  ci_run_eth.main()   — triggered by Polygon ETH candle close
-  - Bybit:   ci_run_bybit.main() — triggered by Bybit linear candle close
-  - Kalshi:  ci_run_kalshi.main() — triggered by Polygon BTC candle close
+  - BTC 5m:  ci_run.main()       — triggered by Bybit spot BTC 5m close
+  - BTC 15m: ci_run_15m.main()   — triggered by Bybit spot BTC 15m close
+  - ETH 5m:  ci_run_eth.main()   — triggered by Bybit spot ETH 5m close
+  - Bybit:   ci_run_bybit.main() — triggered by Bybit linear BTC 5m close
+  - Kalshi:  ci_run_kalshi.main() — triggered by Bybit spot BTC 5m close
 
 Usage:
     python src/botsy_engine.py
@@ -44,10 +50,12 @@ ORDERBOOK_CACHE = DATA_DIR / "live_orderbook.json"
 
 # Routing: (source, symbol, interval) -> list of pipeline names
 # Bybit WS v5 handles all candle triggers (241ms avg latency, validated 2026-04-05)
+# 1m events feed the buffer + TA engine but do NOT trigger pipelines.
 ROUTING = {
-    ("bybit_spot", "BTCUSDT", "5"):   ["btc_5m", "btc_15m_check", "kalshi"],
-    ("bybit_spot", "ETHUSDT", "5"):   ["eth_5m"],
-    ("bybit_linear", "BTCUSDT", "5"): ["bybit"],
+    ("bybit_spot", "BTCUSDT", "5"):    ["btc_5m", "kalshi"],
+    ("bybit_spot", "BTCUSDT", "15"):   ["btc_15m"],       # native 15m, replaces counter
+    ("bybit_spot", "ETHUSDT", "5"):    ["eth_5m"],
+    ("bybit_linear", "BTCUSDT", "5"):  ["bybit"],
 }
 
 # Fallback timer: force-run if no WS event for this many seconds
@@ -61,25 +69,22 @@ GIT_COMMIT_INTERVAL_S = 300  # 5 minutes
 
 
 def log(msg: str):
-    """Log with UTC timestamp to both stdout and log file."""
+    """Log with UTC timestamp to stdout. systemd redirects to loop.log."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    line = f"[{ts}] {msg}"
-    print(line, flush=True)
-    try:
-        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(LOG_FILE, "a") as f:
-            f.write(line + "\n")
-    except OSError:
-        pass
+    print(f"[{ts}] {msg}", flush=True)
 
 
 class BotsyEngine:
     def __init__(self):
         self.cycle = 0
         self.last_report_date = ""
-        self.fifteenth_min_counter = 0
         self.last_event_time = time.time()
         self._dispatched: set = set()  # dedup: (source, symbol, candle_ts)
+
+        # Candle buffer + TA engine (Stage 1-2 of Phase 3)
+        from candle_buffer import CandleBuffer
+        self.candle_buffer = CandleBuffer(maxlen=100)
+        self.ta_engine = None  # initialized lazily after buffer seed
 
         # Metrics state
         self.metrics = {
@@ -117,6 +122,18 @@ class BotsyEngine:
         # Ensure data directory exists
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+        # Seed candle buffer from REST before WS connects
+        await asyncio.to_thread(self._seed_candle_buffer)
+
+        # Initialize TA engine after buffer has data (lazy import for pandas-ta)
+        try:
+            from ta_engine import TAEngine
+            self.ta_engine = TAEngine(self.candle_buffer)
+            log("[TA] Engine initialized with pandas-ta")
+        except ImportError as e:
+            log(f"[TA] pandas-ta not available, running without indicators: {e}")
+            self.ta_engine = None
+
         tasks = [
             self.bybit_spot_feed(),
             self.bybit_linear_feed(),
@@ -129,13 +146,34 @@ class BotsyEngine:
         ]
         await asyncio.gather(*tasks)
 
+    def _seed_candle_buffer(self):
+        """Backfill candle buffer from Bybit REST on startup."""
+        seeds = [
+            ("BTCUSDT", "1", "spot"),
+            ("BTCUSDT", "5", "spot"),
+            ("BTCUSDT", "15", "spot"),
+            ("ETHUSDT", "1", "spot"),
+            ("ETHUSDT", "5", "spot"),
+            ("BTCUSDT", "1", "linear"),
+            ("BTCUSDT", "5", "linear"),
+        ]
+        for symbol, tf, category in seeds:
+            try:
+                count = self.candle_buffer.seed_from_rest(
+                    symbol=symbol, timeframe=tf, category=category
+                )
+                log(f"[BUFFER] Seeded {symbol}/{tf}m ({category}): {count} candles")
+            except Exception as e:
+                log(f"[BUFFER] Seed failed {symbol}/{tf}m ({category}): {e}")
+
     # ── Bybit Spot WS Feed (BTC + ETH candle triggers) ─────────────────
 
     async def bybit_spot_feed(self):
-        """Bybit WS v5 spot: BTC/ETH 5m kline triggers.
+        """Bybit WS v5 spot: BTC/ETH 1m/5m/15m kline.
 
+        1m events feed the buffer + TA engine only (no pipeline dispatch).
+        5m/15m closes trigger pipeline dispatch with indicators.
         Validated 2026-04-05: 241ms avg latency on AMS3 VPS.
-        Replaces Polygon.io ($200/mo saved).
         """
         import websockets
 
@@ -146,7 +184,10 @@ class BotsyEngine:
                 async with websockets.connect(uri, ping_interval=20) as ws:
                     await ws.send(json.dumps({
                         "op": "subscribe",
-                        "args": ["kline.5.BTCUSDT", "kline.5.ETHUSDT"],
+                        "args": [
+                            "kline.1.BTCUSDT", "kline.5.BTCUSDT", "kline.15.BTCUSDT",
+                            "kline.1.ETHUSDT", "kline.5.ETHUSDT",
+                        ],
                     }))
                     resp = await ws.recv()
                     log(f"[WS] Bybit spot subscribed: {resp[:200]}")
@@ -157,18 +198,36 @@ class BotsyEngine:
                         try:
                             data = json.loads(msg)
                             topic = data.get("topic", "")
-                            if topic.startswith("kline.5."):
-                                kline = data["data"][0]
-                                if kline.get("confirm"):
-                                    symbol = topic.replace("kline.5.", "")
-                                    candle_ts = int(kline["end"])
-                                    latency = int(time.time() * 1000) - candle_ts
-                                    log(f"[ENGINE] Bybit spot {symbol} 5m close | "
+                            if not topic.startswith("kline."):
+                                continue
+
+                            # Parse topic: "kline.{interval}.{symbol}"
+                            parts = topic.split(".")
+                            if len(parts) != 3:
+                                continue
+                            interval = parts[1]
+                            symbol = parts[2]
+                            kline = data["data"][0]
+
+                            # Feed ALL events to candle buffer
+                            candle = self.candle_buffer.on_kline_event(
+                                symbol, interval, kline
+                            )
+
+                            # Only dispatch on confirmed candles
+                            if candle is not None:
+                                candle_ts = int(kline["end"])
+                                candle_ts = int(kline["end"])
+                                latency = int(time.time() * 1000) - candle_ts
+                                self.metrics["bybit_spot"]["last_event"] = \
+                                    datetime.now(timezone.utc).isoformat()
+
+                                # 1m events feed buffer only, no dispatch or log
+                                if interval != "1":
+                                    log(f"[ENGINE] Bybit spot {symbol} {interval}m close | "
                                         f"latency={latency}ms")
-                                    self.metrics["bybit_spot"]["last_event"] = \
-                                        datetime.now(timezone.utc).isoformat()
                                     await self.dispatch(
-                                        "bybit_spot", symbol, "5", candle_ts
+                                        "bybit_spot", symbol, interval, candle_ts
                                     )
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
@@ -182,7 +241,7 @@ class BotsyEngine:
     # ── Bybit Linear WS Feed (perps pipeline) ─────────────────────────
 
     async def bybit_linear_feed(self):
-        """Bybit WS v5 linear: BTCUSDT 5m kline for perps pipeline."""
+        """Bybit WS v5 linear: BTCUSDT 1m/5m kline for perps pipeline."""
         import websockets
 
         uri = "wss://stream.bybit.com/v5/public/linear"
@@ -192,7 +251,7 @@ class BotsyEngine:
                 async with websockets.connect(uri, ping_interval=20) as ws:
                     await ws.send(json.dumps({
                         "op": "subscribe",
-                        "args": ["kline.5.BTCUSDT"],
+                        "args": ["kline.1.BTCUSDT", "kline.5.BTCUSDT"],
                     }))
                     resp = await ws.recv()
                     log(f"[WS] Bybit linear subscribed: {resp[:200]}")
@@ -203,18 +262,32 @@ class BotsyEngine:
                         try:
                             data = json.loads(msg)
                             topic = data.get("topic", "")
-                            if topic == "kline.5.BTCUSDT":
-                                kline = data["data"][0]
-                                if kline.get("confirm"):
-                                    candle_ts = int(kline["end"])
-                                    latency = int(time.time() * 1000) - candle_ts
-                                    log(f"[ENGINE] Bybit linear BTCUSDT 5m close | "
-                                        f"latency={latency}ms")
-                                    self.metrics["bybit_linear"]["last_event"] = \
-                                        datetime.now(timezone.utc).isoformat()
-                                    await self.dispatch(
-                                        "bybit_linear", "BTCUSDT", "5", candle_ts
-                                    )
+                            if not topic.startswith("kline."):
+                                continue
+
+                            parts = topic.split(".")
+                            if len(parts) != 3:
+                                continue
+                            interval = parts[1]
+                            symbol = parts[2]
+                            kline = data["data"][0]
+
+                            # Feed to buffer (linear category)
+                            candle = self.candle_buffer.on_kline_event(
+                                f"{symbol}_linear", interval, kline
+                            )
+
+                            # Only dispatch 5m confirms
+                            if candle is not None and interval == "5":
+                                candle_ts = int(kline["end"])
+                                latency = int(time.time() * 1000) - candle_ts
+                                log(f"[ENGINE] Bybit linear {symbol} {interval}m close | "
+                                    f"latency={latency}ms")
+                                self.metrics["bybit_linear"]["last_event"] = \
+                                    datetime.now(timezone.utc).isoformat()
+                                await self.dispatch(
+                                    "bybit_linear", symbol, interval, candle_ts
+                                )
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
 
@@ -370,15 +443,31 @@ class BotsyEngine:
             log(f"[ENGINE] No routing for {key}")
             return
 
+        # Compute TA indicators from buffer
+        indicators = None
+        try:
+            if self.ta_engine is None:
+                raise RuntimeError("TA engine not initialized")
+            indicators = self.ta_engine.compute(symbol, interval)
+            if indicators:
+                log(f"[TA] {symbol}/{interval}m: RSI={indicators.get('rsi_14', '?'):.1f} "
+                    f"Z={indicators.get('z_score', '?'):.2f} "
+                    f"RVOL={indicators.get('rvol', '?'):.2f} "
+                    f"EMA9/21={'↑' if (indicators.get('ema_9') or 0) > (indicators.get('ema_21') or 0) else '↓'}")
+            else:
+                buf_depth = self.candle_buffer.depth(symbol, interval)
+                log(f"[TA] {symbol}/{interval}m: insufficient data ({buf_depth} candles)")
+        except Exception as e:
+            log(f"[TA] {symbol}/{interval}m computation failed: {e}")
+
         dispatch_start = time.time()
-        pipeline_names = [p for p in pipelines if p != "btc_15m_check"]
         log(f"[ENGINE] {source} {symbol} {interval}m close | "
-            f"dispatching: {', '.join(pipeline_names)}")
+            f"dispatching: {', '.join(pipelines)}")
 
         for pipeline in pipelines:
             self.cycle += 1
             self.metrics["cycles"] = self.cycle
-            await self.run_pipeline(pipeline)
+            await self.run_pipeline(pipeline, indicators=indicators)
 
         # Track dispatch latency
         latency_ms = (time.time() - dispatch_start) * 1000
@@ -386,14 +475,11 @@ class BotsyEngine:
         if len(self._latencies) > 1000:
             self._latencies = self._latencies[-500:]
 
-    async def run_pipeline(self, name: str):
+    async def run_pipeline(self, name: str, indicators: dict = None):
         """Run a pipeline in a thread (they're synchronous)."""
-        if name == "btc_15m_check":
-            await asyncio.to_thread(self._maybe_run_15m)
-            return
-
         runners = {
             "btc_5m": "ci_run",
+            "btc_15m": "ci_run_15m",
             "eth_5m": "ci_run_eth",
             "bybit": "ci_run_bybit",
             "kalshi": "ci_run_kalshi",
@@ -406,21 +492,11 @@ class BotsyEngine:
         try:
             import importlib
             mod = importlib.import_module(module_name)
+            # Pass indicators if pipeline's main() accepts them
             await asyncio.to_thread(mod.main)
             log(f"[{name}] OK")
         except Exception as e:
             log(f"[{name}] FAILED: {e}")
-
-    def _maybe_run_15m(self):
-        """Only run 15m every 3rd BTC 5m close."""
-        self.fifteenth_min_counter += 1
-        if self.fifteenth_min_counter % 3 == 0:
-            try:
-                import ci_run_15m
-                ci_run_15m.main()
-                log("[btc_15m] OK")
-            except Exception as e:
-                log(f"[btc_15m] FAILED: {e}")
 
     # ── Fallback Timer ─────────────────────────────────────────────────
 
@@ -434,10 +510,8 @@ class BotsyEngine:
                     f"fallback firing all pipelines")
                 self.metrics["fallback_fires_24h"] += 1
                 self.last_event_time = time.time()
-                for name in ["btc_5m", "eth_5m", "bybit", "kalshi"]:
+                for name in ["btc_5m", "btc_15m", "eth_5m", "bybit", "kalshi"]:
                     await self.run_pipeline(name)
-                # Also run 15m check
-                await asyncio.to_thread(self._maybe_run_15m)
 
     # ── Git Commit Loop ─────────���──────────────────────────────────────
 

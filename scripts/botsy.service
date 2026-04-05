@@ -1,21 +1,21 @@
 [Unit]
-Description=Botsy Trading Engine — websocket-driven pipeline dispatcher
+Description=Botsy Engine — websocket-driven prediction + trading pipeline
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/root/polymarket-bot
-ExecStart=/root/polymarket-bot/venv/bin/python3 src/botsy_engine.py
+User=botuser
+WorkingDirectory=/home/botuser/polymarket-bot
+ExecStart=/home/botuser/polymarket-bot/venv/bin/python3 -u src/botsy_engine.py
 Restart=always
 RestartSec=5
-Environment=PYTHONPATH=/root/polymarket-bot/src
-EnvironmentFile=/root/polymarket-bot/.env
+Environment=PYTHONPATH=/home/botuser/polymarket-bot/src
 
-# Logging
-StandardOutput=append:/root/polymarket-bot/logs/loop.log
-StandardError=append:/root/polymarket-bot/logs/loop.log
+EnvironmentFile=/home/botuser/polymarket-bot/.env
+
+StandardOutput=append:/home/botuser/polymarket-bot/logs/loop.log
+StandardError=append:/home/botuser/polymarket-bot/logs/loop.log
 
 # Resource limits
 MemoryMax=1G
