@@ -10,6 +10,7 @@
 
 ## Development Process
 
+- **Commit when work is done, not when told.** Tests pass → commit → push. Don't wait for permission.
 - Run `pytest tests/ -v` before every commit. Tests gate CI — a broken push stops the pipeline.
 - Never skip pre-commit hooks.
 - Add a regression test for every fix.
