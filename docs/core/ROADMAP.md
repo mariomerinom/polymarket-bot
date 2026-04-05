@@ -159,7 +159,9 @@ Move from GitHub Actions to a dedicated VPS in a non-US region. GitHub Actions r
 - **Flipped to momentum 2026-04-01.** Same V3→V4 pattern as BTC.
 - Parallel pipeline: `predict_eth.py`, `ci_run_eth.py`, `predict-eth-5m.yml`
 - Separate DB (`predictions_eth.db`), separate dashboard (`docs/eth.html`)
-- All predictions at conviction 2 (paper). Collecting 50+ resolved before Phase 2.
+- Phase 1 validated 2026-04-02: 36 resolved at 66.7% WR. Medium confidence (streak 3-4) promoted to conv=3.
+- **Went live 2026-04-04** ($25 flat bets). **Reverted to paper 2026-04-05** — same adverse selection as BTC (winners expire, losers fill). See Decision #24/#25.
+- Signal remains strong (62.1% WR paper). Blocked on execution fix, not signal quality.
 - Phase 2 (ETH adaptation layer): regime recalibration, cross-asset features, ETH-specific conviction. See `docs/pipelines/eth_pipeline_acceptance_criteria.md`.
 
 ### BTC 15m (ACTIVE — paper trading)

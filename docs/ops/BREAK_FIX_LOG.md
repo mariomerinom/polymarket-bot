@@ -4,6 +4,19 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## Incident 10: Dashboard Serving Stale HTML After Git Conflicts
+**Date:** April 5, 2026 | **Duration:** ~6 hours | **Severity:** P3 — dashboard showing wrong data
+
+**Symptom:** GitHub Pages dashboards (index.html, eth.html, 15m.html, bybit-perps.html, kalshi.html) showing stale data despite CI regenerating them every cycle.
+
+**Root cause:** `git checkout --theirs` during conflict resolution (required by constant CI commits) overwrote freshly regenerated dashboard HTML with the remote's older version. The dashboards were regenerated correctly each cycle but then replaced during the pull/push sequence.
+
+**Fix:** Force-pushed V2 dashboards with downsampled chart data (200 points max, 68KB vs 209KB). Smaller files reduce conflict frequency. CI regeneration overwrites them each cycle anyway.
+
+**Lesson:** CI-generated files that conflict every push need a workflow that regenerates AFTER the pull, not before. The current sequence (generate → commit → pull → push) means the pull can overwrite the generate. Consider: pull → generate → commit → push.
+
+---
+
 ## Operational Change: VPS Consolidation Phase 1 — Bybit + Kalshi Migrated
 **Date:** April 5, 2026 | **Severity:** N/A — operational change, no incident
 

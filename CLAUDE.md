@@ -107,12 +107,28 @@ These are unimplemented feature specs. Evaluate after ETH Phase 1 validates and 
 | `docs/specs/spec_obv_bucket_filter.md` | On-Balance Volume filter for 0.50-0.70 price bucket |
 | `docs/specs/spec_vwap_mean_reversion.md` | VWAP deviation for mean-reverting regime bets |
 | `docs/specs/spec_volatility_breakout.md` | Volatility compression→expansion breakout detection |
-| `docs/specs/spec_stochastic_entry_timing.md` | Stochastic Oscillator for entry timing within windows |
 | `docs/specs/spec_order_flow_imbalance.md` | CLOB bid/ask imbalance as leading indicator |
 | `docs/specs/spec_market_price_dislocation.md` | Polymarket price lag vs BTC spot arbitrage |
 | `docs/specs/spec_cross_exchange_lead_lag.md` | Kraken/Coinbase lead-lag temporal arbitrage |
 | `docs/specs/spec_dead_regime_harvesting.md` | Edge extraction from mean-reverting/dead-hour regimes |
 | `docs/specs/spec_generic_conviction_engine.md` | Parameterized conviction scorer for all assets (shadow mode) |
+
+### Fill Problem Specs (`docs/specs/stochastic/`) — execution fix designs
+
+Active specs addressing the adverse selection / fill rate problem (Decision #24). The signal picks winners at 65%+ but orders expire before filling.
+
+| Document | Goal |
+|----------|------|
+| `docs/specs/stochastic/spec_dynamic_price_cap.md` | Dynamic slippage spread (3¢-15¢) based on depth, spread, volume |
+| `docs/specs/stochastic/spec_stochastic_entry_timing.md` | Stochastic Oscillator for entry timing within 5-min windows |
+| `docs/specs/stochastic/spec_fill_diagnostic.md` | Fill diagnostic instrumentation (implemented in `src/fill_diagnostic.py`) |
+| `docs/specs/stochastic/fill-implementation.md` | Fix adverse selection via CLOB websocket + IOC orders |
+| `docs/specs/stochastic/spec_unified_vps_websocket.md` | Unified VPS + websocket architecture for live pricing |
+| `docs/specs/stochastic/spec_bybit_vps_migration.md` | Bybit/Kalshi VPS migration (Phase 1 complete) |
+| `docs/specs/stochastic/claude-fill-problem-consensus.md` | Multi-agent consensus on fill problem root cause and fixes |
+| `docs/specs/stochastic/fill-problem-agreement-and-tension.md` | Agreement/tension analysis across fill problem proposals |
+| `docs/specs/stochastic/gemini-fill-resolution.md` | External review of fill problem proposals |
+| `docs/specs/stochastic/Spec: Optimal Fill Strategy v1 — Hybrid .md` | Hybrid optimal fill strategy combining multiple approaches |
 
 ### Research (`docs/research/`) — historical analysis, read-only reference
 
