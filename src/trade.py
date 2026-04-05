@@ -18,6 +18,7 @@ Thin book constraint: never bet more than the CLOB can absorb at <= 2% slippage.
 import json
 import os
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -276,16 +277,22 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         return order_record
 
     try:
+        # Diagnostic C: Order submission RTT (cancel-replace feasibility)
+        t0 = time.monotonic()
         result = _submit_clob_order(
             token_id=clob_token_id,
             side=order_params["side"],
             size=order_params["size"],
             price=order_params["price_limit"],
         )
+        rtt_ms = (time.monotonic() - t0) * 1000
+        print(f"    DIAG|order_rtt_ms={rtt_ms:.0f}|status={result.get('status', 'ok')}")
         order_record["order_id"] = result.get("orderID") or result.get("order_id")
         order_record["status"] = "submitted"
         order_record["reason"] = json.dumps(result)
     except Exception as e:
+        rtt_ms = (time.monotonic() - t0) * 1000
+        print(f"    DIAG|order_rtt_ms={rtt_ms:.0f}|status=error")
         order_record["status"] = "failed"
         order_record["reason"] = str(e)
 
@@ -595,7 +602,7 @@ def execute_trades(db, cycle):
     # Find predictions from this cycle that qualify
     cursor = db.execute("""
         SELECT p.id, p.market_id, p.estimate, p.conviction_score, p.reasoning,
-               p.agent, m.price_yes, m.price_no, m.end_date
+               p.agent, m.price_yes, m.price_no, m.end_date, m.fetched_at
         FROM predictions p
         JOIN markets m ON p.market_id = m.id
         WHERE p.cycle = ? AND p.conviction_score >= ?
@@ -607,7 +614,7 @@ def execute_trades(db, cycle):
 
     predictions = [dict(zip(
         ["id", "market_id", "estimate", "conviction_score", "reasoning",
-         "agent", "price_yes", "price_no", "end_date"],
+         "agent", "price_yes", "price_no", "end_date", "fetched_at"],
         row
     )) for row in cursor.fetchall()]
 
@@ -661,16 +668,45 @@ def execute_trades(db, cycle):
             print(f"    [{mode_label}] SKIP {pred['market_id'][:12]}... — {order_reason}")
             continue
 
-        # Get CLOB token ID for live orders
+        # Get CLOB token ID (used for live orders + diagnostics)
         clob_token_id = None
-        if TRADING_ENABLED:
+        try:
+            from predict import _get_clob_tokens_safe
+            tokens = _get_clob_tokens_safe(pred["market_id"])
+            if tokens:
+                clob_token_id = tokens.get(order_params["token"])
+        except Exception as e:
+            print(f"    CLOB token lookup failed: {e}")
+
+        # ── Phase 2 Diagnostics (log-only, no execution change) ──
+
+        # Diagnostic A: Snapshot staleness (Tension 2)
+        snapshot_age_ms = None
+        fetched_at_str = pred.get("fetched_at")
+        if fetched_at_str:
             try:
-                from predict import _get_clob_tokens_safe
-                tokens = _get_clob_tokens_safe(pred["market_id"])
-                if tokens:
-                    clob_token_id = tokens[order_params["token"]]
+                fetched_at_dt = datetime.fromisoformat(fetched_at_str)
+                snapshot_age_ms = (datetime.now(timezone.utc) - fetched_at_dt).total_seconds() * 1000
+                print(f"    DIAG|snapshot_age_ms={snapshot_age_ms:.0f}|market={pred['market_id'][:12]}")
+            except (ValueError, TypeError):
+                pass
+
+        # Diagnostic B: Conviction vs. price drift (Tension 1)
+        if clob_token_id:
+            try:
+                from clob_depth import get_order_book, analyze_depth
+                book = get_order_book(clob_token_id)
+                if book:
+                    depth = analyze_depth(book)
+                    if depth:
+                        live_mid = depth["mid"]
+                        price_drift = abs(live_mid - pred["price_yes"])
+                        conv = pred["conviction_score"]
+                        print(f"    DIAG|conv={conv}|drift={price_drift:.4f}"
+                              f"|snapshot_age_ms={snapshot_age_ms or 0:.0f}"
+                              f"|live_mid={live_mid:.4f}|stored={pred['price_yes']:.4f}")
             except Exception as e:
-                print(f"    CLOB token lookup failed: {e}")
+                print(f"    DIAG|drift_fetch_failed={e}")
 
         # Place order
         order = place_order(
