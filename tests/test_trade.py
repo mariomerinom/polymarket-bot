@@ -429,20 +429,22 @@ class TestLiveOrderbook:
 
         cache_file = tmp_path / "live_orderbook.json"
         cache = {
-            "market": "0xabc",
-            "asset_id": "123",
-            "mid": 0.62,
-            "spread": 0.04,
-            "best_bid": 0.60,
-            "best_ask": 0.64,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "bids": [{"price": "0.60", "size": "100"}],
-            "asks": [{"price": "0.64", "size": "100"}],
+            "tokens": {
+                "tok_yes_123": {
+                    "mid": 0.62,
+                    "spread": 0.04,
+                    "best_bid": 0.60,
+                    "best_ask": 0.64,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "bids": [{"price": "0.60", "size": "100"}],
+                    "asks": [{"price": "0.64", "size": "100"}],
+                },
+            },
         }
         cache_file.write_text(json.dumps(cache))
         monkeypatch.setattr(trade, "LIVE_ORDERBOOK_PATH", cache_file)
 
-        result = trade._get_live_orderbook_mid("any_market")
+        result = trade._get_live_token_mid("tok_yes_123")
         assert result == 0.62
 
     def test_stale_cache_returns_none(self, tmp_path, monkeypatch):
@@ -451,19 +453,23 @@ class TestLiveOrderbook:
 
         cache_file = tmp_path / "live_orderbook.json"
         cache = {
-            "mid": 0.55,
-            "updated_at": "2020-01-01T00:00:00+00:00",  # very old
+            "tokens": {
+                "tok_stale": {
+                    "mid": 0.55,
+                    "updated_at": "2020-01-01T00:00:00+00:00",  # very old
+                },
+            },
         }
         cache_file.write_text(json.dumps(cache))
         monkeypatch.setattr(trade, "LIVE_ORDERBOOK_PATH", cache_file)
 
-        result = trade._get_live_orderbook_mid("any_market")
+        result = trade._get_live_token_mid("tok_stale")
         assert result is None
 
     def test_missing_file_returns_none(self, tmp_path, monkeypatch):
         import trade
         monkeypatch.setattr(trade, "LIVE_ORDERBOOK_PATH", tmp_path / "nope.json")
-        result = trade._get_live_orderbook_mid("any_market")
+        result = trade._get_live_token_mid("any_token")
         assert result is None
 
     def test_corrupt_json_returns_none(self, tmp_path, monkeypatch):
@@ -471,7 +477,7 @@ class TestLiveOrderbook:
         cache_file = tmp_path / "live_orderbook.json"
         cache_file.write_text("NOT JSON {{{")
         monkeypatch.setattr(trade, "LIVE_ORDERBOOK_PATH", cache_file)
-        result = trade._get_live_orderbook_mid("any_market")
+        result = trade._get_live_token_mid("any_token")
         assert result is None
 
     def test_out_of_range_mid_returns_none(self, tmp_path, monkeypatch):
@@ -481,13 +487,37 @@ class TestLiveOrderbook:
 
         cache_file = tmp_path / "live_orderbook.json"
         cache = {
-            "mid": 1.5,  # out of range
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "tokens": {
+                "tok_bad": {
+                    "mid": 1.5,  # out of range
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            },
         }
         cache_file.write_text(json.dumps(cache))
         monkeypatch.setattr(trade, "LIVE_ORDERBOOK_PATH", cache_file)
 
-        result = trade._get_live_orderbook_mid("any_market")
+        result = trade._get_live_token_mid("tok_bad")
+        assert result is None
+
+    def test_missing_token_returns_none(self, tmp_path, monkeypatch):
+        import json
+        from datetime import datetime, timezone
+        import trade
+
+        cache_file = tmp_path / "live_orderbook.json"
+        cache = {
+            "tokens": {
+                "tok_other": {
+                    "mid": 0.50,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            },
+        }
+        cache_file.write_text(json.dumps(cache))
+        monkeypatch.setattr(trade, "LIVE_ORDERBOOK_PATH", cache_file)
+
+        result = trade._get_live_token_mid("tok_not_in_cache")
         assert result is None
 
 

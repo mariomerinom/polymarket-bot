@@ -180,27 +180,32 @@ LIVE_ORDERBOOK_PATH = Path(__file__).parent.parent / "data" / "live_orderbook.js
 LIVE_ORDERBOOK_MAX_AGE_S = 10  # ignore cache older than 10 seconds
 
 
-def _get_live_orderbook_mid(market_id: str):
+def _get_live_token_mid(token_id: str):
     """
-    Read live orderbook cache (written by botsy_engine.py Polymarket WS feed).
+    Read live mid for a specific CLOB token from per-token WS cache.
 
-    Returns the live mid price if the cache is fresh and matches the market,
-    otherwise returns None (caller falls back to DB snapshot).
+    Cache format: {"tokens": {token_id: {mid, best_bid, best_ask, updated_at, ...}}}
+    Written by botsy_engine.py Polymarket WS feed.
+
+    Returns float mid if cache entry is fresh (<10s), else None.
     """
+    if not token_id:
+        return None
     try:
         if not LIVE_ORDERBOOK_PATH.exists():
             return None
         cache = json.loads(LIVE_ORDERBOOK_PATH.read_text())
-        # Check freshness
-        updated_at = cache.get("updated_at", "")
-        if updated_at:
-            cache_dt = datetime.fromisoformat(updated_at)
-            age_s = (datetime.now(timezone.utc) - cache_dt).total_seconds()
-            if age_s > LIVE_ORDERBOOK_MAX_AGE_S:
-                return None
-        else:
+        entry = cache.get("tokens", {}).get(token_id)
+        if not entry:
             return None
-        mid = cache.get("mid")
+        updated_at = entry.get("updated_at", "")
+        if not updated_at:
+            return None
+        cache_dt = datetime.fromisoformat(updated_at)
+        age_s = (datetime.now(timezone.utc) - cache_dt).total_seconds()
+        if age_s > LIVE_ORDERBOOK_MAX_AGE_S:
+            return None
+        mid = entry.get("mid")
         if mid is not None and 0.01 <= mid <= 0.99:
             return mid
     except (json.JSONDecodeError, OSError, ValueError, TypeError):
@@ -237,7 +242,16 @@ def compute_order(prediction_row, market_row, liquidity=None):
     else:
         side = "buy"
         token = "no"
-        market_price_no = 1 - market_price_yes
+        # Use real CLOB NO price when available, fall back to implied
+        real_no = market_row.get("price_no")
+        implied_no = 1 - market_price_yes
+        if real_no and abs(real_no - implied_no) > 0.005:
+            market_price_no = real_no
+        else:
+            market_price_no = implied_no
+            import logging
+            logging.getLogger(__name__).info(
+                f"DIAG|clob_fallback=true|side=NO|implied={implied_no:.4f}")
         fill_adjusted = (1 - estimate) + FILL_PRIORITY_SPREAD
         max_price = market_price_no + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
         price_limit = min(fill_adjusted, max_price)
@@ -246,7 +260,7 @@ def compute_order(prediction_row, market_row, liquidity=None):
     if direction == "UP":
         slippage = price_limit - market_price_yes
     else:
-        slippage = price_limit - (1 - market_price_yes)
+        slippage = price_limit - market_price_no
 
     # Asset-aware sizing: BTC flat $25, ETH tiered by conviction
     size = get_bet_size(prediction_row, liquidity)
@@ -692,29 +706,46 @@ def execute_trades(db, cycle):
         except (json.JSONDecodeError, TypeError):
             pass
 
-        # Compute order params — use live orderbook if available
-        market_row = {"price_yes": pred["price_yes"], "price_no": pred["price_no"]}
-        live_mid = _get_live_orderbook_mid(pred["market_id"])
-        if live_mid is not None:
-            print(f"    [LIVE_OB] Using WS mid={live_mid:.4f} "
-                  f"(was DB snapshot={pred['price_yes']:.4f})")
-            market_row["price_yes"] = live_mid
-            market_row["price_no"] = round(1 - live_mid, 4)
+        # Resolve CLOB tokens FIRST (needed for both pricing and order submission)
+        tokens = None
+        try:
+            from predict import _get_clob_tokens_safe
+            tokens = _get_clob_tokens_safe(pred["market_id"])
+        except Exception as e:
+            print(f"    CLOB token lookup failed: {e}")
+
+        # Use live WS per-token prices (replaces stale Gamma implied prices)
+        market_row = {"price_yes": pred["price_yes"],
+                      "price_no": pred.get("price_no", round(1 - pred["price_yes"], 4))}
+        if tokens:
+            yes_mid = _get_live_token_mid(tokens.get("yes", ""))
+            no_mid = _get_live_token_mid(tokens.get("no", ""))
+            gamma_yes = pred["price_yes"]
+            gamma_no = round(1 - gamma_yes, 4)
+            if yes_mid is not None:
+                market_row["price_yes"] = yes_mid
+            if no_mid is not None:
+                market_row["price_no"] = no_mid
+            print(f"    [LIVE_OB] YES={market_row['price_yes']:.4f} "
+                  f"NO={market_row['price_no']:.4f} "
+                  f"(DB: YES={gamma_yes:.4f})")
+            # DIAG: measure Gamma vs CLOB gap
+            if yes_mid and no_mid:
+                print(f"    DIAG|gamma_yes={gamma_yes:.4f}|clob_yes={yes_mid:.4f}"
+                      f"|gamma_no={gamma_no:.4f}|clob_no={no_mid:.4f}"
+                      f"|gap_yes={abs(yes_mid - gamma_yes):.4f}"
+                      f"|gap_no={abs(no_mid - gamma_no):.4f}")
+
         order_params, order_reason = compute_order(pred, market_row, liquidity)
 
         if order_params is None:
             print(f"    [{mode_label}] SKIP {pred['market_id'][:12]}... — {order_reason}")
             continue
 
-        # Get CLOB token ID (used for live orders + diagnostics)
+        # CLOB token ID for order submission (already resolved above)
         clob_token_id = None
-        try:
-            from predict import _get_clob_tokens_safe
-            tokens = _get_clob_tokens_safe(pred["market_id"])
-            if tokens:
-                clob_token_id = tokens.get(order_params["token"])
-        except Exception as e:
-            print(f"    CLOB token lookup failed: {e}")
+        if tokens:
+            clob_token_id = tokens.get(order_params["token"])
 
         # ── Phase 2 Diagnostics (log-only, no execution change) ──
 

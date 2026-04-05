@@ -143,6 +143,7 @@ class BotsyEngine:
             self.fallback_timer(),
             self.metrics_writer(),
             self.log_rotator(),
+            self._verify_orderbook_cache_format(),
         ]
         await asyncio.gather(*tasks)
 
@@ -397,8 +398,16 @@ class BotsyEngine:
         return token_ids
 
     def _update_orderbook_cache(self, data: dict):
-        """Write live orderbook to data/live_orderbook.json for trade.py."""
+        """Write live orderbook to data/live_orderbook.json (per-token cache).
+
+        Cache format: {"tokens": {asset_id: {mid, best_bid, best_ask, ...}}}
+        Each WS book event upserts the token entry, preserving other tokens.
+        """
         try:
+            asset_id = data.get("asset_id", "")
+            if not asset_id:
+                return
+
             bids = data.get("bids", [])
             asks = data.get("asks", [])
             best_bid = float(bids[0]["price"]) if bids else None
@@ -406,9 +415,7 @@ class BotsyEngine:
             mid = (best_bid + best_ask) / 2 if (best_bid and best_ask) else None
             spread = (best_ask - best_bid) if (best_bid and best_ask) else None
 
-            cache = {
-                "market": data.get("market", ""),
-                "asset_id": data.get("asset_id", ""),
+            entry = {
                 "mid": mid,
                 "spread": spread,
                 "best_bid": best_bid,
@@ -418,20 +425,49 @@ class BotsyEngine:
                 "asks": asks[:5],
             }
 
+            # Read existing cache, upsert this token
+            cache = {"tokens": {}}
+            try:
+                if ORDERBOOK_CACHE.exists():
+                    cache = json.loads(ORDERBOOK_CACHE.read_text())
+                    if "tokens" not in cache:
+                        cache = {"tokens": {}}  # migrate from legacy format
+            except (json.JSONDecodeError, OSError):
+                cache = {"tokens": {}}
+
+            cache["tokens"][asset_id] = entry
+
             # Atomic write via temp file
             tmp = ORDERBOOK_CACHE.with_suffix(".tmp")
             tmp.write_text(json.dumps(cache))
             tmp.rename(ORDERBOOK_CACHE)
 
             if mid:
-                age_ms = 0  # just written
-                self._orderbook_ages.append(age_ms)
-                # Keep last 1000
+                self._orderbook_ages.append(0)  # just written
                 if len(self._orderbook_ages) > 1000:
                     self._orderbook_ages = self._orderbook_ages[-500:]
 
         except (IndexError, KeyError, ValueError, TypeError) as e:
             log(f"[WS] Polymarket orderbook cache update failed: {e}")
+
+    async def _verify_orderbook_cache_format(self):
+        """Startup guard: verify per-token cache format is live within 60s."""
+        await asyncio.sleep(60)
+        try:
+            if not ORDERBOOK_CACHE.exists():
+                log("WARNING: No orderbook cache found after 60s — WS feed may not be writing")
+                log("DIAG|cache_format=missing|age_s=60")
+                return
+            cache = json.loads(ORDERBOOK_CACHE.read_text())
+            if "tokens" not in cache:
+                log("WARNING: Cache still in legacy format after 60s — per-token pricing inactive")
+                log("DIAG|cache_format=legacy|age_s=60")
+            else:
+                n = len(cache["tokens"])
+                log(f"[CACHE] Per-token orderbook format verified: {n} tokens")
+        except (json.JSONDecodeError, OSError) as e:
+            log(f"WARNING: Orderbook cache unreadable after 60s: {e}")
+            log("DIAG|cache_format=error|age_s=60")
 
     # ── Event Dispatch ─────────────────────────────────────────────────
 

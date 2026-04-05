@@ -68,11 +68,31 @@ def main():
     print(f"  YES={market['price_yes']:.2f}  NO={market['price_no']:.2f}  "
           f"ends={market['end_date']}")
 
-    # 4. Build order
+    # 4. Resolve CLOB tokens + get real orderbook price
+    print("[4/5] Resolving CLOB tokens...")
+    tokens = _get_clob_tokens_safe(market["id"])
+    if not tokens:
+        print(f"FAIL: Could not resolve CLOB tokens for {market['id']}")
+        sys.exit(1)
+
     if direction == "UP":
         token_key, mkt_price = "yes", market["price_yes"]
     else:
         token_key, mkt_price = "no", market["price_no"]
+
+    # Fetch real CLOB mid for the token we're buying (REST fallback for standalone)
+    gamma_price = mkt_price
+    try:
+        from clob_depth import get_order_book, analyze_depth
+        book = get_order_book(tokens[token_key])
+        if book:
+            analysis = analyze_depth(book)
+            clob_mid = analysis.get("mid")
+            if clob_mid:
+                print(f"  CLOB mid: {clob_mid:.4f} (Gamma implied: {mkt_price:.4f})")
+                mkt_price = clob_mid
+    except Exception as e:
+        print(f"  CLOB price fetch failed, using Gamma: {e}")
 
     order_params = {
         "direction": direction,
@@ -90,13 +110,6 @@ def main():
     if args.dry_run:
         print("\n  --dry-run: stopping here.")
         return
-
-    # 5. Place bet
-    print("[4/5] Resolving CLOB tokens...")
-    tokens = _get_clob_tokens_safe(market["id"])
-    if not tokens:
-        print(f"FAIL: Could not resolve CLOB tokens for {market['id']}")
-        sys.exit(1)
 
     clob_token_id = tokens[token_key]
     print(f"  Token: {clob_token_id[:16]}...")
