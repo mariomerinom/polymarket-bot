@@ -386,8 +386,8 @@ def engine_health_section(health):
         return ""
 
     # Feed statuses
-    polygon_html = _ws_status_html(health["polygon_status"], health["polygon_last"])
-    bybit_html = _ws_status_html(health["bybit_status"], health["bybit_last"])
+    spot_html = _ws_status_html(health["bybit_spot_status"], health["bybit_spot_last"])
+    linear_html = _ws_status_html(health["bybit_linear_status"], health["bybit_linear_last"])
     polymarket_html = _ws_status_html(health["polymarket_status"], health["polymarket_last"])
 
     # Latency
@@ -402,8 +402,8 @@ def engine_health_section(health):
     ob_p95 = ob.get("p95", 0)
 
     # Reconnects
-    recon_total = (health["polygon_reconnects"]
-                   + health["bybit_reconnects"]
+    recon_total = (health["bybit_spot_reconnects"]
+                   + health["bybit_linear_reconnects"]
                    + health["polymarket_reconnects"])
     recon_color = C.PROFIT if recon_total == 0 else (C.WARN if recon_total < 5 else C.LOSS)
 
@@ -415,12 +415,12 @@ def engine_health_section(health):
     <div class="section-title">Engine Health</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px">
         <div class="metric">
-            <div class="metric-label">Polygon.io</div>
-            <div class="metric-value" style="font-size:13px">{polygon_html}</div>
+            <div class="metric-label">Bybit Spot</div>
+            <div class="metric-value" style="font-size:13px">{spot_html}</div>
         </div>
         <div class="metric">
-            <div class="metric-label">Bybit</div>
-            <div class="metric-value" style="font-size:13px">{bybit_html}</div>
+            <div class="metric-label">Bybit Linear</div>
+            <div class="metric-value" style="font-size:13px">{linear_html}</div>
         </div>
         <div class="metric">
             <div class="metric-label">Polymarket</div>

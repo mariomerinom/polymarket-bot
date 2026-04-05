@@ -864,12 +864,12 @@ def _get_engine_metrics():
         import json as _json
         data = _json.loads(metrics_path.read_text())
         return {
-            "polygon_status": (data.get("polygon") or {}).get("status", "unknown"),
-            "polygon_last": (data.get("polygon") or {}).get("last_event"),
-            "polygon_reconnects": (data.get("polygon") or {}).get("reconnects_24h", 0),
-            "bybit_status": (data.get("bybit") or {}).get("status", "unknown"),
-            "bybit_last": (data.get("bybit") or {}).get("last_event"),
-            "bybit_reconnects": (data.get("bybit") or {}).get("reconnects_24h", 0),
+            "bybit_spot_status": (data.get("bybit_spot") or {}).get("status", "unknown"),
+            "bybit_spot_last": (data.get("bybit_spot") or {}).get("last_event"),
+            "bybit_spot_reconnects": (data.get("bybit_spot") or {}).get("reconnects_24h", 0),
+            "bybit_linear_status": (data.get("bybit_linear") or {}).get("status", "unknown"),
+            "bybit_linear_last": (data.get("bybit_linear") or {}).get("last_event"),
+            "bybit_linear_reconnects": (data.get("bybit_linear") or {}).get("reconnects_24h", 0),
             "polymarket_status": (data.get("polymarket") or {}).get("status", "unknown"),
             "polymarket_last": (data.get("polymarket") or {}).get("last_event"),
             "polymarket_reconnects": (data.get("polymarket") or {}).get("reconnects_24h", 0),
@@ -1103,8 +1103,8 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
             "",
             "| Feed | Status | Reconnects (24h) | Last Event |",
             "|------|--------|-----------------|------------|",
-            f"| Polygon.io | {engine_metrics['polygon_status']} | {engine_metrics['polygon_reconnects']} | {engine_metrics['polygon_last'] or 'N/A'} |",
-            f"| Bybit | {engine_metrics['bybit_status']} | {engine_metrics['bybit_reconnects']} | {engine_metrics['bybit_last'] or 'N/A'} |",
+            f"| Bybit Spot | {engine_metrics['bybit_spot_status']} | {engine_metrics['bybit_spot_reconnects']} | {engine_metrics['bybit_spot_last'] or 'N/A'} |",
+            f"| Bybit Linear | {engine_metrics['bybit_linear_status']} | {engine_metrics['bybit_linear_reconnects']} | {engine_metrics['bybit_linear_last'] or 'N/A'} |",
             f"| Polymarket | {engine_metrics['polymarket_status']} | {engine_metrics['polymarket_reconnects']} | {engine_metrics['polymarket_last'] or 'N/A'} |",
             "",
         ])

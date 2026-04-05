@@ -777,17 +777,14 @@ def get_engine_health():
         data = json.loads(metrics_path.read_text())
         # Check staleness — if engine hasn't written in 5 min, it's down
         engine_start = data.get("engine_start", "")
-        polygon_last = (data.get("polygon") or {}).get("last_event")
-        bybit_last = (data.get("bybit") or {}).get("last_event")
-        polymarket_last = (data.get("polymarket") or {}).get("last_event")
 
         return {
-            "polygon_status": (data.get("polygon") or {}).get("status", "unknown"),
-            "polygon_last": polygon_last,
-            "polygon_reconnects": (data.get("polygon") or {}).get("reconnects_24h", 0),
-            "bybit_status": (data.get("bybit") or {}).get("status", "unknown"),
-            "bybit_last": bybit_last,
-            "bybit_reconnects": (data.get("bybit") or {}).get("reconnects_24h", 0),
+            "bybit_spot_status": (data.get("bybit_spot") or {}).get("status", "unknown"),
+            "bybit_spot_last": (data.get("bybit_spot") or {}).get("last_event"),
+            "bybit_spot_reconnects": (data.get("bybit_spot") or {}).get("reconnects_24h", 0),
+            "bybit_linear_status": (data.get("bybit_linear") or {}).get("status", "unknown"),
+            "bybit_linear_last": (data.get("bybit_linear") or {}).get("last_event"),
+            "bybit_linear_reconnects": (data.get("bybit_linear") or {}).get("reconnects_24h", 0),
             "polymarket_status": (data.get("polymarket") or {}).get("status", "unknown"),
             "polymarket_last": polymarket_last,
             "polymarket_reconnects": (data.get("polymarket") or {}).get("reconnects_24h", 0),

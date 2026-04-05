@@ -43,10 +43,11 @@ METRICS_FILE = DATA_DIR / "ws_metrics.json"
 ORDERBOOK_CACHE = DATA_DIR / "live_orderbook.json"
 
 # Routing: (source, symbol, interval) -> list of pipeline names
+# Bybit WS v5 handles all candle triggers (241ms avg latency, validated 2026-04-05)
 ROUTING = {
-    ("polygon", "X:BTC-USD", "5"):  ["btc_5m", "btc_15m_check", "kalshi"],
-    ("polygon", "X:ETH-USD", "5"):  ["eth_5m"],
-    ("bybit", "BTCUSDT", "5"):      ["bybit"],
+    ("bybit_spot", "BTCUSDT", "5"):   ["btc_5m", "btc_15m_check", "kalshi"],
+    ("bybit_spot", "ETHUSDT", "5"):   ["eth_5m"],
+    ("bybit_linear", "BTCUSDT", "5"): ["bybit"],
 }
 
 # Fallback timer: force-run if no WS event for this many seconds
@@ -82,12 +83,12 @@ class BotsyEngine:
 
         # Metrics state
         self.metrics = {
-            "polygon": {
+            "bybit_spot": {
                 "status": "disconnected",
                 "last_event": None,
                 "reconnects_24h": 0,
             },
-            "bybit": {
+            "bybit_linear": {
                 "status": "disconnected",
                 "last_event": None,
                 "reconnects_24h": 0,
@@ -117,8 +118,8 @@ class BotsyEngine:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
         tasks = [
-            self.polygon_feed(),
-            self.bybit_feed(),
+            self.bybit_spot_feed(),
+            self.bybit_linear_feed(),
             self.polymarket_feed(),
             self.git_commit_loop(),
             self.daily_report_check(),
@@ -128,87 +129,75 @@ class BotsyEngine:
         ]
         await asyncio.gather(*tasks)
 
-    # ── Polygon.io WS Feed ─────────────────────────────────────────────
+    # ── Bybit Spot WS Feed (BTC + ETH candle triggers) ─────────────────
 
-    async def polygon_feed(self):
-        """Polygon.io WS: BTC/ETH 5m candle aggregates."""
+    async def bybit_spot_feed(self):
+        """Bybit WS v5 spot: BTC/ETH 5m kline triggers.
+
+        Validated 2026-04-05: 241ms avg latency on AMS3 VPS.
+        Replaces Polygon.io ($200/mo saved).
+        """
         import websockets
 
-        api_key = os.environ.get("POLYGON_API_KEY", "")
-        if not api_key:
-            log("[WS] POLYGON_API_KEY not set — Polygon feed disabled")
-            return
-
-        uri = "wss://socket.polygon.io/crypto"
+        uri = "wss://stream.bybit.com/v5/public/spot"
         while True:
             try:
-                log(f"[WS] Polygon connecting to {uri}...")
-                async with websockets.connect(uri, ping_interval=30) as ws:
-                    # Authenticate
+                log(f"[WS] Bybit spot connecting to {uri}...")
+                async with websockets.connect(uri, ping_interval=20) as ws:
                     await ws.send(json.dumps({
-                        "action": "auth",
-                        "params": api_key,
+                        "op": "subscribe",
+                        "args": ["kline.5.BTCUSDT", "kline.5.ETHUSDT"],
                     }))
-                    auth_resp = await ws.recv()
-                    log(f"[WS] Polygon auth: {auth_resp[:200]}")
+                    resp = await ws.recv()
+                    log(f"[WS] Bybit spot subscribed: {resp[:200]}")
 
-                    # Subscribe to 5-minute crypto aggregates
-                    await ws.send(json.dumps({
-                        "action": "subscribe",
-                        "params": "CA.X:BTC-USD,CA.X:ETH-USD",
-                    }))
-                    sub_resp = await ws.recv()
-                    log(f"[WS] Polygon subscribed: {sub_resp[:200]}")
-
-                    self.metrics["polygon"]["status"] = "connected"
+                    self.metrics["bybit_spot"]["status"] = "connected"
 
                     async for msg in ws:
                         try:
-                            events = json.loads(msg)
-                            if not isinstance(events, list):
-                                events = [events]
-                            for event in events:
-                                ev_type = event.get("ev")
-                                if ev_type == "CA":
-                                    # Crypto Aggregate: candle close
-                                    pair = event.get("pair", "")
-                                    end_ts = event.get("e", 0)  # end timestamp ms
-                                    start_ts = event.get("s", 0)
-                                    log(f"[ENGINE] Polygon {pair} 5m close | "
-                                        f"candle_ts={end_ts}")
-                                    self.metrics["polygon"]["last_event"] = \
+                            data = json.loads(msg)
+                            topic = data.get("topic", "")
+                            if topic.startswith("kline.5."):
+                                kline = data["data"][0]
+                                if kline.get("confirm"):
+                                    symbol = topic.replace("kline.5.", "")
+                                    candle_ts = int(kline["end"])
+                                    latency = int(time.time() * 1000) - candle_ts
+                                    log(f"[ENGINE] Bybit spot {symbol} 5m close | "
+                                        f"latency={latency}ms")
+                                    self.metrics["bybit_spot"]["last_event"] = \
                                         datetime.now(timezone.utc).isoformat()
                                     await self.dispatch(
-                                        "polygon", pair, "5", end_ts
+                                        "bybit_spot", symbol, "5", candle_ts
                                     )
-                        except json.JSONDecodeError:
+                        except (json.JSONDecodeError, KeyError, IndexError):
                             continue
 
             except Exception as e:
-                self.metrics["polygon"]["status"] = "disconnected"
-                self.metrics["polygon"]["reconnects_24h"] += 1
-                log(f"[WS] Polygon disconnected: {e}. Reconnecting in 5s...")
+                self.metrics["bybit_spot"]["status"] = "disconnected"
+                self.metrics["bybit_spot"]["reconnects_24h"] += 1
+                log(f"[WS] Bybit spot disconnected: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
 
-    # ── Bybit WS Feed ──────────────────────────────────────────────────
+    # ── Bybit Linear WS Feed (perps pipeline) ─────────────────────────
 
-    async def bybit_feed(self):
-        """Bybit WS v5: BTCUSDT linear 5m kline for perps pipeline."""
+    async def bybit_linear_feed(self):
+        """Bybit WS v5 linear: BTCUSDT 5m kline for perps pipeline."""
         import websockets
 
         uri = "wss://stream.bybit.com/v5/public/linear"
         while True:
             try:
-                log(f"[WS] Bybit connecting to {uri}...")
+                log(f"[WS] Bybit linear connecting to {uri}...")
                 async with websockets.connect(uri, ping_interval=20) as ws:
                     await ws.send(json.dumps({
                         "op": "subscribe",
                         "args": ["kline.5.BTCUSDT"],
                     }))
                     resp = await ws.recv()
-                    log(f"[WS] Bybit subscribed: {resp[:200]}")
+                    log(f"[WS] Bybit linear subscribed: {resp[:200]}")
 
-                    self.metrics["bybit"]["status"] = "connected"
+                    self.metrics["bybit_linear"]["status"] = "connected"
 
                     async for msg in ws:
                         try:
@@ -219,21 +208,20 @@ class BotsyEngine:
                                 if kline.get("confirm"):
                                     candle_ts = int(kline["end"])
                                     latency = int(time.time() * 1000) - candle_ts
-                                    log(f"[ENGINE] Bybit BTCUSDT 5m close | "
-                                        f"latency={latency}ms | "
-                                        f"dispatching: bybit")
-                                    self.metrics["bybit"]["last_event"] = \
+                                    log(f"[ENGINE] Bybit linear BTCUSDT 5m close | "
+                                        f"latency={latency}ms")
+                                    self.metrics["bybit_linear"]["last_event"] = \
                                         datetime.now(timezone.utc).isoformat()
                                     await self.dispatch(
-                                        "bybit", "BTCUSDT", "5", candle_ts
+                                        "bybit_linear", "BTCUSDT", "5", candle_ts
                                     )
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
 
             except Exception as e:
-                self.metrics["bybit"]["status"] = "disconnected"
-                self.metrics["bybit"]["reconnects_24h"] += 1
-                log(f"[WS] Bybit disconnected: {e}. Reconnecting in 5s...")
+                self.metrics["bybit_linear"]["status"] = "disconnected"
+                self.metrics["bybit_linear"]["reconnects_24h"] += 1
+                log(f"[WS] Bybit linear disconnected: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
 
     # ── Polymarket CLOB WS Feed ─────���──────────────────────────────────

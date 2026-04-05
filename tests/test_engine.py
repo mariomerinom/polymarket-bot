@@ -84,12 +84,12 @@ class TestEngineHealthSection:
     def test_renders_connected_status(self):
         from dashboard_v2.sections import engine_health_section
         health = {
-            "polygon_status": "connected",
-            "polygon_last": "2026-04-05T12:00:00+00:00",
-            "polygon_reconnects": 0,
-            "bybit_status": "connected",
-            "bybit_last": "2026-04-05T12:00:00+00:00",
-            "bybit_reconnects": 0,
+            "bybit_spot_status": "connected",
+            "bybit_spot_last": "2026-04-05T12:00:00+00:00",
+            "bybit_spot_reconnects": 0,
+            "bybit_linear_status": "connected",
+            "bybit_linear_last": "2026-04-05T12:00:00+00:00",
+            "bybit_linear_reconnects": 0,
             "polymarket_status": "disconnected",
             "polymarket_last": None,
             "polymarket_reconnects": 2,
@@ -100,8 +100,8 @@ class TestEngineHealthSection:
         }
         html = engine_health_section(health)
         assert "Engine Health" in html
-        assert "Polygon.io" in html
-        assert "Bybit" in html
+        assert "Bybit Spot" in html
+        assert "Bybit Linear" in html
         assert "Polymarket" in html
         assert "Connected" in html
         assert "Down" in html  # Polymarket is disconnected
@@ -116,8 +116,8 @@ class TestBotsyEngineInit:
         from botsy_engine import BotsyEngine
         engine = BotsyEngine()
         assert engine.cycle == 0
-        assert engine.metrics["polygon"]["status"] == "disconnected"
-        assert engine.metrics["bybit"]["status"] == "disconnected"
+        assert engine.metrics["bybit_spot"]["status"] == "disconnected"
+        assert engine.metrics["bybit_linear"]["status"] == "disconnected"
         assert engine.metrics["polymarket"]["status"] == "disconnected"
         assert engine.metrics["fallback_fires_24h"] == 0
 
