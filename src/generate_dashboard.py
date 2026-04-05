@@ -1,15 +1,16 @@
-"""Generate static HTML dashboard for GitHub Pages."""
+"""Generate dashboard — now a no-op since dashboards are served dynamically.
+
+The Flask server (dashboard_server.py) on the VPS serves dashboards live.
+Static HTML files are no longer committed to docs/.
+
+Integrity checks are preserved — they run during each CI cycle.
+"""
 
 import sqlite3
 from pathlib import Path
-from dashboard import build_html
-
-DOCS_DIR = Path(__file__).parent.parent / "docs"
 
 
 def generate():
-    DOCS_DIR.mkdir(parents=True, exist_ok=True)
-
     # BTC 5m integrity checks (ci_run.py is frozen — this is the hook)
     try:
         from pipeline_integrity import run_integrity_checks
@@ -24,9 +25,7 @@ def generate():
     except Exception as e:
         print(f"  [INTEGRITY btc_5m] check failed: {e}")
 
-    output = DOCS_DIR / "index.html"
-    output.write_text(build_html())
-    print(f"  Dashboard written to {output}")
+    print("  Dashboard served dynamically — skipping static HTML generation")
 
 
 if __name__ == "__main__":

@@ -302,15 +302,8 @@ def _run_predictions(cycle, kalshi_data, market_limit=5, min_streak=2,
 
 
 def _generate_dashboard():
-    from dashboard import build_html
-    docs_dir = Path(__file__).parent.parent / "docs"
-    docs_dir.mkdir(parents=True, exist_ok=True)
-    output = docs_dir / "kalshi.html"
-    output.write_text(build_html(
-        db_path=DB_PATH_KALSHI,
-        subtitle="Kalshi BTC (Phase 0 — Paper)"
-    ))
-    print(f"  Kalshi dashboard written to {output}")
+    """No-op — dashboards served dynamically by dashboard_server.py."""
+    print("  Dashboard served dynamically — skipping static HTML generation")
 
 
 if __name__ == "__main__":
