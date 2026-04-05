@@ -1,0 +1,21 @@
+[Unit]
+Description=Polymarket Dashboard — Flask web server
+After=network-online.target polymarket-bot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botuser
+WorkingDirectory=/home/botuser/polymarket-bot
+ExecStart=/home/botuser/polymarket-bot/venv/bin/python3 \
+    /home/botuser/polymarket-bot/src/dashboard_server.py
+Restart=always
+RestartSec=10
+Environment=FLASK_ENV=production
+MemoryMax=256M
+CPUQuota=25%
+StandardOutput=append:/home/botuser/polymarket-bot/logs/dashboard.log
+StandardError=append:/home/botuser/polymarket-bot/logs/dashboard.log
+
+[Install]
+WantedBy=multi-user.target

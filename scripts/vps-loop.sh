@@ -143,7 +143,7 @@ while true; do
 
     # ── Commit and push ──
     log "Committing changes..."
-    git add data/ docs/ 2>&1 | tee -a "$LOG_FILE"
+    git add data/ 2>&1 | tee -a "$LOG_FILE"
 
     if git diff --cached --quiet; then
         log "No changes to commit"

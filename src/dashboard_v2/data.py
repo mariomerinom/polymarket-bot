@@ -34,8 +34,20 @@ def _now_utc():
     return datetime.now(timezone.utc)
 
 
+def _clean_ts(ts_str):
+    """Truncate to second precision + Z suffix for cross-browser D3 compat.
+
+    Python's datetime.isoformat() produces '2026-03-25T22:46:44.855951+00:00'
+    which causes NaN in new Date() on some browsers due to microseconds + offset.
+    """
+    if not ts_str or len(ts_str) <= 20:
+        return ts_str
+    # Strip microseconds and timezone offset, append Z
+    return ts_str[:19] + "Z"
+
+
 def _provenance(source, ts=None):
-    return {"source": source, "fetched_at": (ts or _now_utc()).isoformat()}
+    return {"source": source, "fetched_at": (ts or _now_utc()).isoformat(timespec="seconds")}
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +509,7 @@ def get_signal_pnl(db, asset="BTC"):
             streak_type = "W" if won else "L"
             streak_count = 1
 
-        ts = md["predicted_at"] or md["end_date"]
+        ts = _clean_ts(md["predicted_at"] or md["end_date"])
         pnl_series.append({"date": ts, "value": round(total_pnl, 2)})
         bet_results.append({
             "date": ts,
@@ -735,7 +747,7 @@ def get_rolling_accuracy(db, window=10):
     for mid, md in sorted(market_data.items(), key=lambda x: x[1]["predicted_at"]):
         avg_est = sum(md["estimates"]) / len(md["estimates"])
         correct = _is_correct(avg_est, md["outcome"])
-        results.append({"date": md["predicted_at"], "correct": correct})
+        results.append({"date": _clean_ts(md["predicted_at"]), "correct": correct})
 
     series = []
     for i in range(window - 1, len(results)):

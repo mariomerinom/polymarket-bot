@@ -142,7 +142,7 @@ def _build_live_pnl_series(live_data):
     start = datetime(2026, 4, 1, tzinfo=timezone.utc)
     step = (now - start) / max(len(pnl_series) - 1, 1)
     return [
-        {"date": (start + step * i).isoformat(), "value": round(v, 2)}
+        {"date": (start + step * i).strftime("%Y-%m-%dT%H:%M:%SZ"), "value": round(v, 2)}
         for i, v in enumerate(pnl_series)
     ]
 
