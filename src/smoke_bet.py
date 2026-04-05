@@ -16,6 +16,7 @@ import sys
 from datetime import datetime, timezone
 
 from btc_data import fetch_btc_candles
+from clob_depth import get_order_book, analyze_depth
 from fetch_markets import fetch_active_markets, init_db, store_markets
 from predict import momentum_signal, _get_clob_tokens_safe
 from trade import place_order, ensure_orders_table, TRADING_ENABLED
@@ -76,23 +77,25 @@ def main():
         sys.exit(1)
 
     if direction == "UP":
-        token_key, mkt_price = "yes", market["price_yes"]
+        token_key = "yes"
+        gamma_price = market["price_yes"]
     else:
-        token_key, mkt_price = "no", market["price_no"]
+        token_key = "no"
+        gamma_price = market["price_no"]
 
-    # Fetch real CLOB mid for the token we're buying (REST fallback for standalone)
-    gamma_price = mkt_price
-    try:
-        from clob_depth import get_order_book, analyze_depth
-        book = get_order_book(tokens[token_key])
-        if book:
-            analysis = analyze_depth(book)
-            clob_mid = analysis.get("mid")
-            if clob_mid:
-                print(f"  CLOB mid: {clob_mid:.4f} (Gamma implied: {mkt_price:.4f})")
-                mkt_price = clob_mid
-    except Exception as e:
-        print(f"  CLOB price fetch failed, using Gamma: {e}")
+    # Fetch real CLOB price — REQUIRED, not optional
+    print(f"  Fetching CLOB orderbook for {token_key.upper()} token...")
+    book = get_order_book(tokens[token_key])
+    if not book:
+        print(f"FAIL: CLOB orderbook empty for {token_key} token")
+        sys.exit(1)
+    analysis = analyze_depth(book)
+    mkt_price = analysis.get("mid")
+    if not mkt_price:
+        print(f"FAIL: No mid price from CLOB orderbook")
+        sys.exit(1)
+    print(f"  CLOB mid: {mkt_price:.4f} (Gamma was: {gamma_price:.4f}, "
+          f"gap: {abs(mkt_price - gamma_price):.4f})")
 
     order_params = {
         "direction": direction,

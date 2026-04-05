@@ -717,24 +717,46 @@ def execute_trades(db, cycle):
         # Use live WS per-token prices (replaces stale Gamma implied prices)
         market_row = {"price_yes": pred["price_yes"],
                       "price_no": pred.get("price_no", round(1 - pred["price_yes"], 4))}
+        gamma_yes = pred["price_yes"]
+        gamma_no = round(1 - gamma_yes, 4)
         if tokens:
             yes_mid = _get_live_token_mid(tokens.get("yes", ""))
             no_mid = _get_live_token_mid(tokens.get("no", ""))
-            gamma_yes = pred["price_yes"]
-            gamma_no = round(1 - gamma_yes, 4)
+
+            # WS cache miss → try CLOB REST as fallback
+            if yes_mid is None or no_mid is None:
+                try:
+                    from clob_depth import get_order_book, analyze_depth
+                    if yes_mid is None and tokens.get("yes"):
+                        book = get_order_book(tokens["yes"])
+                        if book:
+                            yes_mid = analyze_depth(book).get("mid")
+                    if no_mid is None and tokens.get("no"):
+                        book = get_order_book(tokens["no"])
+                        if book:
+                            no_mid = analyze_depth(book).get("mid")
+                except Exception as e:
+                    print(f"    [CLOB_REST] Fallback failed: {e}")
+
             if yes_mid is not None:
                 market_row["price_yes"] = yes_mid
             if no_mid is not None:
                 market_row["price_no"] = no_mid
-            print(f"    [LIVE_OB] YES={market_row['price_yes']:.4f} "
-                  f"NO={market_row['price_no']:.4f} "
-                  f"(DB: YES={gamma_yes:.4f})")
-            # DIAG: measure Gamma vs CLOB gap
+
+            # DIAG: log source and gap
+            src_yes = "ws" if _get_live_token_mid(tokens.get("yes", "")) else ("rest" if yes_mid else "gamma")
+            src_no = "ws" if _get_live_token_mid(tokens.get("no", "")) else ("rest" if no_mid else "gamma")
+            print(f"    [LIVE_OB] YES={market_row['price_yes']:.4f}({src_yes}) "
+                  f"NO={market_row['price_no']:.4f}({src_no}) "
+                  f"(Gamma: YES={gamma_yes:.4f})")
             if yes_mid and no_mid:
                 print(f"    DIAG|gamma_yes={gamma_yes:.4f}|clob_yes={yes_mid:.4f}"
                       f"|gamma_no={gamma_no:.4f}|clob_no={no_mid:.4f}"
                       f"|gap_yes={abs(yes_mid - gamma_yes):.4f}"
                       f"|gap_no={abs(no_mid - gamma_no):.4f}")
+            elif not yes_mid and not no_mid:
+                print(f"    WARNING: Both CLOB sources failed — using Gamma prices")
+                print(f"    DIAG|clob_fallback=true|side=BOTH|gamma_yes={gamma_yes:.4f}")
 
         order_params, order_reason = compute_order(pred, market_row, liquidity)
 

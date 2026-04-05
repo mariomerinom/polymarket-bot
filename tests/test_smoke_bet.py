@@ -25,6 +25,8 @@ FAKE_MARKET = {
 
 FAKE_TOKENS = {"yes": "tok_yes_abc", "no": "tok_no_xyz"}
 
+FAKE_CLOB_ANALYSIS = {"mid": 0.55, "best_bid": 0.54, "best_ask": 0.56, "spread": 0.02}
+
 FAKE_BTC_DATA = {
     "candles": [
         {"open": 67000, "close": 67100, "high": 67200, "low": 66900, "volume": 10,
@@ -112,6 +114,8 @@ class TestPredictionStorage:
              patch("smoke_bet.fetch_active_markets", return_value=[FAKE_MARKET]), \
              patch("smoke_bet.store_markets"), \
              patch("smoke_bet._get_clob_tokens_safe", return_value=FAKE_TOKENS), \
+             patch("smoke_bet.get_order_book", return_value={"bids": [], "asks": []}), \
+             patch("smoke_bet.analyze_depth", return_value=FAKE_CLOB_ANALYSIS), \
              patch("smoke_bet.place_order", return_value={"status": "submitted", "order_id": "abc"}), \
              patch("sys.argv", ["smoke_bet.py"]):
             from smoke_bet import main
@@ -145,6 +149,8 @@ class TestDryRun:
         with patch("smoke_bet.fetch_btc_candles", return_value=FAKE_BTC_DATA), \
              patch("smoke_bet.fetch_active_markets", return_value=[FAKE_MARKET]), \
              patch("smoke_bet._get_clob_tokens_safe", return_value=FAKE_TOKENS), \
+             patch("smoke_bet.get_order_book", return_value={"bids": [], "asks": []}), \
+             patch("smoke_bet.analyze_depth", return_value=FAKE_CLOB_ANALYSIS), \
              patch("smoke_bet.place_order") as mock_place, \
              patch("sys.argv", ["smoke_bet.py", "--dry-run"]):
             from smoke_bet import main
