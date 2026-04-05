@@ -51,14 +51,9 @@ log "Python: $(which python3)"
 log "TRADING_ENABLED: ${TRADING_ENABLED:-false}"
 log "Cycle interval: ${CYCLE_INTERVAL}s"
 
-# Run tests once at startup (unset trading env so paper-mode tests pass)
-log "Running startup tests..."
-if TRADING_ENABLED= POLYMARKET_PRIVATE_KEY= python3 -m pytest tests/ -v --tb=short 2>&1 | tee -a "$LOG_FILE"; then
-    log "Tests passed. Starting main loop."
-else
-    log "FATAL: Tests failed. Fix before running."
-    exit 1
-fi
+# Tests run locally before every commit (CLAUDE.md policy).
+# Removed startup test gate — was blocking pipeline 28+ min on 1GB VPS.
+log "Skipping startup tests (run locally before push). Starting main loop."
 
 cycle=0
 last_report_date=""
