@@ -79,7 +79,7 @@ class BotsyEngine:
         self.last_report_date = ""
         self.fifteenth_min_counter = 0
         self.last_event_time = time.time()
-        self._dispatched: set = set()  # dedup: (symbol, candle_ts)
+        self._dispatched: set = set()  # dedup: (source, symbol, candle_ts)
 
         # Metrics state
         self.metrics = {
@@ -352,8 +352,8 @@ class BotsyEngine:
 
     async def dispatch(self, source: str, symbol: str, interval: str,
                        candle_ts: int):
-        """Route candle-close event to pipelines. Dedup by (symbol, candle_ts)."""
-        dedup_key = (symbol, candle_ts)
+        """Route candle-close event to pipelines. Dedup by (source, symbol, candle_ts)."""
+        dedup_key = (source, symbol, candle_ts)
         if dedup_key in self._dispatched:
             return
         self._dispatched.add(dedup_key)

@@ -137,8 +137,8 @@ class TestBotsyEngineInit:
         from botsy_engine import BotsyEngine
         engine = BotsyEngine()
         # Simulate adding a dedup key
-        engine._dispatched.add(("BTC-USD", 1234567890000))
-        assert ("BTC-USD", 1234567890000) in engine._dispatched
+        engine._dispatched.add(("bybit_spot", "BTC-USD", 1234567890000))
+        assert ("bybit_spot", "BTC-USD", 1234567890000) in engine._dispatched
 
     def test_percentile_computation(self):
         from botsy_engine import BotsyEngine

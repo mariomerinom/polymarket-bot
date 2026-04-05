@@ -1,4 +1,4 @@
-from config import DEFAULT_CANDLE_LIMIT
+from config import DEFAULT_CANDLE_LIMIT, SHADOW_CANDLE_LIMIT
 """
 ci_run_eth.py — One-shot ETH cycle for GitHub Actions.
 
