@@ -174,6 +174,28 @@ class TestPositionLifecycle:
         pos = get_open_position(bybit_db)
         assert pos["cycles_held"] == 3
 
+    def test_get_open_positions_multiple(self, bybit_db):
+        from bybit_markets import (
+            open_position, get_open_positions, get_position_by_id,
+        )
+
+        id1 = open_position(bybit_db, "test-1", "Buy", 0.005, 84000.0, 83850.0)
+        id2 = open_position(bybit_db, "test-2", "Sell", 0.005, 84100.0, 84250.0)
+
+        positions = get_open_positions(bybit_db)
+        assert len(positions) == 2
+        assert positions[0]["id"] == id1
+        assert positions[1]["id"] == id2
+
+        # get_position_by_id
+        p1 = get_position_by_id(bybit_db, id1)
+        assert p1["side"] == "Buy"
+        p2 = get_position_by_id(bybit_db, id2)
+        assert p2["side"] == "Sell"
+
+        # Non-existent ID
+        assert get_position_by_id(bybit_db, 999) is None
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Leg 2: Trading Engine Tests
@@ -264,26 +286,18 @@ class TestRiskGates:
         assert ok
         assert reason == "ok"
 
-    def test_same_direction_skip(self, bybit_db):
+    def test_concurrent_positions_allowed(self, bybit_db):
+        """Same-direction position no longer blocks — concurrent positions OK."""
         from bybit_trade import should_trade_bybit
         from bybit_markets import open_position
 
-        open_position(bybit_db, "test", "Buy", 0.005, 84000.0, 83850.0)
+        open_position(bybit_db, "test-1", "Buy", 0.005, 84000.0, 83850.0)
+        open_position(bybit_db, "test-2", "Buy", 0.005, 84100.0, 83950.0)
 
         pred = {"conviction_score": 3, "estimate": 0.60}  # Would be Buy
         ok, reason = should_trade_bybit(pred, bybit_db)
-        assert not ok
-        assert "same_direction" in reason
-
-    def test_opposite_direction_allowed(self, bybit_db):
-        from bybit_trade import should_trade_bybit
-        from bybit_markets import open_position
-
-        open_position(bybit_db, "test", "Buy", 0.005, 84000.0, 83850.0)
-
-        pred = {"conviction_score": 3, "estimate": 0.40}  # Would be Sell
-        ok, reason = should_trade_bybit(pred, bybit_db)
         assert ok
+        assert reason == "ok"
 
     def test_daily_loss_limit(self, bybit_db):
         from bybit_trade import should_trade_bybit
@@ -330,6 +344,43 @@ class TestRiskGates:
         close_position(bybit_db, pos_id, 84200.0, 1.0, "streak_break")
 
         assert _check_consecutive_losses(bybit_db) == 0
+
+    def test_consecutive_loss_resets_daily(self, bybit_db):
+        """Yesterday's losses don't carry over — streak resets at midnight UTC."""
+        from bybit_trade import _check_consecutive_losses
+
+        # Insert 5 losses with yesterday's timestamp directly
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        for i in range(5):
+            bybit_db.execute("""
+                INSERT INTO positions (market_id, side, size, entry_price, stop_loss,
+                                       status, opened_at, closed_at, close_price, pnl,
+                                       cycles_held, close_reason)
+                VALUES (?, 'Buy', 0.005, 84000.0, 83850.0, 'closed',
+                        ?, ?, 83900.0, -0.5, 3, 'streak_break')
+            """, (
+                f"yesterday-{i}",
+                f"{yesterday}T10:00:00+00:00",
+                f"{yesterday}T10:15:00+00:00",
+            ))
+        bybit_db.commit()
+
+        # Yesterday's 5 losses should NOT count
+        assert _check_consecutive_losses(bybit_db) == 0
+
+    def test_consecutive_loss_counts_today_only(self, bybit_db):
+        """Only today's losses count toward the streak."""
+        from bybit_trade import _check_consecutive_losses
+        from bybit_markets import open_position, close_position
+
+        # 3 losses today
+        for i in range(3):
+            pos_id = open_position(
+                bybit_db, f"today-loss-{i}", "Buy", 0.005, 84000.0, 83850.0
+            )
+            close_position(bybit_db, pos_id, 83900.0, -0.5, "streak_break")
+
+        assert _check_consecutive_losses(bybit_db) == 3
 
 
 class TestKillSwitch:

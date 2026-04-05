@@ -155,12 +155,12 @@ class TestRealConfig:
                 f"{name} has invalid mode '{cfg['mode']}'"
             assert "bet_size" in cfg, f"{name} missing 'bet_size'"
 
-    def test_eth_5m_is_live(self):
-        """ETH 5m went live 2026-04-04 — 73.6% WR on 72 resolved conv>=3 predictions."""
+    def test_eth_5m_is_paper(self):
+        """ETH 5m reverted to paper 2026-04-05 — adverse selection bleeding unfilled winners."""
         cfg_path = os.path.join(os.path.dirname(__file__), "..", "config", "pipelines.json")
         with open(cfg_path) as f:
             data = json.load(f)
-        assert data["pipelines"]["eth_5m"]["mode"] == "live"
+        assert data["pipelines"]["eth_5m"]["mode"] == "paper"
 
 
 class TestAgentToPipeline:

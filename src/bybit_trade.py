@@ -28,7 +28,8 @@ from config import (
     FILL_PRIORITY_SPREAD, API_TIMEOUT_BYBIT, _env,
 )
 from bybit_markets import (
-    get_open_position, open_position, close_position as close_position_db,
+    get_open_position, get_open_positions, get_position_by_id,
+    open_position, close_position as close_position_db,
     increment_cycles_held,
 )
 
@@ -75,23 +76,21 @@ def should_trade_bybit(prediction_row, db):
     if consec >= CONSECUTIVE_LOSS_MAX:
         return False, f"consecutive_loss_breaker ({consec} >= {CONSECUTIVE_LOSS_MAX})"
 
-    # Check if same-direction position already open
-    pos = get_open_position(db)
-    if pos:
-        direction = "Buy" if estimate > 0.5 else "Sell"
-        if pos["side"] == direction:
-            return False, f"same_direction_position_open ({direction})"
-
     return True, "ok"
 
 
 def _check_consecutive_losses(db):
-    """Count current consecutive loss streak from closed positions."""
+    """Count current consecutive loss streak from today's closed positions.
+
+    Resets daily at midnight UTC — yesterday's losses don't carry over.
+    """
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     rows = db.execute("""
         SELECT pnl FROM positions
         WHERE status = 'closed' AND pnl IS NOT NULL
+          AND closed_at LIKE ?
         ORDER BY closed_at DESC LIMIT 50
-    """).fetchall()
+    """, (f"{today}%",)).fetchall()
     streak = 0
     for row in rows:
         if row[0] < 0:
@@ -450,31 +449,29 @@ def execute_bybit_trades(db, cycle, candles, prediction=None):
 
     Flow:
     1. Sync position status (stop-loss check)
-    2. Check exit conditions on open position
-    3. If no position + qualifying prediction → enter
+    2. Check exit conditions on ALL open positions
+    3. Enter new position if qualifying signal (concurrent positions allowed)
     """
     orders = []
-
-    # 1. Sync with Bybit (catch stop-loss triggers)
-    sync_position_status(db)
-
-    # 2. Check exit on open position
-    pos = get_open_position(db)
     mark_price = candles[-1]["close"] if candles else None
 
-    if pos and mark_price:
+    # 1. Sync with Bybit (catch stop-loss triggers)
+    if BYBIT_TRADING_ENABLED:
+        sync_position_status(db)
+
+    # 2. Check exit conditions on ALL open positions
+    for pos in get_open_positions(db):
         increment_cycles_held(db, pos["id"])
-        # Re-fetch after increment
-        pos = get_open_position(db)
+        pos = get_position_by_id(db, pos["id"])  # Re-fetch after increment
 
-        should_exit, reason = check_exit_conditions(candles, pos)
-        if should_exit:
-            result = close_bybit_position(db, pos, reason, mark_price)
-            orders.append({"action": "close", **result})
-            pos = None  # Cleared
+        if pos and mark_price:
+            should_exit, reason = check_exit_conditions(candles, pos)
+            if should_exit:
+                result = close_bybit_position(db, pos, reason, mark_price)
+                orders.append({"action": "close", **result})
 
-    # 3. Enter new position if qualifying signal
-    if prediction and not get_open_position(db) and mark_price:
+    # 3. Enter new position if qualifying signal (no single-position gate)
+    if prediction and mark_price:
         can_trade, reason = should_trade_bybit(prediction, db)
 
         if can_trade:

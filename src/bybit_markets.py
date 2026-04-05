@@ -159,6 +159,22 @@ def get_open_position(db):
     return dict(row) if row else None
 
 
+def get_open_positions(db):
+    """Returns ALL open positions (supports concurrent positions)."""
+    rows = db.execute(
+        "SELECT * FROM positions WHERE status = 'open' ORDER BY opened_at"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_position_by_id(db, position_id):
+    """Returns a single position by ID."""
+    row = db.execute(
+        "SELECT * FROM positions WHERE id = ?", (position_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def open_position(db, market_id, side, size, entry_price, stop_loss,
                   bybit_order_id=None):
     """Insert a new position row. Returns position ID."""
