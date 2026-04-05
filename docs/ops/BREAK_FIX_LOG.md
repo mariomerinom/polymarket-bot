@@ -4,6 +4,23 @@ Production incidents and their root causes. Review before making changes.
 
 ---
 
+## Operational Change: VPS Consolidation Phase 1 — Bybit + Kalshi Migrated
+**Date:** April 5, 2026 | **Severity:** N/A — operational change, no incident
+
+**What:** Moved Bybit BTC Perps and Kalshi BTC pipelines from GitHub Actions to `scripts/vps-loop.sh`. Both pipelines now run every 5-min cycle alongside BTC 5m, BTC 15m, and ETH 5m. GitHub Actions triggers (schedule + repository_dispatch) disabled; `workflow_dispatch` kept as manual fallback.
+
+**Why:** Phase 1 of unified VPS + websocket architecture (`docs/specs/stochastic/spec_unified_vps_websocket.md`). Consolidating all execution onto one VPS is a prerequisite for the websocket rewrite (Phase 3).
+
+**Risk:** Low. Both pipelines are paper-only (Kalshi conv=2, Bybit paper mode). No money at risk.
+
+**Added:** Cycle timing diagnostic (`DIAG|cycle_seconds`) to measure whether 5 pipelines fit within the 5-min budget. If cycle exceeds 4 min, log a warning.
+
+**Revert:** Re-enable schedule + repository_dispatch triggers in `predict-bybit.yml` and `predict-kalshi.yml`. Remove Bybit/Kalshi blocks from `vps-loop.sh`.
+
+**Monitoring:** Watch `DIAG|cycle_seconds` in VPS logs for the next 24 hours. Target: < 240s.
+
+---
+
 ## Incident 9: Missing API_TIMEOUT_CLOB Import — ALL Live Orders Failing
 **Date:** April 4, 2026 | **Duration:** ongoing since config refactor | **Severity:** P0 — every live order fails
 

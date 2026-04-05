@@ -6,6 +6,8 @@
 #   BTC 5m  — every cycle (predict + trade + score + dashboard)
 #   BTC 15m — every 3rd cycle (predict + score + dashboard)
 #   ETH 5m  — every cycle (predict + score + dashboard)
+#   Bybit BTC Perps — every cycle (predict + trade + score + dashboard)
+#   Kalshi BTC — every cycle (predict + score + dashboard)
 #   Daily report — once per day at ~12:00 UTC
 #
 # GitHub is code hosting + Pages only. This script handles everything.
@@ -73,6 +75,9 @@ while true; do
         git stash pop 2>/dev/null || true
     fi
 
+    # ── Cycle timing (Phase 2 diagnostic) ──
+    CYCLE_START=$(date +%s)
+
     # ── BTC 5m Pipeline ──
     log "[BTC 5m] Running ci_run.py..."
     if (cd src && python3 ci_run.py) 2>&1 | tee -a "$LOG_FILE"; then
@@ -97,6 +102,30 @@ while true; do
         log "[ETH 5m] OK"
     else
         log "[ETH 5m] FAILED (exit $?)"
+    fi
+
+    # ── Bybit BTC Perps Pipeline ──
+    log "[Bybit] Running ci_run_bybit.py..."
+    if (cd src && python3 ci_run_bybit.py) 2>&1 | tee -a "$LOG_FILE"; then
+        log "[Bybit] OK"
+    else
+        log "[Bybit] FAILED (exit $?)"
+    fi
+
+    # ── Kalshi BTC Pipeline ──
+    log "[Kalshi] Running ci_run_kalshi.py..."
+    if (cd src && python3 ci_run_kalshi.py) 2>&1 | tee -a "$LOG_FILE"; then
+        log "[Kalshi] OK"
+    else
+        log "[Kalshi] FAILED (exit $?)"
+    fi
+
+    # ── Cycle timing diagnostic ──
+    CYCLE_END=$(date +%s)
+    ELAPSED=$((CYCLE_END - CYCLE_START))
+    log "DIAG|cycle_seconds=$ELAPSED"
+    if [ $ELAPSED -gt 240 ]; then
+        log "WARN: cycle exceeded 4 min (${ELAPSED}s) — consider parallelizing"
     fi
 
     # ── Daily Report (once per day, around 12:00 UTC) ──

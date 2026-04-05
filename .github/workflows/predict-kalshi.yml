@@ -1,11 +1,11 @@
 name: Predict Kalshi
 
 on:
-  schedule:
-    - cron: '*/30 * * * *'  # Fallback safety net
-  repository_dispatch:
-    types: [next-cycle-kalshi]
-  workflow_dispatch: {}
+  # schedule:                          # DISABLED — runs on VPS now (Phase 1, 2026-04-05)
+  #   - cron: '*/30 * * * *'
+  # repository_dispatch:               # DISABLED — runs on VPS now
+  #   types: [next-cycle-kalshi]
+  workflow_dispatch: {}                 # Manual fallback only
 
 concurrency:
   group: predict-kalshi
@@ -57,23 +57,12 @@ jobs:
           git stash pop || true
           git push || echo "Push failed — next cycle will retry"
 
-      - name: Schedule next cycle in 15 minutes
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TODAY=$(date -u +%Y-%m-%d)
-          COUNT=$(gh api repos/${{ github.repository }}/actions/runs \
-            --jq "[.workflow_runs[] | select(.event==\"repository_dispatch\" and .created_at[:10]==\"$TODAY\")] | length" \
-            2>/dev/null || echo "0")
-
-          if [ "$COUNT" -lt "300" ]; then
-            echo "Scheduling next Kalshi cycle (dispatch #$COUNT today)..."
-            sleep 900
-            gh api repos/${{ github.repository }}/dispatches \
-              -f event_type=next-cycle-kalshi \
-              --silent
-            echo "Next Kalshi cycle dispatched."
-          else
-            echo "Daily dispatch limit reached ($COUNT). Relying on cron fallback."
-          fi
+      # Self-dispatch DISABLED — runs on VPS now (Phase 1, 2026-04-05)
+      # - name: Schedule next cycle in 15 minutes
+      #   if: success()
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   run: |
+      #     sleep 900
+      #     gh api repos/${{ github.repository }}/dispatches \
+      #       -f event_type=next-cycle-kalshi --silent

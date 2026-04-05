@@ -136,7 +136,7 @@ All criteria met. Proceeding to Part 6.
 
 ---
 
-## Part 7: DigitalOcean VPS Deployment (DONE)
+## Part 7: DigitalOcean VPS Deployment (DONE — fully consolidated)
 
 Move from GitHub Actions to a dedicated VPS in a non-US region. GitHub Actions runners are US-based and get 403 geoblocked by Polymarket's CLOB API — all live orders fail.
 
@@ -145,7 +145,8 @@ Move from GitHub Actions to a dedicated VPS in a non-US region. GitHub Actions r
 - **What stays on GitHub:** Code hosting, Pages (serves dashboards from pushed HTML)
 - **GitHub Actions:** Disabled. Re-enable via `workflow_dispatch` as fallback.
 - **Setup guide:** `scripts/setup-digitalocean.md`
-- **Loop script:** `scripts/vps-loop.sh` — runs all 3 pipelines in one process
+- **Loop script:** `scripts/vps-loop.sh` — runs all 5 pipelines in one process
+- **Phase 1 complete (2026-04-05):** Bybit + Kalshi migrated to VPS. All 5 pipelines consolidated. Cycle timing diagnostic active (`DIAG|cycle_seconds`).
 
 ---
 
