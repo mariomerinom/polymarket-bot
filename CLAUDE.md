@@ -12,8 +12,41 @@
 
 - Run `pytest tests/ -v` before every commit. Tests gate CI — a broken push stops the pipeline.
 - Never skip pre-commit hooks.
-- Document production incidents in `docs/ops/BREAK_FIX_LOG.md`.
 - Add a regression test for every fix.
+
+### Board-First Workflow
+
+The [BOTSY Kanban](https://github.com/users/mariomerinom/projects/1) is the live tracker. Keep it current as you work.
+
+**When you fix a bug or handle an incident:**
+1. `gh issue create --repo mariomerinom/polymarket-bot --label incident,<pipeline>` with symptom, root cause, fix
+2. Write postmortem in `docs/ops/` as a standalone markdown file
+3. Close the issue when fix is pushed
+
+**When you ship a code change that needs validation (optimization):**
+1. Register in `optimizations.json` (machine-readable for tracker)
+2. `gh issue create --label optimization,<pipeline>` with baseline, revert criteria, min sample
+3. Card sits in Monitoring until sample reached
+
+**When a new decision emerges:**
+1. `gh issue create --label decision,<pipeline>` with trigger condition in the body
+2. Set milestone if it maps to a roadmap phase
+3. Do NOT add to `decisions.md` (archived) — the board is the live tracker
+
+**When you start/finish work:**
+1. Move the card to "In Progress" when you begin: `gh project item-edit ...`
+2. Move to "Done" and close the issue when shipped
+3. Move to "Reverted" if the experiment fails
+
+**During health checks (`/health-check`):**
+1. Check the "Ready" column — anything there needs a human decision NOW
+2. Check "Monitoring" optimizations — any revert candidates?
+3. Report board state alongside pipeline health
+
+**When reviewing decisions (`/review-decisions`):**
+1. Query the board for `label:decision` + status=Monitoring
+2. Cross-check triggers against current DB stats
+3. Move triggered decisions to "Ready"
 
 ## Bot Design
 
@@ -57,6 +90,14 @@ Production sizing is a grind, not a gamble. The current paper-trading tiers ($75
 
 ## Documentation Map
 
+### Kanban Board
+
+| Resource | URL |
+|----------|-----|
+| **BOTSY Kanban** (GitHub Project) | https://github.com/users/mariomerinom/projects/1 |
+
+Tracks decisions, specs, optimizations, incidents, and infra work. All items are GitHub Issues with labels (`decision`, `spec`, `optimization`, `incident`, `infra`) and pipeline labels (`BTC-5m`, `ETH-5m`, etc.). Milestones map to roadmap phases.
+
 ### Core (`docs/core/`) — project rules, strategy, roadmap
 
 | Document | Goal |
@@ -65,7 +106,7 @@ Production sizing is a grind, not a gamble. The current paper-trading tiers ($75
 | `docs/core/strategy.md` | Current trading strategy for all pipelines |
 | `docs/core/PRIMER.md` | System overview, repo map, onboarding |
 | `docs/core/ROADMAP.md` | Project phases and validation gates |
-| `docs/core/decisions.md` | Tracked decisions with automated triggers |
+| `docs/core/decisions.md` | **ARCHIVED** → `docs/archive/decisions.md`. New decisions go to GitHub Issues with `decision` label |
 | `docs/core/TESTING.md` | Test strategy, layers, CI pipeline |
 | `config/macro_bias.md` | Macro overlay config (not used in V4) |
 
@@ -73,7 +114,7 @@ Production sizing is a grind, not a gamble. The current paper-trading tiers ($75
 
 | Document | Goal |
 |----------|------|
-| `docs/ops/BREAK_FIX_LOG.md` | Production incident log |
+| `docs/ops/BREAK_FIX_LOG.md` | **ARCHIVED** → `docs/archive/BREAK_FIX_LOG.md`. New incidents go to GitHub Issues with `incident` label. Postmortems still written as markdown in `docs/ops/` |
 | `docs/ops/ENGINEERING_LESSONS.md` | Evergreen operational lessons |
 
 ### Plans (`docs/plans/`) — active expansion plans
@@ -162,6 +203,8 @@ Active specs addressing the adverse selection / fill rate problem (Decision #24)
 | `docs/archive/signal-infrastructure-plan.md` | Multi-source signal exploration — useful parts in strategy.md |
 | `docs/archive/acceptance_criteria_generic_conviction.md` | Duplicate of spec_generic_conviction_scorer.md |
 | `program.md` | V1/V2 LLM agent system — marked LEGACY |
+| `docs/archive/decisions.md` | Decision tracker — replaced by GitHub Issues + kanban board |
+| `docs/archive/BREAK_FIX_LOG.md` | Incident log — replaced by GitHub Issues. Postmortems now standalone files in `docs/ops/` |
 
 ### Auto-Generated (do not edit manually)
 
@@ -197,10 +240,13 @@ When asked "how are we doing?", "check the project", "what's the status", or sim
 1. `git pull` — always first
 2. Read the latest file in `docs/daily/` — yesterday's WR, P&L, alerts, trade execution, circuit breaker status
 3. `python3 src/optimization_tracker.py summary` — are active optimizations improving or regressing?
-4. Read `docs/core/decisions.md` — has anything moved to READY?
+4. Check the kanban board: `gh issue list --repo mariomerinom/polymarket-bot --state open --label decision,optimization --json number,title,labels`
+   - Any cards in "Ready"? Those need action NOW
+   - Any optimization revert candidates?
 5. Read `docs/core/ROADMAP.md` — what's the current phase, what's next?
 6. `python3 -m pytest tests/ -v` — are tests passing?
-7. Check GitHub Actions — are all 3 pipelines (BTC 5m, BTC 15m, ETH 5m) running green?
+7. Check GitHub Actions — are all pipelines running green?
 8. Check trade execution — is `TRADING_ENABLED`? Any kill switch or circuit breaker trips?
+9. Update the board if anything changed: move cards, close resolved issues, create new ones
 
 Report findings concisely. Flag anything that needs a decision.

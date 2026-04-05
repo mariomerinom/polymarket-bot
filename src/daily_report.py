@@ -1124,7 +1124,7 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
         lines.extend([
             "## Decision Alerts",
             "",
-            "Tracked in [`docs/core/decisions.md`](../core/decisions.md). "
+            "Tracked on [BOTSY Kanban](https://github.com/users/mariomerinom/projects/1). "
             "These fire when data crosses predefined thresholds.",
             "",
         ])
