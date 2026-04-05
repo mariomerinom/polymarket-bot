@@ -255,12 +255,17 @@ class BotsyEngine:
 
                     async for msg in ws:
                         try:
-                            data = json.loads(msg)
-                            event_type = data.get("event_type", "")
-                            if event_type == "book":
-                                self._update_orderbook_cache(data)
-                                self.metrics["polymarket"]["last_event"] = \
-                                    datetime.now(timezone.utc).isoformat()
+                            raw = json.loads(msg)
+                            # Polymarket sends arrays or single objects
+                            events = raw if isinstance(raw, list) else [raw]
+                            for data in events:
+                                if not isinstance(data, dict):
+                                    continue
+                                event_type = data.get("event_type", "")
+                                if event_type == "book":
+                                    self._update_orderbook_cache(data)
+                                    self.metrics["polymarket"]["last_event"] = \
+                                        datetime.now(timezone.utc).isoformat()
                         except (json.JSONDecodeError, KeyError):
                             continue
 
