@@ -36,7 +36,7 @@ def has_unpredicted_market(db):
     return cursor.fetchone() is not None
 
 
-def main():
+def main(candle_data=None, indicators=None):
     DB_PATH_15M.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_15m()
 
@@ -69,23 +69,24 @@ def main():
         _generate_dashboard()
         return
 
-    # 3. Predict using momentum rule with 5m candles (atomic unit)
+    # 3. Predict using momentum rule with candles
     cycle = get_next_cycle(db)
-    print(f"[15M 3/5] Predictions — momentum rule 5m→15m (cycle {cycle})...")
-    btc_data = fetch_btc_candles(limit=DEFAULT_CANDLE_LIMIT)  # 5m candles — atomic unit
+    print(f"[15M 3/5] Predictions — momentum rule (cycle {cycle})...")
+    btc_data = candle_data  # Use engine-provided data if available
+    if btc_data is None:
+        btc_data = fetch_btc_candles(limit=DEFAULT_CANDLE_LIMIT)  # 5m candles — atomic unit
     if btc_data:
-        print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}% | Trend: {btc_data['trend']}")
+        print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data.get('1h_change_pct',0):+.3f}% | Trend: {btc_data.get('trend','?')}")
     else:
         print("  Warning: BTC price data unavailable")
 
     if has_unpredicted_market(db):
         db.close()
         try:
-            # Uses 5m candles with standard thresholds (min_streak=3, autocorr=-0.15)
             # loose_mode=True: disable dead hours, enable 5m sibling confirmation
             run_predictions(cycle=cycle, market_limit=1, btc_data=btc_data,
                             db_path=str(DB_PATH_15M),
-                            loose_mode=True)
+                            loose_mode=True, indicators=indicators)
         except Exception as e:
             print(f"  Prediction error: {e}")
         db = sqlite3.connect(DB_PATH_15M)

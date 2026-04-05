@@ -12,9 +12,12 @@ Candle dict format (matches btc_data.py / bybit_data.py):
 
 from __future__ import annotations
 
+import json
 import requests
+import time
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 class CandleBuffer:
@@ -86,17 +89,64 @@ class CandleBuffer:
         key = (symbol, timeframe)
         return len(self._buffers.get(key, []))
 
+    def save_to_disk(self, path: str | Path = "data/candle_buffer.json"):
+        """Persist all buffers to disk as JSON. Called periodically by engine."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot = {
+            "saved_at": time.time(),
+            "buffers": {},
+        }
+        for (symbol, tf), buf in self._buffers.items():
+            key_str = f"{symbol}:{tf}"
+            snapshot["buffers"][key_str] = list(buf)
+        path.write_text(json.dumps(snapshot))
+
+    def load_from_disk(self, path: str | Path = "data/candle_buffer.json",
+                       max_age_s: float = 900) -> int:
+        """Load buffers from disk. Returns count of buffers loaded, 0 if stale/missing.
+
+        Args:
+            max_age_s: Maximum age in seconds before snapshot is considered stale.
+                       Default 900s (15 min) — covers 3 full 5m candle intervals.
+        """
+        path = Path(path)
+        if not path.exists():
+            return 0
+        try:
+            snapshot = json.loads(path.read_text())
+            age = time.time() - snapshot.get("saved_at", 0)
+            if age > max_age_s:
+                return 0  # stale — need fresh seed
+            count = 0
+            for key_str, candles in snapshot.get("buffers", {}).items():
+                parts = key_str.split(":")
+                if len(parts) != 2:
+                    continue
+                symbol, tf = parts
+                key = (symbol, tf)
+                self._ensure_buffer(key)
+                for c in candles:
+                    self._buffers[key].append(c)
+                count += 1
+            return count
+        except (json.JSONDecodeError, OSError, KeyError):
+            return 0
+
     def seed_from_rest(self, symbol: str = "BTCUSDT", timeframe: str = "5",
                        category: str = "spot", limit: int = 100,
-                       base_url: str = "https://api.bybit.com"):
+                       base_url: str = "https://api.bybit.com",
+                       api_symbol: str | None = None):
         """Backfill buffer from Bybit REST /v5/market/kline.
 
         Called once on engine startup to populate history before WS events flow.
+        symbol: buffer key (e.g. "BTCUSDT_linear" for linear WS feed)
+        api_symbol: Bybit API symbol (e.g. "BTCUSDT"). Defaults to symbol.
         """
         url = f"{base_url}/v5/market/kline"
         resp = requests.get(url, params={
             "category": category,
-            "symbol": symbol,
+            "symbol": api_symbol or symbol,
             "interval": timeframe,
             "limit": limit,
         }, timeout=10)

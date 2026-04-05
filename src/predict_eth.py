@@ -21,6 +21,8 @@ High confidence (streak >= 5) stays conv=2 (paper) — 20% WR on 5 bets.
 
 import json
 import sqlite3
+import time
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -150,8 +152,20 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
     db.commit()
 
 
+_eth_logger = logging.getLogger("predict_eth")
+
+
+def _emit_diag_eth(market_id, conviction, candle_ts_ms, candle_close, current_price):
+    """Emit Phase 2 DIAG lines for every ETH prediction cycle."""
+    now_ms = time.time() * 1000
+    snapshot_age_ms = max(0, now_ms - candle_ts_ms)
+    _eth_logger.info(f"DIAG|snapshot_age_ms={snapshot_age_ms:.0f}|market={market_id}")
+    drift = abs(current_price - candle_close) / candle_close if candle_close > 0 else 0.0
+    _eth_logger.info(f"DIAG|conv={conviction}|drift={drift:.4f}|snapshot_age_ms={snapshot_age_ms:.0f}")
+
+
 def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
-                        min_streak=3, autocorr_threshold=-0.15):
+                        min_streak=3, autocorr_threshold=-0.15, indicators=None):
     """
     Main ETH prediction loop.
     Fetch candles → compute regime → apply MOMENTUM rule → store.
@@ -170,6 +184,20 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
         candles = eth_data["candles"]
         consensus = eth_data.get("consensus")
         print(f"  ETH: ${eth_data['current_price']:,.2f} | 1h: {eth_data['1h_change_pct']:+.3f}%")
+
+        # DIAG: extract candle timestamp and close for snapshot_age/drift
+        _last_candle = candles[-1] if candles else {}
+        _diag_candle_close = _last_candle.get("close", 0.0)
+        _diag_current_price = eth_data.get("current_price", _diag_candle_close)
+        if "timestamp_ms" in _last_candle:
+            _interval_ms = 300_000  # default 5m
+            for i in range(len(candles) - 2, -1, -1):
+                if candles[i].get("timestamp_ms", 0) < _last_candle["timestamp_ms"]:
+                    _interval_ms = _last_candle["timestamp_ms"] - candles[i]["timestamp_ms"]
+                    break
+            _diag_candle_ts_ms = _last_candle["timestamp_ms"] + _interval_ms
+        else:
+            _diag_candle_ts_ms = time.time() * 1000
     else:
         print("  WARNING: No ETH data available — skipping predictions")
         db.close()
@@ -232,6 +260,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                 db.commit()
                 direction = "UP" if signal["estimate"] > 0.5 else "DOWN"
                 print(f"    → DEAD HOUR SHADOW: {direction} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+                _emit_diag_eth(market["id"], 2, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
             else:
                 skip_signal = {
                     "estimate": mkt_price,
@@ -241,6 +270,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                 }
                 store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
                 print(f"    → SKIP (dead hour: UTC {current_hour_utc})")
+                _emit_diag_eth(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
             continue
 
         # Price gate: skip extreme prices
@@ -256,6 +286,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                 db.commit()
                 direction = "UP" if signal["estimate"] > 0.5 else "DOWN"
                 print(f"    → PRICE GATE SHADOW: {direction} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+                _emit_diag_eth(market["id"], 2, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
             else:
                 skip_signal = {
                     "estimate": mkt_price,
@@ -265,6 +296,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                 }
                 store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
                 print(f"    → SKIP (price gate: {mkt_price:.0%})")
+                _emit_diag_eth(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
             continue
 
         # Regime gate — MR shadow mode for extreme estimates
@@ -283,6 +315,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                 db.commit()
                 direction = "UP" if signal["estimate"] > 0.5 else "DOWN"
                 print(f"    → MR SHADOW: {direction} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+                _emit_diag_eth(market["id"], 2, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
             else:
                 skip_signal = {
                     "estimate": mkt_price,
@@ -292,6 +325,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                 }
                 store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
                 print(f"    → SKIP (mean-reverting regime)")
+                _emit_diag_eth(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
             continue
 
         # Apply momentum signal
@@ -317,6 +351,12 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
             conv = 3 if signal.get("confidence") == "medium" else 2
             conv_label = f"conv={conv}" + (" LIVE" if conv >= 3 else " paper")
             print(f"    → RIDE {direction} @ {signal['estimate']:.0%} ({signal['confidence']}, {conv_label})")
+            # Query back actual conviction for DIAG
+            _conv_row = db.execute(
+                "SELECT conviction_score FROM predictions WHERE market_id = ? AND cycle = ? ORDER BY rowid DESC LIMIT 1",
+                (market["id"], cycle)
+            ).fetchone()
+            _emit_diag_eth(market["id"], _conv_row[0] if _conv_row else conv, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
         else:
             no_signal = {
                 "estimate": mkt_price,
@@ -326,6 +366,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
             }
             store_prediction_eth(db, market["id"], no_signal, regime, cycle)
             print(f"    → SKIP ({signal.get('reason', 'no_signal')})")
+            _emit_diag_eth(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
 
     db.close()
     print(f"\nDone. ETH predictions stored in {db_path or DB_PATH_ETH}")

@@ -786,7 +786,7 @@ def get_engine_health():
             "bybit_linear_last": (data.get("bybit_linear") or {}).get("last_event"),
             "bybit_linear_reconnects": (data.get("bybit_linear") or {}).get("reconnects_24h", 0),
             "polymarket_status": (data.get("polymarket") or {}).get("status", "unknown"),
-            "polymarket_last": polymarket_last,
+            "polymarket_last": (data.get("polymarket") or {}).get("last_event"),
             "polymarket_reconnects": (data.get("polymarket") or {}).get("reconnects_24h", 0),
             "dispatch_latency": data.get("dispatch_latency_ms", {}),
             "orderbook_age": data.get("orderbook_age_ms", {}),

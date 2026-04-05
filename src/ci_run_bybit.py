@@ -110,7 +110,7 @@ def store_prediction_bybit(db, market_id, signal, regime, cycle,
     }
 
 
-def main():
+def main(candle_data=None, indicators=None):
     DB_PATH_BYBIT.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_bybit()
 
@@ -146,7 +146,9 @@ def main():
     cycle = get_next_cycle(db)
     print(f"[3/7] Predictions — Bybit momentum (cycle {cycle})...")
 
-    bybit_data = fetch_bybit_candles(interval="5", limit=DEFAULT_CANDLE_LIMIT)
+    bybit_data = candle_data  # Use engine-provided data if available
+    if bybit_data is None:
+        bybit_data = fetch_bybit_candles(interval="5", limit=DEFAULT_CANDLE_LIMIT)
 
     if not bybit_data:
         print("  WARNING: No BTC data available — skipping cycle")
@@ -158,8 +160,8 @@ def main():
     current_price = bybit_data["current_price"]
     consensus = bybit_data.get("consensus")
     print(f"  BTC: ${current_price:,.2f} | "
-          f"1h: {bybit_data['1h_change_pct']:+.3f}% | "
-          f"Trend: {bybit_data['trend']}")
+          f"1h: {bybit_data.get('1h_change_pct',0):+.3f}% | "
+          f"Trend: {bybit_data.get('trend','?')}")
     if consensus and consensus.get("sources", 0) >= 2:
         score = consensus.get("score", 0)
         label = {2: "STRONG", 1: "WEAK", -1: "DISAGREE"}.get(score, "?")

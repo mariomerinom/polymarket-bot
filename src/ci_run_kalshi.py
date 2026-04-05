@@ -100,7 +100,7 @@ def store_prediction_kalshi(db, market_id, signal, regime, cycle,
     db.commit()
 
 
-def main():
+def main(candle_data=None, indicators=None):
     DB_PATH_KALSHI.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_kalshi()
 
@@ -139,10 +139,12 @@ def main():
 
     # Fetch first market's ticker for orderbook logging
     first_ticker = markets[0]["id"] if markets else None
-    kalshi_data = fetch_kalshi_candles(interval="15m", limit=DEFAULT_CANDLE_LIMIT, kalshi_ticker=first_ticker)
+    kalshi_data = candle_data  # Use engine-provided data if available
+    if kalshi_data is None:
+        kalshi_data = fetch_kalshi_candles(interval="15m", limit=DEFAULT_CANDLE_LIMIT, kalshi_ticker=first_ticker)
 
     if kalshi_data:
-        print(f"  BTC: ${kalshi_data['current_price']:,.2f} | 1h: {kalshi_data['1h_change_pct']:+.3f}% | Trend: {kalshi_data['trend']}")
+        print(f"  BTC: ${kalshi_data['current_price']:,.2f} | 1h: {kalshi_data.get('1h_change_pct',0):+.3f}% | Trend: {kalshi_data.get('trend','?')}")
     else:
         print("  Warning: BTC price data unavailable")
 

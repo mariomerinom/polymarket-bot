@@ -42,7 +42,7 @@ def has_unpredicted_market(db):
     return cursor.fetchone() is not None
 
 
-def main():
+def main(candle_data=None, indicators=None):
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = init_db()
 
@@ -71,16 +71,19 @@ def main():
     # 3. Predict using momentum rule (no API calls)
     cycle = get_next_cycle(db)
     print(f"[3/6] Predictions — momentum rule (cycle {cycle})...")
-    btc_data = fetch_btc_candles(limit=DEFAULT_CANDLE_LIMIT)
+    btc_data = candle_data  # Use engine-provided data if available
+    if btc_data is None:
+        btc_data = fetch_btc_candles(limit=DEFAULT_CANDLE_LIMIT)
     if btc_data:
-        print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data['1h_change_pct']:+.3f}% | Trend: {btc_data['trend']}")
+        print(f"  BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data.get('1h_change_pct',0):+.3f}% | Trend: {btc_data.get('trend','?')}")
     else:
         print("  Warning: BTC price data unavailable")
 
     if has_unpredicted_market(db):
         db.close()
         try:
-            run_predictions(cycle=cycle, market_limit=1, btc_data=btc_data)
+            run_predictions(cycle=cycle, market_limit=1, btc_data=btc_data,
+                            indicators=indicators)
         except Exception as e:
             print(f"  Prediction error: {e}")
         db = sqlite3.connect(DB_PATH)
@@ -109,6 +112,16 @@ def main():
         print_scorecard(results)
     else:
         print("  No resolved markets to score yet")
+
+    # [INTEGRITY] Per-cycle checks
+    try:
+        from pipeline_integrity import run_integrity_checks
+        results = run_integrity_checks(db, pipeline="btc_5m", cycle=cycle,
+                                        api_ok=btc_data is not None)
+        if results:
+            print(f"  Integrity: {results}")
+    except Exception as e:
+        print(f"  Integrity check error: {e}")
 
     db.close()
 

@@ -122,8 +122,8 @@ class BotsyEngine:
         # Ensure data directory exists
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Seed candle buffer from REST before WS connects
-        await asyncio.to_thread(self._seed_candle_buffer)
+        # Load candle buffer: try disk first (instant), fall back to REST
+        await asyncio.to_thread(self._load_or_seed_buffer)
 
         # Initialize TA engine after buffer has data (lazy import for pandas-ta)
         try:
@@ -146,25 +146,37 @@ class BotsyEngine:
         ]
         await asyncio.gather(*tasks)
 
-    def _seed_candle_buffer(self):
-        """Backfill candle buffer from Bybit REST on startup."""
+    def _load_or_seed_buffer(self):
+        """Load candle buffer from disk snapshot. Fall back to REST if stale."""
+        snapshot_path = DATA_DIR / "candle_buffer.json"
+        loaded = self.candle_buffer.load_from_disk(snapshot_path, max_age_s=900)
+        if loaded > 0:
+            log(f"[BUFFER] Loaded {loaded} buffers from disk snapshot")
+            return
+
+        log("[BUFFER] No fresh snapshot — seeding from Bybit REST")
+        # (buffer_symbol, timeframe, api_category, api_symbol)
+        # buffer_symbol uses _linear suffix to match WS feed keys
         seeds = [
-            ("BTCUSDT", "1", "spot"),
-            ("BTCUSDT", "5", "spot"),
-            ("BTCUSDT", "15", "spot"),
-            ("ETHUSDT", "1", "spot"),
-            ("ETHUSDT", "5", "spot"),
-            ("BTCUSDT", "1", "linear"),
-            ("BTCUSDT", "5", "linear"),
+            ("BTCUSDT", "1", "spot", "BTCUSDT"),
+            ("BTCUSDT", "5", "spot", "BTCUSDT"),
+            ("BTCUSDT", "15", "spot", "BTCUSDT"),
+            ("ETHUSDT", "1", "spot", "ETHUSDT"),
+            ("ETHUSDT", "5", "spot", "ETHUSDT"),
+            ("BTCUSDT_linear", "1", "linear", "BTCUSDT"),
+            ("BTCUSDT_linear", "5", "linear", "BTCUSDT"),
         ]
-        for symbol, tf, category in seeds:
+        for buf_symbol, tf, category, api_symbol in seeds:
             try:
                 count = self.candle_buffer.seed_from_rest(
-                    symbol=symbol, timeframe=tf, category=category
+                    symbol=buf_symbol, timeframe=tf, category=category,
+                    api_symbol=api_symbol,
                 )
-                log(f"[BUFFER] Seeded {symbol}/{tf}m ({category}): {count} candles")
+                log(f"[BUFFER] Seeded {buf_symbol}/{tf}m ({category}): {count} candles")
             except Exception as e:
-                log(f"[BUFFER] Seed failed {symbol}/{tf}m ({category}): {e}")
+                log(f"[BUFFER] Seed failed {buf_symbol}/{tf}m ({category}): {e}")
+        # Save immediately so next restart can use disk
+        self.candle_buffer.save_to_disk(snapshot_path)
 
     # ── Bybit Spot WS Feed (BTC + ETH candle triggers) ─────────────────
 
@@ -460,6 +472,25 @@ class BotsyEngine:
         except Exception as e:
             log(f"[TA] {symbol}/{interval}m computation failed: {e}")
 
+        # Build candle data dict from buffer (replaces REST fetch in pipelines)
+        candle_data = None
+        buf_candles = self.candle_buffer.get_candles(symbol, interval)
+        if buf_candles and len(buf_candles) >= 2:
+            closes = [c["close"] for c in buf_candles]
+            current_price = closes[-1]
+            first_open = buf_candles[0]["open"]
+            hour_change = round((current_price - first_open) / first_open * 100, 3) if first_open else 0
+            ups = sum(1 for c in buf_candles if c["direction"] == "UP")
+            downs = len(buf_candles) - ups
+            trend = "up" if ups > downs + 1 else ("down" if downs > ups + 1 else "neutral")
+            candle_data = {
+                "candles": buf_candles,
+                "current_price": current_price,
+                "1h_change_pct": hour_change,
+                "trend": trend,
+            }
+            log(f"[BUFFER] {symbol}/{interval}m: {len(buf_candles)} candles → pipeline data built")
+
         dispatch_start = time.time()
         log(f"[ENGINE] {source} {symbol} {interval}m close | "
             f"dispatching: {', '.join(pipelines)}")
@@ -467,7 +498,8 @@ class BotsyEngine:
         for pipeline in pipelines:
             self.cycle += 1
             self.metrics["cycles"] = self.cycle
-            await self.run_pipeline(pipeline, indicators=indicators)
+            await self.run_pipeline(pipeline, candle_data=candle_data,
+                                    indicators=indicators)
 
         # Track dispatch latency
         latency_ms = (time.time() - dispatch_start) * 1000
@@ -475,7 +507,8 @@ class BotsyEngine:
         if len(self._latencies) > 1000:
             self._latencies = self._latencies[-500:]
 
-    async def run_pipeline(self, name: str, indicators: dict = None):
+    async def run_pipeline(self, name: str, candle_data: dict = None,
+                           indicators: dict = None):
         """Run a pipeline in a thread (they're synchronous)."""
         runners = {
             "btc_5m": "ci_run",
@@ -492,8 +525,8 @@ class BotsyEngine:
         try:
             import importlib
             mod = importlib.import_module(module_name)
-            # Pass indicators if pipeline's main() accepts them
-            await asyncio.to_thread(mod.main)
+            await asyncio.to_thread(mod.main, candle_data=candle_data,
+                                    indicators=indicators)
             log(f"[{name}] OK")
         except Exception as e:
             log(f"[{name}] FAILED: {e}")
@@ -532,9 +565,9 @@ class BotsyEngine:
                 capture_output=True, timeout=30,
             )
 
-            # Stage data files
+            # Stage data files + daily reports
             subprocess.run(
-                ["git", "add", "data/"],
+                ["git", "add", "data/", "docs/daily/"],
                 capture_output=True, timeout=10,
             )
 
@@ -603,7 +636,8 @@ class BotsyEngine:
     # ── Metrics Writer ─────────────────────────────────────────────────
 
     async def metrics_writer(self):
-        """Write ws_metrics.json every 60s for dashboard + daily report."""
+        """Write ws_metrics.json every 60s for dashboard + daily report.
+        Also persists candle buffer to disk for fast restarts."""
         while True:
             await asyncio.sleep(METRICS_INTERVAL_S)
             self._compute_percentiles()
@@ -613,6 +647,11 @@ class BotsyEngine:
                 tmp.rename(METRICS_FILE)
             except OSError as e:
                 log(f"WARNING: metrics write failed: {e}")
+            # Persist candle buffer for fast restart (no REST needed)
+            try:
+                self.candle_buffer.save_to_disk(DATA_DIR / "candle_buffer.json")
+            except Exception as e:
+                log(f"WARNING: buffer save failed: {e}")
 
     def _compute_percentiles(self):
         """Compute p50/p95 from recent latency samples."""

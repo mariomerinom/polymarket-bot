@@ -89,20 +89,6 @@ def test_15m_conv_cap_demotes_above_3():
     db.close()
 
 
-def test_15m_ci_workflow_commits_correct_files():
-    """15m CI workflow only commits 15m files, not 5m files."""
-    workflow = os.path.join(os.path.dirname(__file__), "..",
-                           ".github", "workflows", "predict-15m.yml")
-    with open(workflow) as f:
-        content = f.read()
-    # Must commit 15m-specific files
-    assert "data/predictions_15m.db" in content
-    assert "docs/15m.html" in content
-    # Must NOT commit 5m files
-    assert "data/predictions.db" not in content
-    assert "docs/index.html" not in content
-
-
 def test_15m_write_does_not_touch_5m_db():
     """Writing to 15m DB does not affect 5m DB."""
     import sqlite3
@@ -263,9 +249,11 @@ def test_15m_config_matches_5m():
 
 
 def test_5m_workflow_does_not_commit_15m_files():
-    """5m CI workflow does not touch 15m files."""
+    """5m CI workflow does not touch 15m files. (Skipped: workflows retired, engine runs on VPS.)"""
     workflow = os.path.join(os.path.dirname(__file__), "..",
                            ".github", "workflows", "predict-and-score.yml")
+    if not os.path.exists(workflow):
+        return  # Workflows retired — engine handles all pipelines on VPS
     with open(workflow) as f:
         content = f.read()
     assert "predictions_15m" not in content

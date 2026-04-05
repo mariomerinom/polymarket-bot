@@ -12,6 +12,7 @@ V4: No LLM agents. Pure computation from BTC candle data.
 import json
 import sqlite3
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 import statistics
@@ -215,7 +216,7 @@ def _get_clob_tokens_safe(market_id):
 
 def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
                      mkt_price=None, loose_mode=False, sibling_context=None,
-                     consensus=None, liquidity=None):
+                     consensus=None, liquidity=None, indicators=None):
     """Store a prediction in the database."""
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
@@ -265,6 +266,13 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         )
     if consensus: reasoning_data["consensus"] = consensus
     if liquidity: reasoning_data["liquidity"] = liquidity
+    if indicators:
+        # Store compact indicator snapshot for traceability
+        reasoning_data["indicators"] = {
+            k: round(v, 4) if isinstance(v, float) else v
+            for k, v in indicators.items()
+            if k not in ("bbands", "stoch")  # skip nested dicts for compactness
+        }
     reasoning = json.dumps(reasoning_data)
 
     db.execute("""
@@ -329,8 +337,26 @@ def is_price_extreme(mkt_price):
     return mkt_price > PRICE_GATE_UPPER or mkt_price < PRICE_GATE_LOWER
 
 
+def _emit_diag(market_id, conviction, candle_ts_ms, candle_close, current_price):
+    """Emit Phase 2 DIAG lines for every prediction cycle.
+
+    Format must match validate_phase2.py regex exactly:
+        DIAG|snapshot_age_ms=<number>|market=<string>
+        DIAG|conv=<integer>|drift=<decimal>|snapshot_age_ms=<number>
+    """
+    now_ms = time.time() * 1000
+    snapshot_age_ms = now_ms - candle_ts_ms
+    if snapshot_age_ms < 0:
+        snapshot_age_ms = 0
+    logger.info(f"DIAG|snapshot_age_ms={snapshot_age_ms:.0f}|market={market_id}")
+
+    drift = abs(current_price - candle_close) / candle_close if candle_close > 0 else 0.0
+    logger.info(f"DIAG|conv={conviction}|drift={drift:.4f}|snapshot_age_ms={snapshot_age_ms:.0f}")
+
+
 def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
-                    min_streak=None, autocorr_threshold=AUTOCORR_MEAN_REVERTING_5M, loose_mode=False):
+                    min_streak=None, autocorr_threshold=AUTOCORR_MEAN_REVERTING_5M,
+                    loose_mode=False, indicators=None):
     """Main prediction loop setup with database context manager."""
     db_file = db_path or DB_PATH
     
@@ -360,6 +386,25 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
         if btc_data:
             candles = btc_data["candles"]
             consensus = btc_data.get("consensus")
+
+            # DIAG: extract candle timestamp and close for snapshot_age/drift
+            _last_candle = candles[-1] if candles else {}
+            _diag_candle_close = _last_candle.get("close", 0.0)
+            _diag_current_price = btc_data.get("current_price", _diag_candle_close)
+            # timestamp_ms = candle OPEN time. Candle data extends to close time.
+            # For confirmed candles, close_time ≈ open_time + interval.
+            # Use close time for snapshot_age (how stale the data actually is).
+            if "timestamp_ms" in _last_candle:
+                # Estimate interval from gap between non-duplicate candles
+                _interval_ms = 300_000  # default 5m
+                for i in range(len(candles) - 2, -1, -1):
+                    if candles[i].get("timestamp_ms", 0) < _last_candle["timestamp_ms"]:
+                        _interval_ms = _last_candle["timestamp_ms"] - candles[i]["timestamp_ms"]
+                        break
+                _diag_candle_ts_ms = _last_candle["timestamp_ms"] + _interval_ms
+            else:
+                # REST candles only have "time" (HH:MM) — estimate as now (candle just closed)
+                _diag_candle_ts_ms = time.time() * 1000
             logger.info(f"BTC: ${btc_data['current_price']:,.0f} | 1h: {btc_data.get('1h_change_pct',0):+.3f}%")
             if consensus and consensus.get("sources", 0) >= 2:
                 k = consensus.get("streak_kraken", {})
@@ -421,9 +466,11 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
                     """, (market["id"], cycle))
                     db.commit()
                     logger.info(f"  -> DEAD HOUR SHADOW: {signal['direction']} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+                    _emit_diag(market["id"], 2, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
                 else:
                     logger.info(f"  -> SKIP (dead hour: UTC {current_hour_utc})")
                     store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": f"time_gate_dead_hour (UTC {current_hour_utc})"}, regime, cycle)
+                    _emit_diag(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
                 continue
 
             if is_price_extreme(mkt_price):
@@ -437,9 +484,11 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
                     """, (market["id"], cycle))
                     db.commit()
                     logger.info(f"  -> PRICE GATE SHADOW: {signal['direction']} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+                    _emit_diag(market["id"], 2, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
                 else:
                     logger.info(f"  -> SKIP (price gate: {mkt_price:.0%})")
                     store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": f"price_gate_extreme ({mkt_price:.0%})"}, regime, cycle)
+                    _emit_diag(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
                 continue
 
             if regime["is_mean_reverting"]:
@@ -457,9 +506,11 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
                     """, (market["id"], cycle))
                     db.commit()
                     logger.info(f"  -> MR SHADOW: {signal['direction']} @ {signal['estimate']:.3f} (extreme estimate, tracked at conv=2)")
+                    _emit_diag(market["id"], 2, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
                 else:
                     logger.info("  -> SKIP (mean-reverting regime)")
                     store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": "regime_skip_mean_reverting"}, regime, cycle)
+                    _emit_diag(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
                 continue
 
             if signal["should_trade"]:
@@ -474,12 +525,19 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
                     except Exception as e:
                         logger.debug(f"[CLOB] skipped: {e}")
 
-                store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price, loose_mode=loose_mode, sibling_context=sibling_context, consensus=consensus, liquidity=liquidity)
+                store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price, loose_mode=loose_mode, sibling_context=sibling_context, consensus=consensus, liquidity=liquidity, indicators=indicators)
                 direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
                 logger.info(f"  -> {direction} @ {signal['estimate']:.2f} ({signal['confidence']}, est={signal['estimate']:.4f})")
+                # Query back conviction for DIAG (store_prediction computes it internally)
+                _conv_row = db.execute(
+                    "SELECT conviction_score FROM predictions WHERE market_id = ? AND cycle = ? ORDER BY rowid DESC LIMIT 1",
+                    (market["id"], cycle)
+                ).fetchone()
+                _emit_diag(market["id"], _conv_row[0] if _conv_row else 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
             else:
                 logger.info(f"  -> SKIP ({signal.get('reason', 'no_signal')})")
                 store_prediction(db, market["id"], {"estimate": mkt_price, "should_trade": False, "confidence": "skip", "reason": signal.get("reason", "no_signal")}, regime, cycle, sibling_context=sibling_context)
+                _emit_diag(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
 
     logger.info(f"\nDone. Predictions stored in {db_file}")
 

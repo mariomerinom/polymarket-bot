@@ -43,7 +43,7 @@ def has_unpredicted_market(db):
     return cursor.fetchone() is not None
 
 
-def main():
+def main(candle_data=None, indicators=None):
     DB_PATH_ETH.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_eth()
 
@@ -82,9 +82,11 @@ def main():
     # 3. Predict using MOMENTUM rule (no API calls)
     cycle = get_next_cycle(db)
     print(f"[3/5] Predictions — ETH momentum rule (cycle {cycle})...")
-    eth_data = fetch_eth_candles(limit=DEFAULT_CANDLE_LIMIT)
+    eth_data = candle_data  # Use engine-provided data if available
+    if eth_data is None:
+        eth_data = fetch_eth_candles(limit=DEFAULT_CANDLE_LIMIT)
     if eth_data:
-        print(f"  ETH: ${eth_data['current_price']:,.2f} | 1h: {eth_data['1h_change_pct']:+.3f}% | Trend: {eth_data['trend']}")
+        print(f"  ETH: ${eth_data['current_price']:,.2f} | 1h: {eth_data.get('1h_change_pct',0):+.3f}% | Trend: {eth_data.get('trend','?')}")
     else:
         print("  Warning: ETH price data unavailable")
 
@@ -92,7 +94,7 @@ def main():
         db.close()
         try:
             run_predictions_eth(cycle=cycle, market_limit=1, eth_data=eth_data,
-                                db_path=DB_PATH_ETH)
+                                db_path=DB_PATH_ETH, indicators=indicators)
         except Exception as e:
             print(f"  Prediction error: {e}")
         db = sqlite3.connect(DB_PATH_ETH)
