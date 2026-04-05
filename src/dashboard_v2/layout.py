@@ -254,7 +254,7 @@ def d3_script():
       .attr('preserveAspectRatio', 'xMidYMid meet');
     const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
 
-    const parseDate = d => new Date(d.date);
+    const parseDate = d => new Date(d);
     const x = d3.scaleBand()
       .domain(data.map((d,i) => i))
       .range([0, iw]).padding(0.3);
@@ -323,7 +323,7 @@ def d3_script():
       .attr('preserveAspectRatio', 'xMidYMid meet');
     const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
 
-    const parseDate = d => new Date(d.date);
+    const parseDate = d => new Date(d);
     const x = d3.scaleTime()
       .domain(d3.extent(data, d => parseDate(d.date)))
       .range([0, iw]);
