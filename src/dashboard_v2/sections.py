@@ -352,6 +352,92 @@ def recent_bets_section(bets):
 
 
 # ---------------------------------------------------------------------------
+# Engine health (websocket feeds)
+# ---------------------------------------------------------------------------
+
+def _ws_status_html(status, last_event):
+    """Format a WS feed status indicator."""
+    if status == "connected":
+        icon = f'<span style="color:{C.PROFIT}">&#x2714;</span>'
+        label = "Connected"
+    else:
+        icon = f'<span style="color:{C.LOSS}">&#x2716;</span>'
+        label = "Down"
+    age_str = ""
+    if last_event:
+        try:
+            from datetime import datetime, timezone
+            last_dt = datetime.fromisoformat(last_event)
+            now = datetime.now(timezone.utc)
+            age_s = (now - last_dt).total_seconds()
+            if age_s < 60:
+                age_str = f" ({age_s:.0f}s ago)"
+            elif age_s < 3600:
+                age_str = f" ({age_s / 60:.0f}m ago)"
+            else:
+                age_str = f" ({age_s / 3600:.1f}h ago)"
+        except (ValueError, TypeError):
+            pass
+    return f'{icon} {label}{age_str}'
+
+
+def engine_health_section(health):
+    if not health:
+        return ""
+
+    # Feed statuses
+    polygon_html = _ws_status_html(health["polygon_status"], health["polygon_last"])
+    bybit_html = _ws_status_html(health["bybit_status"], health["bybit_last"])
+    polymarket_html = _ws_status_html(health["polymarket_status"], health["polymarket_last"])
+
+    # Latency
+    lat = health.get("dispatch_latency", {})
+    lat_p50 = lat.get("p50", 0)
+    lat_p95 = lat.get("p95", 0)
+    lat_color = C.PROFIT if lat_p95 < 2000 else (C.WARN if lat_p95 < 5000 else C.LOSS)
+
+    # Orderbook age
+    ob = health.get("orderbook_age", {})
+    ob_p50 = ob.get("p50", 0)
+    ob_p95 = ob.get("p95", 0)
+
+    # Reconnects
+    recon_total = (health["polygon_reconnects"]
+                   + health["bybit_reconnects"]
+                   + health["polymarket_reconnects"])
+    recon_color = C.PROFIT if recon_total == 0 else (C.WARN if recon_total < 5 else C.LOSS)
+
+    # Fallback fires
+    fb = health.get("fallback_fires", 0)
+    fb_color = C.PROFIT if fb == 0 else C.WARN
+
+    return f"""<div class="section">
+    <div class="section-title">Engine Health</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px">
+        <div class="metric">
+            <div class="metric-label">Polygon.io</div>
+            <div class="metric-value" style="font-size:13px">{polygon_html}</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">Bybit</div>
+            <div class="metric-value" style="font-size:13px">{bybit_html}</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">Polymarket</div>
+            <div class="metric-value" style="font-size:13px">{polymarket_html}</div>
+        </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:11px;color:{C.TEXT_DIM};border-top:1px solid {C.BORDER};padding-top:8px">
+        <span>Dispatch: <span style="color:{lat_color}">{lat_p50}ms p50 / {lat_p95}ms p95</span></span>
+        <span>Orderbook: {ob_p50}ms p50 / {ob_p95}ms p95</span>
+        <span>Reconnects (24h): <span style="color:{recon_color}">{recon_total}</span></span>
+        <span>Fallback fires: <span style="color:{fb_color}">{fb}</span></span>
+        <span>Cycles: {health.get('cycles', 0)}</span>
+    </div>
+</div>"""
+
+
+# ---------------------------------------------------------------------------
 # Circuit breakers
 # ---------------------------------------------------------------------------
 

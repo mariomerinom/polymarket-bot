@@ -855,6 +855,33 @@ def _generate_fill_diagnostic_section(min_samples=20):
     return "\n" + diag_report(snapshot_ages, rtt_values, drift_by_conv, min_samples)
 
 
+def _get_engine_metrics():
+    """Read ws_metrics.json for engine health data. Returns dict or None."""
+    metrics_path = Path(__file__).parent.parent / "data" / "ws_metrics.json"
+    if not metrics_path.exists():
+        return None
+    try:
+        import json as _json
+        data = _json.loads(metrics_path.read_text())
+        return {
+            "polygon_status": (data.get("polygon") or {}).get("status", "unknown"),
+            "polygon_last": (data.get("polygon") or {}).get("last_event"),
+            "polygon_reconnects": (data.get("polygon") or {}).get("reconnects_24h", 0),
+            "bybit_status": (data.get("bybit") or {}).get("status", "unknown"),
+            "bybit_last": (data.get("bybit") or {}).get("last_event"),
+            "bybit_reconnects": (data.get("bybit") or {}).get("reconnects_24h", 0),
+            "polymarket_status": (data.get("polymarket") or {}).get("status", "unknown"),
+            "polymarket_last": (data.get("polymarket") or {}).get("last_event"),
+            "polymarket_reconnects": (data.get("polymarket") or {}).get("reconnects_24h", 0),
+            "dispatch_latency": data.get("dispatch_latency_ms", {}),
+            "orderbook_age": data.get("orderbook_age_ms", {}),
+            "fallback_fires": data.get("fallback_fires_24h", 0),
+            "cycles": data.get("cycles", 0),
+        }
+    except (ValueError, OSError):
+        return None
+
+
 def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None, data_bybit=None):
     """Format analysis data into markdown report."""
     decision_alerts = decision_alerts or []
@@ -1067,6 +1094,30 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 for d, v in sorted(orders["by_direction"].items()):
                     lines.append(f"| {d} | {v['count']} | ${v['pnl']:+.2f} |")
                 lines.append("")
+
+    # Engine metrics (websocket health — from ws_metrics.json)
+    engine_metrics = _get_engine_metrics()
+    if engine_metrics:
+        lines.extend([
+            "## Engine Metrics",
+            "",
+            "| Feed | Status | Reconnects (24h) | Last Event |",
+            "|------|--------|-----------------|------------|",
+            f"| Polygon.io | {engine_metrics['polygon_status']} | {engine_metrics['polygon_reconnects']} | {engine_metrics['polygon_last'] or 'N/A'} |",
+            f"| Bybit | {engine_metrics['bybit_status']} | {engine_metrics['bybit_reconnects']} | {engine_metrics['bybit_last'] or 'N/A'} |",
+            f"| Polymarket | {engine_metrics['polymarket_status']} | {engine_metrics['polymarket_reconnects']} | {engine_metrics['polymarket_last'] or 'N/A'} |",
+            "",
+        ])
+        lat = engine_metrics.get("dispatch_latency", {})
+        ob = engine_metrics.get("orderbook_age", {})
+        fb = engine_metrics.get("fallback_fires", 0)
+        lines.extend([
+            f"- **Dispatch latency:** {lat.get('p50', 0)}ms p50 / {lat.get('p95', 0)}ms p95 ({lat.get('samples', 0)} samples)",
+            f"- **Orderbook freshness:** {ob.get('p50', 0)}ms p50 / {ob.get('p95', 0)}ms p95",
+            f"- **Fallback fires (24h):** {fb}",
+            f"- **Cycles:** {engine_metrics.get('cycles', 0)}",
+            "",
+        ])
 
     # Decision alerts (cross-pipeline, appended at end)
     if decision_alerts:

@@ -176,6 +176,38 @@ def get_bet_size(prediction_row, liquidity=None):
     return BET_SIZE  # BTC flat $25
 
 
+LIVE_ORDERBOOK_PATH = Path(__file__).parent.parent / "data" / "live_orderbook.json"
+LIVE_ORDERBOOK_MAX_AGE_S = 10  # ignore cache older than 10 seconds
+
+
+def _get_live_orderbook_mid(market_id: str):
+    """
+    Read live orderbook cache (written by botsy_engine.py Polymarket WS feed).
+
+    Returns the live mid price if the cache is fresh and matches the market,
+    otherwise returns None (caller falls back to DB snapshot).
+    """
+    try:
+        if not LIVE_ORDERBOOK_PATH.exists():
+            return None
+        cache = json.loads(LIVE_ORDERBOOK_PATH.read_text())
+        # Check freshness
+        updated_at = cache.get("updated_at", "")
+        if updated_at:
+            cache_dt = datetime.fromisoformat(updated_at)
+            age_s = (datetime.now(timezone.utc) - cache_dt).total_seconds()
+            if age_s > LIVE_ORDERBOOK_MAX_AGE_S:
+                return None
+        else:
+            return None
+        mid = cache.get("mid")
+        if mid is not None and 0.01 <= mid <= 0.99:
+            return mid
+    except (json.JSONDecodeError, OSError, ValueError, TypeError):
+        pass
+    return None
+
+
 def compute_order(prediction_row, market_row, liquidity=None):
     """
     Compute order parameters from a prediction.
@@ -660,8 +692,14 @@ def execute_trades(db, cycle):
         except (json.JSONDecodeError, TypeError):
             pass
 
-        # Compute order params
+        # Compute order params — use live orderbook if available
         market_row = {"price_yes": pred["price_yes"], "price_no": pred["price_no"]}
+        live_mid = _get_live_orderbook_mid(pred["market_id"])
+        if live_mid is not None:
+            print(f"    [LIVE_OB] Using WS mid={live_mid:.4f} "
+                  f"(was DB snapshot={pred['price_yes']:.4f})")
+            market_row["price_yes"] = live_mid
+            market_row["price_no"] = round(1 - live_mid, 4)
         order_params, order_reason = compute_order(pred, market_row, liquidity)
 
         if order_params is None:

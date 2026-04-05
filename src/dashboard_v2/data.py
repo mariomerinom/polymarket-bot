@@ -757,3 +757,45 @@ def get_rolling_accuracy(db, window=10):
         series.append({"date": results[i]["date"], "value": round(wr, 1)})
 
     return series
+
+
+# ---------------------------------------------------------------------------
+# Engine health (websocket metrics from ws_metrics.json)
+# ---------------------------------------------------------------------------
+
+def get_engine_health():
+    """Read ws_metrics.json written by botsy_engine.py.
+
+    Returns dict with WS feed statuses, latency, reconnects, or None if
+    the engine is not running (file missing or stale > 5 min).
+    """
+    import json
+    metrics_path = Path(__file__).parent.parent.parent / "data" / "ws_metrics.json"
+    if not metrics_path.exists():
+        return None
+    try:
+        data = json.loads(metrics_path.read_text())
+        # Check staleness — if engine hasn't written in 5 min, it's down
+        engine_start = data.get("engine_start", "")
+        polygon_last = (data.get("polygon") or {}).get("last_event")
+        bybit_last = (data.get("bybit") or {}).get("last_event")
+        polymarket_last = (data.get("polymarket") or {}).get("last_event")
+
+        return {
+            "polygon_status": (data.get("polygon") or {}).get("status", "unknown"),
+            "polygon_last": polygon_last,
+            "polygon_reconnects": (data.get("polygon") or {}).get("reconnects_24h", 0),
+            "bybit_status": (data.get("bybit") or {}).get("status", "unknown"),
+            "bybit_last": bybit_last,
+            "bybit_reconnects": (data.get("bybit") or {}).get("reconnects_24h", 0),
+            "polymarket_status": (data.get("polymarket") or {}).get("status", "unknown"),
+            "polymarket_last": polymarket_last,
+            "polymarket_reconnects": (data.get("polymarket") or {}).get("reconnects_24h", 0),
+            "dispatch_latency": data.get("dispatch_latency_ms", {}),
+            "orderbook_age": data.get("orderbook_age_ms", {}),
+            "fallback_fires": data.get("fallback_fires_24h", 0),
+            "cycles": data.get("cycles", 0),
+            "engine_start": engine_start,
+        }
+    except (json.JSONDecodeError, OSError):
+        return None

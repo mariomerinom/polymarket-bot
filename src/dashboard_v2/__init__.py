@@ -3,8 +3,8 @@
 Drop-in replacement for dashboard.build_html().
 """
 
-from .data import get_db, get_pipeline_summary, detect_mode, get_live_pnl, get_signal_pnl, get_conviction_breakdown, get_breaker_status, get_rolling_accuracy, get_trade_execution, get_integrity_status, get_recent_bets
-from .sections import header_section, live_pnl_section, signal_pnl_section, ev_gauge_section, conviction_section, rolling_accuracy_section, breaker_section, trade_execution_section, recent_bets_section
+from .data import get_db, get_pipeline_summary, detect_mode, get_live_pnl, get_signal_pnl, get_conviction_breakdown, get_breaker_status, get_rolling_accuracy, get_trade_execution, get_integrity_status, get_recent_bets, get_engine_health
+from .sections import header_section, live_pnl_section, signal_pnl_section, ev_gauge_section, conviction_section, rolling_accuracy_section, breaker_section, trade_execution_section, recent_bets_section, engine_health_section
 from .layout import page_shell
 
 DEFAULT_NAV = [
@@ -73,12 +73,16 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
 
         # Circuit breakers
         breakers = get_breaker_status(db, asset=asset, subtitle=subtitle)
+
+        # Engine health (WS feeds — reads from ws_metrics.json, not DB)
+        engine = get_engine_health()
     finally:
         db.close()
 
     # Assemble sections
     body_parts = [
         header_section(pipeline_name, mode, summary, integrity=integrity),
+        engine_health_section(engine),
         live_pnl_section(live_data),
         trade_execution_section(exec_data),
         recent_bets_section(recent_bets),
