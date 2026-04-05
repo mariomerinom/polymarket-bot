@@ -2,7 +2,7 @@
 daily_report.py — Daily morning analysis report.
 
 Generates a markdown report analyzing the previous day's predictions.
-Covers all 3 pipelines (BTC 5m, BTC 15m, ETH 5m). Designed to run via GitHub Actions cron
+Covers all 5 pipelines (BTC 5m, BTC 15m, ETH 5m, Kalshi, Bybit). Designed to run via GitHub Actions cron
 at 06:00 CST (12:00 UTC) daily, or on-demand.
 
 Output: docs/daily/YYYY-MM-DD.md
@@ -19,13 +19,15 @@ DB_5M = Path(__file__).parent.parent / "data" / "predictions.db"
 DB_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
 DB_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 DB_KALSHI = Path(__file__).parent.parent / "data" / "predictions_kalshi.db"
+DB_BYBIT = Path(__file__).parent.parent / "data" / "predictions_bybit.db"
 DAILY_DIR = Path(__file__).parent.parent / "docs" / "daily"
 
 # Date-aware sizing: imported from centralized config.py
 from config import (
     PAPER_BTC_CONVICTION_BETS, PAPER_ETH_CONVICTION_BETS,
     LIVE_BTC_CONVICTION_BETS, LIVE_ETH_CONVICTION_BETS,
-    LIVE_KALSHI_CONVICTION_BETS, LIVE_START_DATE,
+    LIVE_KALSHI_CONVICTION_BETS, LIVE_BYBIT_CONVICTION_BETS,
+    LIVE_START_DATE,
 )
 BTC_CONVICTION_BETS = LIVE_BTC_CONVICTION_BETS
 ETH_CONVICTION_BETS = LIVE_ETH_CONVICTION_BETS
@@ -37,6 +39,10 @@ def _get_bet_size_dr(conv, predicted_at, asset="BTC"):
     date_str = (predicted_at or "")[:10]
     if asset == "KALSHI":
         return LIVE_KALSHI_CONVICTION_BETS.get(conv, 0)
+    if asset == "BYBIT":
+        # Bybit signal simulation uses $25 flat (same as BTC production)
+        # for comparable P&L across pipelines. Actual execution uses BTC sizing.
+        return LIVE_BTC_CONVICTION_BETS.get(conv, 0)
     if date_str >= LIVE_START_DATE:
         tiers = LIVE_BTC_CONVICTION_BETS if asset == "BTC" else LIVE_ETH_CONVICTION_BETS
     else:
@@ -849,7 +855,7 @@ def _generate_fill_diagnostic_section(min_samples=20):
     return "\n" + diag_report(snapshot_ages, rtt_values, drift_by_conv, min_samples)
 
 
-def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None):
+def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None, data_bybit=None):
     """Format analysis data into markdown report."""
     decision_alerts = decision_alerts or []
     era = "Live" if date_str >= LIVE_START_DATE else "Paper"
@@ -864,6 +870,7 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
         ("15-Minute Pipeline", data_15m),
         ("ETH 5-Minute Pipeline", data_eth),
         ("Kalshi BTC Pipeline", data_kalshi),
+        ("Bybit BTC Perps Pipeline", data_bybit),
     ]
     for label, data in pipelines:
         if data is None:
@@ -1356,9 +1363,12 @@ def analyze_pipeline(db_path, date_str):
     db_str = str(db_path).lower()
     is_eth = "eth" in db_str
     is_kalshi = "kalshi" in db_str
+    is_bybit = "bybit" in db_str
     old_bets = CONVICTION_BETS
     if is_kalshi:
         CONVICTION_BETS = LIVE_KALSHI_CONVICTION_BETS
+    elif is_bybit:
+        CONVICTION_BETS = LIVE_BTC_CONVICTION_BETS  # $25 flat for signal simulation
     elif is_eth:
         CONVICTION_BETS = ETH_CONVICTION_BETS
 
@@ -1454,13 +1464,13 @@ def update_index(daily_dir, date_str):
     index_path.write_text("\n".join(lines))
 
 
-def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None):
+def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None, data_bybit=None):
     """Generate concise markdown for GitHub Actions Job Summary."""
     decision_alerts = decision_alerts or []
     era = "Live" if date_str >= LIVE_START_DATE else "Paper"
     lines = [f"# BOTSY Daily Report \u2014 {date_str} ({era})", ""]
 
-    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth), ("Kalshi", data_kalshi)]:
+    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth), ("Kalshi", data_kalshi), ("Bybit", data_bybit)]:
         if data is None:
             lines.append(f"**{label}:** No data")
             lines.append("")
@@ -1516,7 +1526,8 @@ def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None, data_
 
 
 def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir=None,
-                    summary_path=None, db_eth_path=None, db_kalshi_path=None):
+                    summary_path=None, db_eth_path=None, db_kalshi_path=None,
+                    db_bybit_path=None):
     """
     Main entry point. Generates daily report for the given date.
     Defaults to yesterday (UTC).
@@ -1529,22 +1540,24 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
     db_15m = db_15m_path or DB_15M
     db_eth = db_eth_path or DB_ETH
     db_kalshi = db_kalshi_path or DB_KALSHI
+    db_bybit = db_bybit_path or DB_BYBIT
     daily_dir = Path(output_dir) if output_dir else DAILY_DIR
 
     print(f"Daily Report for {date_str}")
     print("=" * 40)
 
-    # Analyze all 4 pipelines
+    # Analyze all 5 pipelines
     data_5m = analyze_pipeline(db_5m, date_str)
     data_15m = analyze_pipeline(db_15m, date_str)
     data_eth = analyze_pipeline(db_eth, date_str)
     data_kalshi = analyze_pipeline(db_kalshi, date_str)
+    data_bybit = analyze_pipeline(db_bybit, date_str)
 
-    if data_5m is None and data_15m is None and data_eth is None and data_kalshi is None:
+    if data_5m is None and data_15m is None and data_eth is None and data_kalshi is None and data_bybit is None:
         print(f"  No predictions found for {date_str}")
         return None
 
-    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth), ("Kalshi", data_kalshi)]:
+    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth), ("Kalshi", data_kalshi), ("Bybit", data_bybit)]:
         if data:
             s = data["summary"]
             print(f"  {label}: {s['total_predictions']} predictions, {s['resolved_bets']} resolved bets, "
@@ -1564,7 +1577,7 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
     # Generate markdown
     report = format_report(date_str, data_5m, data_15m,
                            decision_alerts=decision_alerts, data_eth=data_eth,
-                           data_kalshi=data_kalshi)
+                           data_kalshi=data_kalshi, data_bybit=data_bybit)
 
     # Write report file
     daily_dir.mkdir(parents=True, exist_ok=True)
@@ -1579,13 +1592,13 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
     # Generate CI summary (for GitHub Actions Job Summary)
     ci_summary = generate_ci_summary(date_str, data_5m, data_15m,
                                      decision_alerts=decision_alerts, data_eth=data_eth,
-                                     data_kalshi=data_kalshi)
+                                     data_kalshi=data_kalshi, data_bybit=data_bybit)
     if summary_path:
         Path(summary_path).write_text(ci_summary)
         print(f"  CI summary: {summary_path}")
 
     # Print alerts
-    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth), ("Kalshi", data_kalshi)]:
+    for label, data in [("5m", data_5m), ("15m", data_15m), ("ETH", data_eth), ("Kalshi", data_kalshi), ("Bybit", data_bybit)]:
         if data and data["alerts"]:
             print(f"\n  {label} Alerts:")
             for alert in data["alerts"]:
