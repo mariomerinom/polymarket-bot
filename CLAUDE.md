@@ -57,24 +57,39 @@ The [BOTSY Kanban](https://github.com/users/mariomerinom/projects/1) is the live
 - **ETH strategy is MOMENTUM (ride streaks).** Contrarian validated at 54.4% in pattern mining but lost at 33.3% WR on 54 live predictions. Momentum counterfactual: 66.7% on same bets. Flipped 2026-04-01. Same V3→V4 pattern as BTC. Do NOT revert to contrarian. ETH pipeline is in `src/predict_eth.py` (paper trading, conviction=2).
 - **Paper trade first.** Every new signal must accumulate 200+ resolved predictions in paper trading before risking real capital.
 - **Conviction gates real money.** Only conviction >= 3 places bets. Conviction 0-2 = skip.
-- **Trade execution is in `src/trade.py`.** Two modes: `TRADING_ENABLED=false` (default, paper) logs what it would do; `TRADING_ENABLED=true` places real limit orders via `py-clob-client` SDK on Polygon. Flat $25 bet size. Kill switch via `KILL_SWITCH=true` env var or `data/KILL_SWITCH` file. Daily loss circuit breaker at $300 (env `DAILY_LOSS_LIMIT`). Thin book guard caps bets at 90% of CLOB max@2% slippage.
+- **Trade execution is in `src/trade.py`.** Trading mode is resolved per-pipeline: `execute_trades(db, cycle, pipeline_name="btc_5m")` calls `pipeline_control.is_pipeline_live()` internally — no shared global. Paper mode logs what it would do; live mode places real limit orders via `py-clob-client` SDK on Polygon. Flat $25 bet size. Kill switch via `KILL_SWITCH=true` env var or `data/KILL_SWITCH` file. Daily loss circuit breaker at $300 (env `DAILY_LOSS_LIMIT`). Thin book guard caps bets at 90% of CLOB max@2% slippage.
 
 ## Multi-Pipeline Architecture
 
-Four independent pipelines run in parallel, each with its own workflow, database, and dashboard:
+All pipelines run on a DigitalOcean VPS (`botsy_engine.py`) via a single async engine process. GitHub Actions are fully retired — no `.github/workflows/` directory exists. The engine dispatches pipelines on Bybit WS candle-close events, routed by the `ROUTING` table.
 
-| Pipeline | Workflow | DB | Dashboard | Signal | Status |
-|----------|----------|----|-----------|--------|--------|
-| BTC 5m | `predict-and-score.yml` | `predictions.db` | `docs/index.html` | Momentum | **Production** |
-| BTC 15m | `predict-15m.yml` | `predictions_15m.db` | `docs/15m.html` | Momentum | Paper |
-| ETH 5m | `predict-eth-5m.yml` | `predictions_eth.db` | `docs/eth.html` | Momentum | Paper |
-| Kalshi BTC | `predict-kalshi.yml` | `predictions_kalshi.db` | `docs/kalshi.html` | Momentum | Paper (Phase 0) |
+### Pipeline Table
 
-All three dashboards are cross-linked via a nav bar on GitHub Pages.
+| Pipeline | Entry Point | DB | Dashboard | Signal | Status |
+|----------|-------------|----|-----------|--------|--------|
+| BTC 5m | `ci_run.py` → `polymarket_pipeline` | `predictions.db` | `docs/index.html` | Momentum | **Production** |
+| BTC 15m | `ci_run_15m.py` → `polymarket_pipeline` | `predictions_15m.db` | `docs/15m.html` | Momentum | Paper |
+| ETH 5m | `ci_run_eth.py` → `polymarket_pipeline` | `predictions_eth.db` | `docs/eth.html` | Momentum | Paper |
+| Kalshi BTC | `ci_run_kalshi.py` (standalone) | `predictions_kalshi.db` | `docs/kalshi.html` | Momentum | Paper (Phase 0) |
+| Bybit BTC | `ci_run_bybit.py` (standalone) | `predictions_bybit.db` | `docs/bybit.html` | Momentum | Paper |
 
-### CI Conflict Resolution
+All dashboards are cross-linked via a nav bar on GitHub Pages.
 
-All workflows use `git pull --rebase -X theirs` with fallback to merge pull. CI-generated files (`optimizations.json`, dashboard HTML) are regenerated every cycle, so accepting the remote version on conflict is safe.
+### Unified Pipeline (`src/polymarket_pipeline.py`)
+
+The three Polymarket pipelines (BTC 5m, BTC 15m, ETH 5m) share a unified lifecycle via `run_polymarket_pipeline()`. Each `ci_run_*.py` is a thin config wrapper (~30 lines) that calls it with pipeline-specific parameters. Kalshi and Bybit have different enough structures to remain standalone.
+
+### Pipeline Isolation
+
+Trading mode is resolved per-pipeline inside `execute_trades(pipeline_name=...)` — no pipeline mutates `trade.TRADING_ENABLED`. Defense layers: (1) `pipeline_name` parameter threads mode locally, (2) PID lock prevents dual engine processes, (3) AST test guards against `TRADING_ENABLED` mutation, (4) runtime assertion logs warnings on global/local mismatch.
+
+### VPS Engine (`src/botsy_engine.py`)
+
+Single async process on DigitalOcean Amsterdam. Manages: Bybit WS feeds (kline events), Polymarket WS feed (orderbook), candle buffer (100-candle ring buffer), TA engine (pandas-ta indicators), pipeline dispatch on candle close, git auto-commit every ~5 minutes. Managed by systemd (`botsy.service`).
+
+### Git Conflict Resolution
+
+The engine's `_git_commit_push()` uses: `add → commit → push → (if rejected: pull --rebase -X theirs → push)`. CI-generated files (DBs, `optimizations.json`, dashboard HTML) are regenerated every cycle, so accepting the remote version on conflict is safe.
 
 ## Production Sizing Philosophy
 
@@ -119,12 +134,17 @@ Tracks decisions, specs, optimizations, incidents, and infra work. All items are
 | `docs/ops/BREAK_FIX_LOG.md` | **ARCHIVED** → `docs/archive/BREAK_FIX_LOG.md`. New incidents go to GitHub Issues with `incident` label. Postmortems still written as markdown in `docs/ops/` |
 | `docs/ops/ENGINEERING_LESSONS.md` | Evergreen operational lessons |
 
-### Plans (`docs/plans/`) — active expansion plans
+### Plans (`docs/plans/`) — active and completed plans
 
-| Document | Goal |
-|----------|------|
-| `docs/plans/KALSHI_INTEGRATION_PLAN.md` | Kalshi venue expansion (Phase 0 active) |
-| `docs/plans/multi-asset-plan.md` | Multi-asset expansion status and plan |
+| Document | Goal | Status |
+|----------|------|--------|
+| `docs/plans/pipeline-isolation-unification.md` | Eliminate `TRADING_ENABLED` global mutation, unify ci_run files | **COMPLETE** (2026-04-06) |
+| `docs/plans/event-driven-execution-plan.md` | Decouple prediction (5m) from execution (reactive to WS orderbook) | PLANNED |
+| `docs/plans/tdd-plan.md` | TDD-first refactoring strategy and test layers | Reference |
+| `docs/plans/KALSHI_INTEGRATION_PLAN.md` | Kalshi venue expansion (Phase 0 active) | ACTIVE |
+| `docs/plans/multi-asset-plan.md` | Multi-asset expansion status and plan | ACTIVE |
+| `docs/plans/refactoring-plan.md` | Code structure refactoring approach | Reference |
+| `docs/plans/task_kalshi_analysis.md` | Kalshi pipeline analysis task | COMPLETE |
 
 ### Reference (`docs/reference/`) — sizing, liquidity
 
@@ -158,20 +178,20 @@ These are unimplemented feature specs. Evaluate after ETH Phase 1 validates and 
 
 ### Fill Problem Specs (`docs/specs/stochastic/`) — execution fix designs
 
-Active specs addressing the adverse selection / fill rate problem (Decision #24). The signal picks winners at 65%+ but orders expire before filling.
+Specs addressing the adverse selection / fill rate problem (Decision #24). The signal picks winners at 65%+ but orders expire before filling. Some specs are now implemented; others remain planned.
 
-| Document | Goal |
-|----------|------|
-| `docs/specs/stochastic/spec_dynamic_price_cap.md` | Dynamic slippage spread (3¢-15¢) based on depth, spread, volume |
-| `docs/specs/stochastic/spec_stochastic_entry_timing.md` | Stochastic Oscillator for entry timing within 5-min windows |
-| `docs/specs/stochastic/spec_fill_diagnostic.md` | Fill diagnostic instrumentation (implemented in `src/fill_diagnostic.py`) |
-| `docs/specs/stochastic/fill-implementation.md` | Fix adverse selection via CLOB websocket + IOC orders |
-| `docs/specs/stochastic/spec_unified_vps_websocket.md` | Unified VPS + websocket architecture for live pricing |
-| `docs/specs/stochastic/spec_bybit_vps_migration.md` | Bybit/Kalshi VPS migration (Phase 1 complete) |
-| `docs/specs/stochastic/claude-fill-problem-consensus.md` | Multi-agent consensus on fill problem root cause and fixes |
-| `docs/specs/stochastic/fill-problem-agreement-and-tension.md` | Agreement/tension analysis across fill problem proposals |
-| `docs/specs/stochastic/gemini-fill-resolution.md` | External review of fill problem proposals |
-| `docs/specs/stochastic/Spec: Optimal Fill Strategy v1 — Hybrid .md` | Hybrid optimal fill strategy combining multiple approaches |
+| Document | Goal | Status |
+|----------|------|--------|
+| `docs/specs/stochastic/spec_unified_vps_websocket.md` | Unified VPS + websocket architecture for live pricing | **IMPLEMENTED** — VPS + WS live |
+| `docs/specs/stochastic/spec_bybit_vps_migration.md` | Bybit/Kalshi VPS migration | **IMPLEMENTED** — fully consolidated |
+| `docs/specs/stochastic/spec_fill_diagnostic.md` | Fill diagnostic instrumentation (`src/fill_diagnostic.py`) | **IMPLEMENTED** |
+| `docs/specs/stochastic/spec_dynamic_price_cap.md` | Dynamic slippage spread (3¢-15¢) based on depth, spread, volume | Planned |
+| `docs/specs/stochastic/spec_stochastic_entry_timing.md` | Stochastic Oscillator for entry timing within 5-min windows | Planned |
+| `docs/specs/stochastic/fill-implementation.md` | Fix adverse selection via CLOB websocket + IOC orders | Planned |
+| `docs/specs/stochastic/claude-fill-problem-consensus.md` | Multi-agent consensus on fill problem root cause and fixes | Reference |
+| `docs/specs/stochastic/fill-problem-agreement-and-tension.md` | Agreement/tension analysis across fill problem proposals | Reference |
+| `docs/specs/stochastic/gemini-fill-resolution.md` | External review of fill problem proposals | Reference |
+| `docs/specs/stochastic/Spec: Optimal Fill Strategy v1 — Hybrid .md` | Hybrid optimal fill strategy combining multiple approaches | Reference |
 
 ### Research (`docs/research/`) — historical analysis, read-only reference
 
@@ -248,8 +268,8 @@ When asked "how are we doing?", "check the project", "what's the status", or sim
    - Any optimization revert candidates?
 5. Read `docs/core/ROADMAP.md` — what's the current phase, what's next?
 6. `python3 -m pytest tests/ -v` — are tests passing?
-7. Check GitHub Actions — are all pipelines running green?
-8. Check trade execution — is `TRADING_ENABLED`? Any kill switch or circuit breaker trips?
+7. Check VPS engine status: `ssh root@134.209.196.239 "systemctl status botsy && tail -20 /home/botuser/polymarket-bot/logs/loop.log"`
+8. Check trade execution — verify pipeline modes in logs (`mode=live` for BTC 5m, `mode=paper` for others). Check kill switch and circuit breaker status.
 9. Update the board if anything changed: move cards, close resolved issues, create new ones
 
 Report findings concisely. Flag anything that needs a decision.

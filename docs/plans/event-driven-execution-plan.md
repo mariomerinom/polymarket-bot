@@ -21,7 +21,7 @@ The core changes are in `src/botsy_engine.py` (not frozen), `src/trade.py` (not 
 
 - [x] VPS deployment live with WS feeds (Bybit + Polymarket)
 - [x] Orderbook cache (`data/live_orderbook.json`) updating per-token
-- [x] Pipeline isolation landed (pipeline_name threaded to execute_trades)
+- [x] Pipeline isolation landed (pipeline_name threaded to execute_trades) — see [pipeline-isolation-unification.md](pipeline-isolation-unification.md)
 - [x] FOK logic validated in compute_order()
 - [ ] BTC 5m fill rate baseline measured (current: estimate ~30-40% of qualifying predictions fill)
 

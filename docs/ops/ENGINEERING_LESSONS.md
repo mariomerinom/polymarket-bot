@@ -231,12 +231,20 @@ pytest tests/test_regression.py -v
 
 **Why it wasn't caught sooner:** Fail-closed design meant the bug produced paper orders, not errors. Everything "worked" — just in the wrong mode. No alert fires on paper orders.
 
-**Remediation:**
-- Every pipeline now overrides `trade.TRADING_ENABLED` from `pipeline_control.is_pipeline_live()` at the start of `main()` — evaluated at runtime, not import time
+**Remediation (v1 — initial):**
+- Every pipeline overrode `trade.TRADING_ENABLED` from `pipeline_control.is_pipeline_live()` at the start of `main()` — evaluated at runtime, not import time
 - Disabled the duplicate systemd service
-- Added VPS deployment checklist: verify single process, verify trading mode in logs
 
-**Best practice:** Never rely on module-level constants derived from environment variables when the env may be set after import. Either load env before any imports, or override the constant at runtime. And always check `systemctl list-units` after deploying a new service — name collisions hide duplicate processes.
+**Remediation (v2 — permanent fix, 2026-04-06):**
+The v1 fix still used a writable global, making the same class of bug inevitable. Replaced with pipeline isolation by construction:
+- `execute_trades(db, cycle, pipeline_name="btc_5m")` resolves `trading_enabled = is_pipeline_live(pipeline_name)` internally — no pipeline ever writes to `trade.TRADING_ENABLED`
+- `place_order()` and `settle_orders()` accept `trading_enabled` as a parameter, threaded from `execute_trades()`
+- PID lock file (`data/engine.pid`) prevents dual engine processes
+- AST test (`test_pipeline_isolation.py`) fails CI if any pipeline file assigns `trade.TRADING_ENABLED`
+- Runtime assertion in `place_order()` logs WARNING if passed mode disagrees with the global (passed value always wins)
+- Three `ci_run_*.py` files unified into `polymarket_pipeline.py` — eliminated the code duplication that spread the mutation to 3 files
+
+**Best practice:** Never rely on module-level constants derived from environment variables when the env may be set after import. More importantly, never rely on a writable global that multiple callers mutate — pass the value as a parameter so corruption is impossible by construction. And always check `systemctl list-units` after deploying a new service — name collisions hide duplicate processes.
 
 ---
 

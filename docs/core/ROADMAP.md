@@ -157,7 +157,7 @@ Move from GitHub Actions to a dedicated VPS in a non-US region. GitHub Actions r
 - Live contrarian hit **33.3% WR on 54 resolved predictions** — catastrophic
 - Momentum counterfactual on same 54 bets: **66.7%** — exact complement
 - **Flipped to momentum 2026-04-01.** Same V3→V4 pattern as BTC.
-- Parallel pipeline: `predict_eth.py`, `ci_run_eth.py`, `predict-eth-5m.yml`
+- Parallel pipeline: `predict_eth.py`, `ci_run_eth.py` → `polymarket_pipeline.py` (unified lifecycle on VPS)
 - Separate DB (`predictions_eth.db`), separate dashboard (`docs/eth.html`)
 - Phase 1 validated 2026-04-02: 36 resolved at 66.7% WR. Medium confidence (streak 3-4) promoted to conv=3.
 - **Went live 2026-04-04** ($25 flat bets). **Reverted to paper 2026-04-05** — same adverse selection as BTC (winners expire, losers fill). See Decision #24/#25.
