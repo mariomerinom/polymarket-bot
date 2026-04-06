@@ -628,6 +628,142 @@ def compute_order_pnl(db):
     return updated
 
 
+# ── Extracted functions (Phase B refactoring, 2026-04-05) ─────────────────────
+
+
+def resolve_clob_prices(pred, tokens):
+    """
+    Resolve CLOB prices for a prediction's market via WS cache + REST fallback.
+
+    Returns:
+        (market_row, tokens) where market_row has price_yes, price_no,
+        and _clob_verified dict. tokens is passed through for order submission.
+    """
+    market_row = {
+        "price_yes": pred["price_yes"],
+        "price_no": pred.get("price_no", round(1 - pred["price_yes"], 4)),
+    }
+    gamma_yes = pred["price_yes"]
+    gamma_no = round(1 - gamma_yes, 4)
+
+    if not tokens:
+        return market_row, tokens
+
+    yes_mid = _get_live_token_mid(tokens.get("yes", ""))
+    no_mid = _get_live_token_mid(tokens.get("no", ""))
+
+    # WS cache miss → try CLOB REST as fallback
+    if yes_mid is None or no_mid is None:
+        try:
+            from clob_depth import get_order_book, analyze_depth
+            if yes_mid is None and tokens.get("yes"):
+                book = get_order_book(tokens["yes"])
+                if book:
+                    yes_mid = analyze_depth(book).get("mid")
+            if no_mid is None and tokens.get("no"):
+                book = get_order_book(tokens["no"])
+                if book:
+                    no_mid = analyze_depth(book).get("mid")
+        except Exception as e:
+            print(f"    [CLOB_REST] Fallback failed: {e}")
+
+    if yes_mid is not None:
+        market_row["price_yes"] = yes_mid
+    if no_mid is not None:
+        market_row["price_no"] = no_mid
+
+    # Mark which tokens have real CLOB prices — compute_order() gates on this
+    market_row["_clob_verified"] = {
+        "yes": yes_mid is not None,
+        "no": no_mid is not None,
+    }
+
+    # DIAG: log source and gap
+    src_yes = "ws" if _get_live_token_mid(tokens.get("yes", "")) else ("rest" if yes_mid else "gamma")
+    src_no = "ws" if _get_live_token_mid(tokens.get("no", "")) else ("rest" if no_mid else "gamma")
+    print(f"    [LIVE_OB] YES={market_row['price_yes']:.4f}({src_yes}) "
+          f"NO={market_row['price_no']:.4f}({src_no}) "
+          f"(Gamma: YES={gamma_yes:.4f})")
+    if yes_mid and no_mid:
+        print(f"    DIAG|gamma_yes={gamma_yes:.4f}|clob_yes={yes_mid:.4f}"
+              f"|gamma_no={gamma_no:.4f}|clob_no={no_mid:.4f}"
+              f"|gap_yes={abs(yes_mid - gamma_yes):.4f}"
+              f"|gap_no={abs(no_mid - gamma_no):.4f}")
+    else:
+        missing = []
+        if not yes_mid:
+            missing.append("YES")
+        if not no_mid:
+            missing.append("NO")
+        print(f"    DIAG|clob_missing={'+'.join(missing)}|gamma_yes={gamma_yes:.4f}|gamma_no={gamma_no:.4f}")
+
+    return market_row, tokens
+
+
+def run_shadow_logging(db, cycle):
+    """
+    Run shadow indicators and shadow conviction scorer.
+
+    Called every cycle regardless of qualifying predictions to ensure
+    data collection during MEAN_REVERTING and other low-conviction regimes.
+    """
+    # Shadow indicators
+    try:
+        from shadow_indicators import shadow_log_indicators
+        shadow = shadow_log_indicators(db, cycle)
+        if shadow:
+            print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
+    except Exception as e:
+        print(f"    [SHADOW] skipped: {e}")
+
+    # Shadow conviction scorer — continuous strength signal
+    try:
+        from shadow_conviction_scorer import shadow_log_cycle
+        from btc_data import fetch_btc_candles
+        btc = fetch_btc_candles(limit=DEFAULT_CANDLE_LIMIT)
+        if btc and btc.get("candles"):
+            shadow_log_cycle(db, cycle, btc["candles"], "btc_5m")
+    except Exception as e:
+        print(f"    [shadow] skipped: {e}")
+
+
+def record_diagnostics(pred, clob_token_id, snapshot_age_ms=None):
+    """
+    Log Phase 2 diagnostics: snapshot staleness and conviction-vs-drift.
+
+    Log-only, no execution change. Helps measure CLOB price reliability
+    and detect when conviction doesn't match live price movement.
+    """
+    # Diagnostic A: Snapshot staleness (Tension 2)
+    fetched_at_str = pred.get("fetched_at")
+    if fetched_at_str:
+        try:
+            fetched_at_dt = datetime.fromisoformat(fetched_at_str)
+            snapshot_age_ms = (datetime.now(timezone.utc) - fetched_at_dt).total_seconds() * 1000
+            print(f"    DIAG|snapshot_age_ms={snapshot_age_ms:.0f}|market={pred['market_id'][:12]}")
+        except (ValueError, TypeError):
+            pass
+
+    # Diagnostic B: Conviction vs. price drift (Tension 1)
+    if clob_token_id:
+        try:
+            from clob_depth import get_order_book, analyze_depth
+            book = get_order_book(clob_token_id)
+            if book:
+                depth = analyze_depth(book)
+                if depth:
+                    live_mid = depth["mid"]
+                    price_drift = abs(live_mid - pred["price_yes"])
+                    conv = pred["conviction_score"]
+                    print(f"    DIAG|conv={conv}|drift={price_drift:.4f}"
+                          f"|snapshot_age_ms={snapshot_age_ms or 0:.0f}"
+                          f"|live_mid={live_mid:.4f}|stored={pred['price_yes']:.4f}")
+        except Exception as e:
+            print(f"    DIAG|drift_fetch_failed={e}")
+
+    return snapshot_age_ms
+
+
 # ── Execution hook (called from ci_run.py) ────────────────────────────────────
 
 def execute_trades(db, cycle):
@@ -668,25 +804,7 @@ def execute_trades(db, cycle):
         row
     )) for row in cursor.fetchall()]
 
-    # Shadow indicators — run every cycle regardless of qualifying predictions.
-    # This ensures data collection during MEAN_REVERTING and other low-conviction regimes.
-    try:
-        from shadow_indicators import shadow_log_indicators
-        shadow = shadow_log_indicators(db, cycle)
-        if shadow:
-            print(f"    [SHADOW] {shadow.get('summary', 'logged')}")
-    except Exception as e:
-        print(f"    [SHADOW] skipped: {e}")
-
-    # Shadow conviction scorer — continuous strength signal
-    try:
-        from shadow_conviction_scorer import shadow_log_cycle
-        from btc_data import fetch_btc_candles
-        btc = fetch_btc_candles(limit=DEFAULT_CANDLE_LIMIT)
-        if btc and btc.get("candles"):
-            shadow_log_cycle(db, cycle, btc["candles"], "btc_5m")
-    except Exception as e:
-        print(f"    [shadow] skipped: {e}")
+    run_shadow_logging(db, cycle)
 
     if not predictions:
         return []
@@ -710,7 +828,7 @@ def execute_trades(db, cycle):
         except (json.JSONDecodeError, TypeError):
             pass
 
-        # Resolve CLOB tokens FIRST (needed for both pricing and order submission)
+        # Resolve CLOB tokens + prices (WS cache → REST fallback → skip)
         tokens = None
         try:
             from predict import _get_clob_tokens_safe
@@ -718,60 +836,7 @@ def execute_trades(db, cycle):
         except Exception as e:
             print(f"    CLOB token lookup failed: {e}")
 
-        # Use live WS per-token prices (replaces stale Gamma implied prices)
-        market_row = {"price_yes": pred["price_yes"],
-                      "price_no": pred.get("price_no", round(1 - pred["price_yes"], 4))}
-        gamma_yes = pred["price_yes"]
-        gamma_no = round(1 - gamma_yes, 4)
-        if tokens:
-            yes_mid = _get_live_token_mid(tokens.get("yes", ""))
-            no_mid = _get_live_token_mid(tokens.get("no", ""))
-
-            # WS cache miss → try CLOB REST as fallback
-            if yes_mid is None or no_mid is None:
-                try:
-                    from clob_depth import get_order_book, analyze_depth
-                    if yes_mid is None and tokens.get("yes"):
-                        book = get_order_book(tokens["yes"])
-                        if book:
-                            yes_mid = analyze_depth(book).get("mid")
-                    if no_mid is None and tokens.get("no"):
-                        book = get_order_book(tokens["no"])
-                        if book:
-                            no_mid = analyze_depth(book).get("mid")
-                except Exception as e:
-                    print(f"    [CLOB_REST] Fallback failed: {e}")
-
-            if yes_mid is not None:
-                market_row["price_yes"] = yes_mid
-            if no_mid is not None:
-                market_row["price_no"] = no_mid
-
-            # Mark which tokens have real CLOB prices — compute_order() gates on this
-            market_row["_clob_verified"] = {
-                "yes": yes_mid is not None,
-                "no": no_mid is not None,
-            }
-
-            # DIAG: log source and gap
-            src_yes = "ws" if _get_live_token_mid(tokens.get("yes", "")) else ("rest" if yes_mid else "gamma")
-            src_no = "ws" if _get_live_token_mid(tokens.get("no", "")) else ("rest" if no_mid else "gamma")
-            print(f"    [LIVE_OB] YES={market_row['price_yes']:.4f}({src_yes}) "
-                  f"NO={market_row['price_no']:.4f}({src_no}) "
-                  f"(Gamma: YES={gamma_yes:.4f})")
-            if yes_mid and no_mid:
-                print(f"    DIAG|gamma_yes={gamma_yes:.4f}|clob_yes={yes_mid:.4f}"
-                      f"|gamma_no={gamma_no:.4f}|clob_no={no_mid:.4f}"
-                      f"|gap_yes={abs(yes_mid - gamma_yes):.4f}"
-                      f"|gap_no={abs(no_mid - gamma_no):.4f}")
-            else:
-                # At least one token missing — log which
-                missing = []
-                if not yes_mid:
-                    missing.append("YES")
-                if not no_mid:
-                    missing.append("NO")
-                print(f"    DIAG|clob_missing={'+'.join(missing)}|gamma_yes={gamma_yes:.4f}|gamma_no={gamma_no:.4f}")
+        market_row, tokens = resolve_clob_prices(pred, tokens)
 
         order_params, order_reason = compute_order(pred, market_row, liquidity)
 
@@ -784,35 +849,8 @@ def execute_trades(db, cycle):
         if tokens:
             clob_token_id = tokens.get(order_params["token"])
 
-        # ── Phase 2 Diagnostics (log-only, no execution change) ──
-
-        # Diagnostic A: Snapshot staleness (Tension 2)
-        snapshot_age_ms = None
-        fetched_at_str = pred.get("fetched_at")
-        if fetched_at_str:
-            try:
-                fetched_at_dt = datetime.fromisoformat(fetched_at_str)
-                snapshot_age_ms = (datetime.now(timezone.utc) - fetched_at_dt).total_seconds() * 1000
-                print(f"    DIAG|snapshot_age_ms={snapshot_age_ms:.0f}|market={pred['market_id'][:12]}")
-            except (ValueError, TypeError):
-                pass
-
-        # Diagnostic B: Conviction vs. price drift (Tension 1)
-        if clob_token_id:
-            try:
-                from clob_depth import get_order_book, analyze_depth
-                book = get_order_book(clob_token_id)
-                if book:
-                    depth = analyze_depth(book)
-                    if depth:
-                        live_mid = depth["mid"]
-                        price_drift = abs(live_mid - pred["price_yes"])
-                        conv = pred["conviction_score"]
-                        print(f"    DIAG|conv={conv}|drift={price_drift:.4f}"
-                              f"|snapshot_age_ms={snapshot_age_ms or 0:.0f}"
-                              f"|live_mid={live_mid:.4f}|stored={pred['price_yes']:.4f}")
-            except Exception as e:
-                print(f"    DIAG|drift_fetch_failed={e}")
+        # Phase 2 diagnostics (log-only, no execution change)
+        record_diagnostics(pred, clob_token_id)
 
         # Place order
         order = place_order(
