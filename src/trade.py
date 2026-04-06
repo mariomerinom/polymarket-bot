@@ -341,15 +341,32 @@ def compute_order(prediction_row, market_row, liquidity=None):
 
 
 def place_order(db, market_id, prediction_id, order_params, cycle,
-                clob_token_id=None):
+                clob_token_id=None, trading_enabled=None):
     """
     Place an order — either log-only (paper) or live via CLOB SDK.
+
+    Args:
+        trading_enabled: If provided, overrides the global TRADING_ENABLED.
+            Resolved per-pipeline by execute_trades() via pipeline_control.
+            Incident #66: the global is NOT the source of truth.
 
     Returns:
         order dict with status
     """
+    if trading_enabled is None:
+        trading_enabled = TRADING_ENABLED  # Legacy fallback
+
+    # Defense-in-depth: warn if passed mode disagrees with global (Fix 4)
+    if trading_enabled != TRADING_ENABLED:
+        import logging
+        logging.getLogger("trade").warning(
+            f"TRADING_ENABLED global ({TRADING_ENABLED}) disagrees with "
+            f"passed trading_enabled ({trading_enabled}). "
+            f"Using passed value. (Incident #66 guard)"
+        )
+
     now = datetime.now(timezone.utc).isoformat()
-    mode = "live" if TRADING_ENABLED else "paper"
+    mode = "live" if trading_enabled else "paper"
 
     order_record = {
         "market_id": market_id,
@@ -373,7 +390,7 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         "action": order_params.get("action"),
     }
 
-    if not TRADING_ENABLED:
+    if not trading_enabled:
         # Paper mode — log what we would have done
         order_record["status"] = "paper"
         order_record["reason"] = "trading_disabled"
@@ -602,7 +619,7 @@ def _submit_fok_order(token_id, side, amount, price):
 
 # ── Settlement ────────────────────────────────────────────────────────────────
 
-def settle_orders(db):
+def settle_orders(db, trading_enabled=None):
     """
     Check submitted orders and update fill status using get_trades().
 
@@ -614,7 +631,9 @@ def settle_orders(db):
 
     Returns number of orders settled.
     """
-    if not TRADING_ENABLED:
+    if trading_enabled is None:
+        trading_enabled = TRADING_ENABLED
+    if not trading_enabled:
         return 0
 
     cursor = db.execute("""
@@ -955,17 +974,25 @@ def record_diagnostics(pred, clob_token_id, snapshot_age_ms=None):
 
 # ── Execution hook (called from ci_run.py) ────────────────────────────────────
 
-def execute_trades(db, cycle):
+def execute_trades(db, cycle, pipeline_name=None):
     """
     Main entry point: scan recent predictions, place orders for qualifying ones.
 
-    Called after run_predictions() in the CI pipeline.
-    Paper mode: logs what would have been traded.
-    Live mode: submits CLOB limit orders.
+    Args:
+        pipeline_name: If provided, resolve trading mode from pipeline_control
+            instead of the global TRADING_ENABLED. Incident #66: the global
+            is NOT the source of truth.
 
     Returns:
         list of order dicts
     """
+    # Resolve trading mode per-pipeline (Fix 1: isolation by construction)
+    if pipeline_name:
+        from pipeline_control import is_pipeline_live
+        trading_enabled = is_pipeline_live(pipeline_name)
+    else:
+        trading_enabled = TRADING_ENABLED  # Legacy fallback
+
     ensure_orders_table(db)
 
     # VWAP mean-reversion: DISABLED (Decision #23 reverted 2026-04-02).
@@ -999,7 +1026,7 @@ def execute_trades(db, cycle):
         return []
 
     orders = []
-    mode_label = "LIVE" if TRADING_ENABLED else "PAPER"
+    mode_label = "LIVE" if trading_enabled else "PAPER"
     print(f"\n  [{mode_label}] Processing {len(predictions)} qualifying prediction(s)...")
 
     for pred in predictions:
@@ -1045,9 +1072,10 @@ def execute_trades(db, cycle):
         order = place_order(
             db, pred["market_id"], pred["id"], order_params, cycle,
             clob_token_id=clob_token_id,
+            trading_enabled=trading_enabled,
         )
 
-        symbol = ">" if TRADING_ENABLED else "~"
+        symbol = ">" if trading_enabled else "~"
         slip_cents = order_params.get('slippage', 0) * 100
         mkt_price = order_params.get('market_price', 0)
         print(f"    [{mode_label}] {symbol} {order_params['direction']} "
@@ -1057,8 +1085,8 @@ def execute_trades(db, cycle):
         orders.append(order)
 
     # Check order fills from previous cycles
-    if TRADING_ENABLED:
-        settled = settle_orders(db)
+    if trading_enabled:
+        settled = settle_orders(db, trading_enabled=trading_enabled)
         if settled:
             print(f"    [{mode_label}] Settled {settled} order(s)")
 
@@ -1082,8 +1110,14 @@ def is_kill_switched():
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
-def get_trading_summary(db):
+def get_trading_summary(db, pipeline_name=None):
     """Get a summary of today's trading activity."""
+    if pipeline_name:
+        from pipeline_control import is_pipeline_live
+        _trading_enabled = is_pipeline_live(pipeline_name)
+    else:
+        _trading_enabled = TRADING_ENABLED
+
     ensure_orders_table(db)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -1106,7 +1140,7 @@ def get_trading_summary(db):
         "failed": row[2],
         "total_wagered": row[3],
         "total_pnl": row[4],
-        "mode": "LIVE" if TRADING_ENABLED else "PAPER",
+        "mode": "LIVE" if _trading_enabled else "PAPER",
         "bet_size": BET_SIZE,
         "daily_loss_limit": DAILY_LOSS_LIMIT,
         "consecutive_losses": consec_losses,

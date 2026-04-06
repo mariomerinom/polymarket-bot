@@ -47,6 +47,40 @@ LOG_DIR = REPO_DIR / "logs"
 LOG_FILE = LOG_DIR / "loop.log"
 METRICS_FILE = DATA_DIR / "ws_metrics.json"
 ORDERBOOK_CACHE = DATA_DIR / "live_orderbook.json"
+PID_FILE = DATA_DIR / "engine.pid"
+
+
+# ── PID Lock (Fix 2: prevent dual engine processes) ─────────────────────────
+
+
+class PIDLockError(Exception):
+    """Raised when another engine instance is already running."""
+    pass
+
+
+def acquire_pid_lock(pid_file=None):
+    """Acquire PID lock file. Raises PIDLockError if another instance is alive."""
+    if pid_file is None:
+        pid_file = PID_FILE
+
+    pid_file = Path(pid_file)
+    if pid_file.exists():
+        try:
+            old_pid = int(pid_file.read_text().strip())
+            # Check if PID is alive
+            os.kill(old_pid, 0)  # Signal 0 = check existence
+            raise PIDLockError(
+                f"Engine already running (PID {old_pid}). "
+                f"Kill it first or remove {pid_file}"
+            )
+        except (ProcessLookupError, ValueError):
+            # PID is dead or invalid — safe to proceed
+            pass
+
+    pid_file.write_text(str(os.getpid()))
+
+    import atexit
+    atexit.register(lambda: pid_file.unlink(missing_ok=True))
 
 # Routing: (source, symbol, interval) -> list of pipeline names
 # Bybit WS v5 handles all candle triggers (241ms avg latency, validated 2026-04-05)
@@ -786,6 +820,13 @@ def main():
                     if line and not line.startswith("#") and "=" in line:
                         key, _, value = line.partition("=")
                         os.environ[key.strip()] = value.strip().strip('"').strip("'")
+
+    # PID lock — prevent dual engine processes (incident #66)
+    try:
+        acquire_pid_lock()
+    except PIDLockError as e:
+        print(f"FATAL: {e}", file=sys.stderr)
+        sys.exit(1)
 
     engine = BotsyEngine()
     asyncio.run(engine.run())

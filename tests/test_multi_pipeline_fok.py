@@ -122,72 +122,73 @@ class TestTokenSubscription:
 
 
 class TestBtc15mTradeExecution:
-    """ci_run_15m.py must call execute_trades() gated by pipeline_control."""
+    """ci_run_15m.py must call execute_trades() gated by pipeline_control.
+
+    After unification, lifecycle lives in polymarket_pipeline.
+    """
+
+    _M = "polymarket_pipeline"
 
     def test_15m_pipeline_calls_execute_trades(self):
         """ci_run_15m.main() calls execute_trades when not paused."""
         import ci_run_15m
-        # These imports must exist on ci_run_15m after implementation
-        assert hasattr(ci_run_15m, 'execute_trades'), \
-            "ci_run_15m must import execute_trades from trade"
-        assert hasattr(ci_run_15m, 'is_kill_switched'), \
-            "ci_run_15m must import is_kill_switched from trade"
 
         fake_market = [{"id": "mkt_test", "question": "Test"}]
-        with patch.object(ci_run_15m, "fetch_active_markets_15m", return_value=fake_market), \
-             patch.object(ci_run_15m, "auto_resolve", return_value=0), \
-             patch.object(ci_run_15m, "has_unpredicted_market", return_value=False), \
-             patch.object(ci_run_15m, "load_pipeline_config", return_value={"mode": "paper", "bet_size": None, "notes": ""}), \
-             patch.object(ci_run_15m, "is_pipeline_live", return_value=False), \
-             patch.object(ci_run_15m, "is_kill_switched", return_value=False), \
-             patch.object(ci_run_15m, "ensure_orders_table"), \
-             patch.object(ci_run_15m, "execute_trades", return_value=[]) as mock_et, \
-             patch.object(ci_run_15m, "get_trading_summary", return_value={"mode": "paper", "bet_size": 25, "total_orders": 0, "total_wagered": 0, "total_pnl": 0}), \
-             patch.object(ci_run_15m, "calculate_brier_scores", return_value=None), \
-             patch.object(ci_run_15m, "store_markets"):
+        with patch(f"{self._M}.load_pipeline_config", return_value={"mode": "paper", "bet_size": None, "notes": ""}), \
+             patch(f"{self._M}.is_pipeline_live", return_value=False), \
+             patch(f"{self._M}.store_markets"), \
+             patch(f"{self._M}.auto_resolve", return_value=0), \
+             patch(f"{self._M}.has_unpredicted_market", return_value=False), \
+             patch(f"{self._M}.is_kill_switched", return_value=False), \
+             patch(f"{self._M}.ensure_orders_table"), \
+             patch(f"{self._M}.execute_trades", return_value=[]) as mock_et, \
+             patch(f"{self._M}.get_trading_summary", return_value={"mode": "paper", "bet_size": 25, "total_orders": 0, "total_wagered": 0, "total_pnl": 0}), \
+             patch(f"{self._M}.calculate_brier_scores", return_value=None), \
+             patch("ci_run_15m.fetch_active_markets_15m", return_value=fake_market):
             ci_run_15m.main()
 
         mock_et.assert_called_once()
 
     def test_15m_respects_pipeline_control(self):
-        """Paper mode → TRADING_ENABLED is False."""
+        """Paper mode → execute_trades called with pipeline_name='btc_15m'.
+        Mode resolution happens inside trade.execute_trades via pipeline_control.
+        """
         import ci_run_15m
-        import trade
-        original = trade.TRADING_ENABLED
 
-        with patch.object(ci_run_15m, "fetch_active_markets_15m", return_value=[]), \
-             patch.object(ci_run_15m, "auto_resolve", return_value=0), \
-             patch.object(ci_run_15m, "has_unpredicted_market", return_value=False), \
-             patch.object(ci_run_15m, "load_pipeline_config", return_value={"mode": "paper", "bet_size": None, "notes": ""}), \
-             patch.object(ci_run_15m, "is_pipeline_live", return_value=False) as mock_live, \
-             patch.object(ci_run_15m, "is_kill_switched", return_value=False), \
-             patch.object(ci_run_15m, "ensure_orders_table"), \
-             patch.object(ci_run_15m, "execute_trades", return_value=[]), \
-             patch.object(ci_run_15m, "get_trading_summary", return_value={"mode": "paper", "bet_size": 25, "total_orders": 0, "total_wagered": 0, "total_pnl": 0}), \
-             patch.object(ci_run_15m, "calculate_brier_scores", return_value=None), \
-             patch.object(ci_run_15m, "store_markets"):
+        fake_market = [{"id": "mkt_test", "question": "Test"}]
+        with patch(f"{self._M}.load_pipeline_config", return_value={"mode": "paper", "bet_size": None, "notes": ""}), \
+             patch(f"{self._M}.is_pipeline_live", return_value=False), \
+             patch(f"{self._M}.store_markets"), \
+             patch(f"{self._M}.auto_resolve", return_value=0), \
+             patch(f"{self._M}.has_unpredicted_market", return_value=False), \
+             patch(f"{self._M}.is_kill_switched", return_value=False), \
+             patch(f"{self._M}.ensure_orders_table"), \
+             patch(f"{self._M}.execute_trades", return_value=[]) as mock_et, \
+             patch(f"{self._M}.get_trading_summary", return_value={"mode": "paper", "bet_size": 25, "total_orders": 0, "total_wagered": 0, "total_pnl": 0}), \
+             patch(f"{self._M}.calculate_brier_scores", return_value=None), \
+             patch("ci_run_15m.fetch_active_markets_15m", return_value=fake_market):
             ci_run_15m.main()
 
-        # is_pipeline_live("btc_15m") returns False → TRADING_ENABLED set to False
-        mock_live.assert_called()
-        # Restore
-        trade.TRADING_ENABLED = original
+        # Verify pipeline_name passed correctly
+        mock_et.assert_called_once()
+        _, kwargs = mock_et.call_args
+        assert kwargs.get("pipeline_name") == "btc_15m"
 
     def test_15m_kill_switch_blocks_trades(self, capsys):
         """Kill switch active → execute_trades NOT called."""
         import ci_run_15m
 
         fake_market = [{"id": "mkt_test", "question": "Test"}]
-        with patch.object(ci_run_15m, "fetch_active_markets_15m", return_value=fake_market), \
-             patch.object(ci_run_15m, "auto_resolve", return_value=0), \
-             patch.object(ci_run_15m, "has_unpredicted_market", return_value=False), \
-             patch.object(ci_run_15m, "load_pipeline_config", return_value={"mode": "paper", "bet_size": None, "notes": ""}), \
-             patch.object(ci_run_15m, "is_pipeline_live", return_value=False), \
-             patch.object(ci_run_15m, "is_kill_switched", return_value=True), \
-             patch.object(ci_run_15m, "ensure_orders_table"), \
-             patch.object(ci_run_15m, "execute_trades") as mock_et, \
-             patch.object(ci_run_15m, "calculate_brier_scores", return_value=None), \
-             patch.object(ci_run_15m, "store_markets"):
+        with patch(f"{self._M}.load_pipeline_config", return_value={"mode": "paper", "bet_size": None, "notes": ""}), \
+             patch(f"{self._M}.is_pipeline_live", return_value=False), \
+             patch(f"{self._M}.store_markets"), \
+             patch(f"{self._M}.auto_resolve", return_value=0), \
+             patch(f"{self._M}.has_unpredicted_market", return_value=False), \
+             patch(f"{self._M}.is_kill_switched", return_value=True), \
+             patch(f"{self._M}.ensure_orders_table"), \
+             patch(f"{self._M}.execute_trades") as mock_et, \
+             patch(f"{self._M}.calculate_brier_scores", return_value=None), \
+             patch("ci_run_15m.fetch_active_markets_15m", return_value=fake_market):
             ci_run_15m.main()
 
         mock_et.assert_not_called()

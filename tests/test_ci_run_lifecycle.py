@@ -1,28 +1,32 @@
 """
 test_ci_run_lifecycle.py — BTC 5m pipeline lifecycle behavioral tests.
 
-Tests ci_run.main() — the live production pipeline — end-to-end with mocked
-I/O boundaries. Verifies contracts, not structure.
+Tests ci_run.main() → polymarket_pipeline.run_polymarket_pipeline()
+end-to-end with mocked I/O boundaries. Verifies contracts, not structure.
 
 Phase A2 of TDD-first refactoring plan (docs/plans/tdd-plan.md).
+Updated for pipeline unification (incident #66 fix, 2026-04-06).
 """
 
 import os
 import sys
 import sqlite3
 from contextlib import ExitStack
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+# Module prefix: lifecycle now lives in polymarket_pipeline
+_M = "polymarket_pipeline"
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
 
 def _fake_candle_data():
-    """Minimal candle_data dict that ci_run.main() expects."""
+    """Minimal candle_data dict that the pipeline expects."""
     return {
         "current_price": 84500.0,
         "1h_change_pct": 0.25,
@@ -48,22 +52,21 @@ def _fake_market():
 
 
 def _apply_patches(stack, overrides=None):
-    """Apply standard mocks for ci_run.main() using an ExitStack. Returns mock dict."""
+    """Apply standard mocks for the unified pipeline. Returns mock dict."""
     defaults = {
-        "ci_run.fetch_active_markets": MagicMock(return_value=[_fake_market()]),
-        "ci_run.store_markets": MagicMock(),
-        "ci_run.auto_resolve": MagicMock(return_value=0),
-        "ci_run.fetch_btc_candles": MagicMock(return_value=_fake_candle_data()),
-        "ci_run.run_predictions": MagicMock(),
-        "ci_run.execute_trades": MagicMock(return_value=[]),
-        "ci_run.is_kill_switched": MagicMock(return_value=False),
-        "ci_run.ensure_orders_table": MagicMock(),
-        "ci_run.get_trading_summary": MagicMock(return_value={
+        f"{_M}.load_pipeline_config": MagicMock(return_value={"mode": "paper", "bet_size": None, "notes": ""}),
+        f"{_M}.is_pipeline_live": MagicMock(return_value=False),
+        f"{_M}.store_markets": MagicMock(),
+        f"{_M}.auto_resolve": MagicMock(return_value=0),
+        f"{_M}.has_unpredicted_market": MagicMock(return_value=False),
+        f"{_M}.execute_trades": MagicMock(return_value=[]),
+        f"{_M}.is_kill_switched": MagicMock(return_value=False),
+        f"{_M}.ensure_orders_table": MagicMock(),
+        f"{_M}.get_trading_summary": MagicMock(return_value={
             "mode": "PAPER", "bet_size": 25, "total_orders": 0,
             "total_wagered": 0, "total_pnl": 0,
         }),
-        "ci_run.calculate_brier_scores": MagicMock(return_value=None),
-        "ci_run._generate_dashboard": MagicMock(),
+        f"{_M}.calculate_brier_scores": MagicMock(return_value=None),
     }
     if overrides:
         defaults.update(overrides)
@@ -84,56 +87,80 @@ class TestCiRunLifecycle:
         """Full cycle: fetch → resolve → predict → trade → score → dashboard. No crash."""
         from ci_run import main
 
+        mock_dashboard = MagicMock()
         with ExitStack() as stack:
             _apply_patches(stack)
-            main(candle_data=_fake_candle_data())
+            with patch("ci_run._generate_dashboard", mock_dashboard):
+                main(candle_data=_fake_candle_data())
 
     def test_no_active_markets_exits_clean(self):
         """Empty market list + no unpredicted markets → clean exit."""
         from ci_run import main
 
         with ExitStack() as stack:
-            _apply_patches(stack, {
-                "ci_run.fetch_active_markets": MagicMock(return_value=[]),
-            })
-            main(candle_data=_fake_candle_data())
+            mocks = _apply_patches(stack)
+            # Override: market_fetch_fn returns empty
+            # Since ci_run passes fetch_active_markets as a param, we patch at source
+            with patch("ci_run.fetch_active_markets", return_value=[]):
+                main(candle_data=_fake_candle_data())
 
     def test_candle_fetch_failure_continues(self):
-        """When candle_data is None and fetch_btc_candles returns None, pipeline still runs."""
+        """When candle_data is None and candle_fetch returns None, pipeline still runs."""
         from ci_run import main
 
         with ExitStack() as stack:
-            _apply_patches(stack, {
-                "ci_run.fetch_btc_candles": MagicMock(return_value=None),
-            })
-            main(candle_data=None)
+            _apply_patches(stack)
+            with patch("ci_run.fetch_btc_candles", return_value=None):
+                main(candle_data=None)
 
     def test_kill_switch_prevents_trades(self):
         """Kill switch active → execute_trades() is NOT called."""
         from ci_run import main
 
-        mock_execute = MagicMock(return_value=[])
         with ExitStack() as stack:
+            mock_execute = MagicMock(return_value=[])
             _apply_patches(stack, {
-                "ci_run.is_kill_switched": MagicMock(return_value=True),
-                "ci_run.execute_trades": mock_execute,
+                f"{_M}.is_kill_switched": MagicMock(return_value=True),
+                f"{_M}.execute_trades": mock_execute,
             })
             main(candle_data=_fake_candle_data())
 
         mock_execute.assert_not_called()
 
     def test_candle_data_passthrough(self):
-        """When candle_data kwarg is provided, fetch_btc_candles is NOT called."""
-        from ci_run import main
+        """When candle_data kwarg is provided, candle_fetch_fn is NOT called.
+
+        Tests the unified pipeline directly: when candle_data is provided,
+        the candle_fetch_fn parameter should never be invoked.
+        """
+        from polymarket_pipeline import run_polymarket_pipeline
+        from pathlib import Path
+        import tempfile
 
         mock_fetch = MagicMock(return_value=_fake_candle_data())
-        with ExitStack() as stack:
-            _apply_patches(stack, {
-                "ci_run.fetch_btc_candles": mock_fetch,
-            })
-            main(candle_data=_fake_candle_data())
+        mock_db = MagicMock()
+        mock_db.execute.return_value.fetchone.return_value = (1,)
+        mock_db.execute.return_value.fetchall.return_value = []
 
-        mock_fetch.assert_not_called()
+        with ExitStack() as stack, tempfile.TemporaryDirectory() as td:
+            _apply_patches(stack)
+            run_polymarket_pipeline(
+                pipeline_name="btc_5m",
+                db_init_fn=MagicMock(return_value=mock_db),
+                db_path=Path(td) / "test.db",
+                market_fetch_fn=MagicMock(return_value=[_fake_market()]),
+                candle_fetch_fn=mock_fetch,
+                predict_fn=MagicMock(),
+                candle_data=_fake_candle_data(),
+            )
+
+        # Main candle fetch (limit=DEFAULT_CANDLE_LIMIT) should NOT be called.
+        # Shadow fetch (limit=SHADOW_CANDLE_LIMIT=30) may still be called — that's fine.
+        from config import DEFAULT_CANDLE_LIMIT
+        main_calls = [c for c in mock_fetch.call_args_list
+                      if c == call(limit=DEFAULT_CANDLE_LIMIT)]
+        assert len(main_calls) == 0, \
+            f"candle_fetch_fn called with limit={DEFAULT_CANDLE_LIMIT} despite candle_data being provided"
 
     def test_dashboard_generated(self):
         """Dashboard generation is called after scoring."""
@@ -141,24 +168,21 @@ class TestCiRunLifecycle:
 
         mock_dashboard = MagicMock()
         with ExitStack() as stack:
-            _apply_patches(stack, {
-                "ci_run._generate_dashboard": mock_dashboard,
-            })
-            main(candle_data=_fake_candle_data())
+            _apply_patches(stack)
+            with patch("ci_run._generate_dashboard", mock_dashboard):
+                main(candle_data=_fake_candle_data())
 
         mock_dashboard.assert_called_once()
 
     def test_market_fetch_exception_handled(self):
-        """Exception in fetch_active_markets → caught gracefully, pipeline continues."""
+        """Exception in market_fetch_fn → caught gracefully, pipeline continues."""
         from ci_run import main
 
         with ExitStack() as stack:
-            _apply_patches(stack, {
-                "ci_run.fetch_active_markets": MagicMock(
-                    side_effect=Exception("API timeout")
-                ),
-            })
-            main(candle_data=_fake_candle_data())
+            _apply_patches(stack)
+            with patch("ci_run.fetch_active_markets",
+                        side_effect=Exception("API timeout")):
+                main(candle_data=_fake_candle_data())
 
     def test_trade_execution_exception_handled(self):
         """Exception in execute_trades → caught gracefully, scoring still runs."""
@@ -167,10 +191,10 @@ class TestCiRunLifecycle:
         mock_score = MagicMock(return_value=None)
         with ExitStack() as stack:
             _apply_patches(stack, {
-                "ci_run.execute_trades": MagicMock(
+                f"{_M}.execute_trades": MagicMock(
                     side_effect=Exception("DB locked")
                 ),
-                "ci_run.calculate_brier_scores": mock_score,
+                f"{_M}.calculate_brier_scores": mock_score,
             })
             main(candle_data=_fake_candle_data())
 
