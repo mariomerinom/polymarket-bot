@@ -21,7 +21,9 @@ from fetch_markets import init_db, fetch_active_markets, store_markets, DB_PATH
 from predict import run_predictions
 from score import auto_resolve, calculate_brier_scores, print_scorecard
 from btc_data import fetch_btc_candles
+import trade
 from trade import execute_trades, is_kill_switched, get_trading_summary, ensure_orders_table
+from pipeline_control import is_pipeline_live
 
 
 def get_next_cycle(db):
@@ -43,6 +45,10 @@ def has_unpredicted_market(db):
 
 
 def main(candle_data=None, indicators=None):
+    # Override trade.py's TRADING_ENABLED based on pipeline config
+    # (env var may be stale from module import-time caching)
+    trade.TRADING_ENABLED = is_pipeline_live("btc_5m")
+
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = init_db()
 
