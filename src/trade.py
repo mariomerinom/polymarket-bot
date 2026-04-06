@@ -74,6 +74,14 @@ def ensure_orders_table(db):
             FOREIGN KEY (prediction_id) REFERENCES predictions(id)
         )
     """)
+    # FOK execution layer columns (Phase 1)
+    for col, typ in [("order_type", "TEXT"), ("edge", "REAL"),
+                     ("best_bid", "REAL"), ("best_ask", "REAL"),
+                     ("spread", "REAL"), ("action", "TEXT")]:
+        try:
+            db.execute(f"ALTER TABLE orders ADD COLUMN {col} {typ}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
     db.commit()
 
 
@@ -194,29 +202,40 @@ def _get_live_token_mid(token_id: str):
     return cache.get_fresh_mid(token_id, LIVE_ORDERBOOK_MAX_AGE_S)
 
 
+def _get_live_token_entry(token_id: str):
+    """
+    Read full token entry (bid/ask/spread/mid) from WS cache.
+
+    Returns OrderbookCache.TokenEntry if fresh, else None.
+    """
+    from orderbook_cache import OrderbookCache
+    cache = OrderbookCache.load(LIVE_ORDERBOOK_PATH, LIVE_ORDERBOOK_MAX_AGE_S)
+    return cache.get_fresh_entry(token_id, LIVE_ORDERBOOK_MAX_AGE_S)
+
+
 def compute_order(prediction_row, market_row, liquidity=None):
     """
     Compute order parameters from a prediction.
 
+    Phase 1 FOK execution: compute edge against execution price (best_ask
+    for BUY, no_best_ask for SELL). If edge >= min_edge, place FOK at
+    best_ask. If edge < min_edge, skip. Falls back to legacy GTC logic
+    when bid/ask data is unavailable (paper pipelines without WS feed).
+
     Returns:
-        dict with direction, side, token, size, price_limit
-        or None if the order can't be placed (e.g., book too thin)
+        (dict, reason) — dict with direction, side, token, size, price_limit,
+        edge, spread, best_bid, best_ask, action, order_type.
+        Or (None, reason_string) if order can't be placed.
     """
+    from config import FOK_EDGE_BUFFER
+
     estimate = prediction_row["estimate"]
     direction = "UP" if estimate > 0.5 else "DOWN"
 
-    # We buy YES tokens for UP, NO tokens for DOWN
-    # Cap limit price at market + MAX_SPREAD to avoid overpaying.
-    # Without this cap, the fixed 0.62 estimate causes 12-28¢ slippage
-    # when the market is at 34-49¢.
-    #
-    # FILL_PRIORITY_SPREAD (2¢ default): widen limit price to improve fill rate.
-    # Reconciliation 2026-04-02: 53% fill rate, 8/8 expired orders were winners.
-    # $165 missed profit. Trading 2¢ edge for dramatically higher fill rate is +EV.
     # CLOB verification gate — no CLOB price = no trade
     clob_verified = market_row.get("_clob_verified", {})
-
     market_price_yes = market_row.get("price_yes") or 0.5
+
     if direction == "UP":
         side = "buy"
         token = "yes"
@@ -225,9 +244,32 @@ def compute_order(prediction_row, market_row, liquidity=None):
             logging.getLogger(__name__).info(
                 f"DIAG|clob_skip=true|side=YES|gamma={market_price_yes:.4f}|reason=no_clob_price")
             return None, "no CLOB price for YES token"
-        fill_adjusted = estimate + FILL_PRIORITY_SPREAD
-        max_price = market_price_yes + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
-        price_limit = min(fill_adjusted, max_price)
+
+        # FOK path: edge against execution price (AC-1.2, AC-2.1)
+        best_ask = market_row.get("_yes_best_ask")
+        best_bid = market_row.get("_yes_best_bid")
+        spread = market_row.get("_yes_spread")
+
+        if best_ask is not None and spread is not None:
+            edge = round(estimate - best_ask, 4)
+            min_edge = spread + FOK_EDGE_BUFFER
+            if edge < min_edge:
+                return None, f"skipped_low_edge (edge={edge:.4f} < min={min_edge:.4f})"
+            price_limit = best_ask
+            action = "fok_take"
+            order_type = "fok"
+        else:
+            # Legacy fallback for paper pipelines without WS feed
+            fill_adjusted = estimate + FILL_PRIORITY_SPREAD
+            max_price = market_price_yes + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
+            price_limit = min(fill_adjusted, max_price)
+            edge = round(abs(estimate - 0.5), 4)
+            best_ask = None
+            best_bid = None
+            spread = None
+            action = "gtc_legacy"
+            order_type = "gtc"
+
     else:
         side = "buy"
         token = "no"
@@ -237,15 +279,40 @@ def compute_order(prediction_row, market_row, liquidity=None):
             logging.getLogger(__name__).info(
                 f"DIAG|clob_skip=true|side=NO|implied={round(1 - market_price_yes, 4):.4f}|reason=no_clob_price")
             return None, "no CLOB price for NO token"
-        fill_adjusted = (1 - estimate) + FILL_PRIORITY_SPREAD
-        max_price = market_price_no + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
-        price_limit = min(fill_adjusted, max_price)
+
+        # FOK path: edge against NO token execution price
+        no_best_ask = market_row.get("_no_best_ask")
+        no_best_bid = market_row.get("_no_best_bid")
+        no_spread = market_row.get("_no_spread")
+
+        if no_best_ask is not None and no_spread is not None:
+            edge = round((1 - estimate) - no_best_ask, 4)
+            min_edge = no_spread + FOK_EDGE_BUFFER
+            if edge < min_edge:
+                return None, f"skipped_low_edge (edge={edge:.4f} < min={min_edge:.4f})"
+            price_limit = no_best_ask
+            best_ask = no_best_ask
+            best_bid = no_best_bid
+            spread = no_spread
+            action = "fok_take"
+            order_type = "fok"
+        else:
+            # Legacy fallback
+            fill_adjusted = (1 - estimate) + FILL_PRIORITY_SPREAD
+            max_price = market_price_no + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
+            price_limit = min(fill_adjusted, max_price)
+            edge = round(abs(estimate - 0.5), 4)
+            best_ask = None
+            best_bid = None
+            spread = None
+            action = "gtc_legacy"
+            order_type = "gtc"
 
     # Compute slippage vs market mid
     if direction == "UP":
         slippage = price_limit - market_price_yes
     else:
-        slippage = price_limit - market_price_no
+        slippage = price_limit - (market_price_no or round(1 - market_price_yes, 4))
 
     # Asset-aware sizing: BTC flat $25, ETH tiered by conviction
     size = get_bet_size(prediction_row, liquidity)
@@ -264,6 +331,12 @@ def compute_order(prediction_row, market_row, liquidity=None):
         "price_limit": round(price_limit, 4),
         "slippage": round(slippage, 4),
         "market_price": round(market_price_yes, 4),
+        "edge": edge,
+        "spread": spread,
+        "best_bid": best_bid,
+        "best_ask": best_ask,
+        "action": action,
+        "order_type": order_type,
     }, "ok"
 
 
@@ -291,6 +364,13 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         "reason": None,
         "placed_at": now,
         "cycle": cycle,
+        # FOK metadata
+        "order_type": order_params.get("order_type"),
+        "edge": order_params.get("edge"),
+        "best_bid": order_params.get("best_bid"),
+        "best_ask": order_params.get("best_ask"),
+        "spread": order_params.get("spread"),
+        "action": order_params.get("action"),
     }
 
     if not TRADING_ENABLED:
@@ -307,23 +387,53 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         _store_order(db, order_record)
         return order_record
 
+    is_fok = order_params.get("order_type") == "fok"
+
     try:
-        # Diagnostic C: Order submission RTT (cancel-replace feasibility)
         t0 = time.monotonic()
-        result = _submit_clob_order(
-            token_id=clob_token_id,
-            side=order_params["side"],
-            size=order_params["size"],
-            price=order_params["price_limit"],
-        )
+        if is_fok:
+            # FOK: immediate fill or cancel — no resting in book
+            result = _submit_fok_order(
+                token_id=clob_token_id,
+                side=order_params["side"],
+                amount=order_params["size"],  # dollars, SDK handles conversion
+                price=order_params["price_limit"],
+            )
+        else:
+            # Legacy GTC path (paper pipelines without WS bid/ask)
+            result = _submit_clob_order(
+                token_id=clob_token_id,
+                side=order_params["side"],
+                size=order_params["size"],
+                price=order_params["price_limit"],
+            )
         rtt_ms = (time.monotonic() - t0) * 1000
-        print(f"    DIAG|order_rtt_ms={rtt_ms:.0f}|status={result.get('status', 'ok')}")
-        order_record["order_id"] = result.get("orderID") or result.get("order_id")
-        order_record["status"] = "submitted"
+
+        order_id = result.get("orderID") or result.get("order_id")
+        order_record["order_id"] = order_id
+
+        if is_fok:
+            # FOK fills instantly — no pending state. Check response status.
+            status = (result.get("status") or "").upper()
+            if status == "MATCHED" or result.get("success"):
+                order_record["status"] = "filled"
+                order_record["action"] = "fok_filled"
+                order_record["filled_at"] = datetime.now(timezone.utc).isoformat()
+                order_record["price_filled"] = order_params["price_limit"]
+                print(f"    FOK|filled|rtt={rtt_ms:.0f}ms|edge={order_params.get('edge', '?')}")
+            else:
+                order_record["status"] = "fok_rejected"
+                order_record["action"] = "fok_rejected"
+                print(f"    FOK|rejected|rtt={rtt_ms:.0f}ms|reason={result.get('status', 'unknown')}")
+        else:
+            # GTC: order rests in book, settle later
+            order_record["status"] = "submitted"
+            print(f"    DIAG|order_rtt_ms={rtt_ms:.0f}|status={result.get('status', 'ok')}")
+
         order_record["reason"] = json.dumps(result)
     except Exception as e:
         rtt_ms = (time.monotonic() - t0) * 1000
-        print(f"    DIAG|order_rtt_ms={rtt_ms:.0f}|status=error")
+        print(f"    {'FOK' if is_fok else 'DIAG'}|order_rtt_ms={rtt_ms:.0f}|status=error")
         order_record["status"] = "failed"
         order_record["reason"] = str(e)
 
@@ -337,8 +447,9 @@ def _store_order(db, order):
         INSERT INTO orders
         (market_id, prediction_id, direction, size, price_limit, price_filled,
          slippage_pct, status, order_id, mode, reason, placed_at, filled_at,
-         settled_at, pnl, cycle)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         settled_at, pnl, cycle,
+         order_type, edge, best_bid, best_ask, spread, action)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         order["market_id"], order["prediction_id"], order["direction"],
         order["size"], order["price_limit"], order.get("price_filled"),
@@ -346,23 +457,41 @@ def _store_order(db, order):
         order["mode"], order.get("reason"), order["placed_at"],
         order.get("filled_at"), order.get("settled_at"), order.get("pnl"),
         order["cycle"],
+        order.get("order_type"), order.get("edge"), order.get("best_bid"),
+        order.get("best_ask"), order.get("spread"), order.get("action"),
     ))
     db.commit()
 
 
-def _submit_clob_order(token_id, side, size, price):
+def check_fok_rejection_rate(db):
     """
-    Submit a limit order to Polymarket CLOB via py-clob-client.
+    Check FOK rejection rate over last 50 FOK orders (AC-3.3).
 
-    Requires env var:
-        POLYMARKET_PRIVATE_KEY — Polygon wallet private key (hex, 0x prefix ok)
+    Returns (rate, alert) — rate is float 0-1, alert is True if > 30%.
+    Returns (0, False) if fewer than 50 FOK orders exist.
+    """
+    rows = db.execute("""
+        SELECT action FROM orders
+        WHERE order_type = 'fok'
+        ORDER BY id DESC
+        LIMIT 50
+    """).fetchall()
+    if len(rows) < 50:
+        return 0, False
+    rejected = sum(1 for r in rows if r["action"] == "fok_rejected")
+    rate = rejected / len(rows)
+    return rate, rate > 0.30
 
-    The SDK derives API credentials from the private key via EIP-712 signing.
-    Returns API response dict: {"success": bool, "orderID": str, "status": str}
+
+def _init_clob_client():
+    """
+    Initialize and authenticate a ClobClient instance.
+
+    Returns (client, BUY, SELL) tuple.
+    Raises RuntimeError if SDK not installed or key not set.
     """
     try:
         from py_clob_client.client import ClobClient
-        from py_clob_client.clob_types import OrderArgs
         from py_clob_client.order_builder.constants import BUY, SELL
     except ImportError:
         raise RuntimeError(
@@ -373,7 +502,6 @@ def _submit_clob_order(token_id, side, size, price):
     if not private_key:
         raise RuntimeError("POLYMARKET_PRIVATE_KEY env var not set")
 
-    # Polygon mainnet — GNOSIS_SAFE (type 2) if proxy configured, else EOA (type 0)
     proxy_address = os.environ.get("POLYMARKET_PROXY_ADDRESS", "")
     sig_type = 2 if proxy_address else 0
     client = ClobClient(
@@ -384,11 +512,21 @@ def _submit_clob_order(token_id, side, size, price):
         funder=proxy_address if proxy_address else None,
     )
 
-    # Derive API credentials from private key (EIP-712 signing)
     creds = client.create_or_derive_api_creds()
     client.set_api_creds(creds)
+    return client, BUY, SELL
 
-    # Convert dollars to shares: shares = dollars / price_per_share
+
+def _submit_clob_order(token_id, side, size, price):
+    """
+    Submit a GTC limit order to Polymarket CLOB (legacy path for paper pipelines).
+
+    Returns API response dict: {"success": bool, "orderID": str, "status": str}
+    """
+    from py_clob_client.clob_types import OrderArgs
+
+    client, BUY, SELL = _init_clob_client()
+
     shares = round(size / price, 2) if price > 0 else 0
     clob_side = BUY if side.upper() == "BUY" else SELL
 
@@ -399,18 +537,64 @@ def _submit_clob_order(token_id, side, size, price):
         side=clob_side,
     )
 
-    # GTC = Good-Til-Cancelled limit order, with timeout guard
     import signal as _signal
 
     def _timeout_handler(signum, frame):
         raise TimeoutError(f"CLOB order submission timed out after {API_TIMEOUT_SUBMIT}s")
 
     old_handler = _signal.signal(_signal.SIGALRM, _timeout_handler)
-    _signal.alarm(API_TIMEOUT_SUBMIT)  # timeout from config
+    _signal.alarm(API_TIMEOUT_SUBMIT)
     try:
         response = client.create_and_post_order(order_args)
     finally:
-        _signal.alarm(0)  # Cancel alarm
+        _signal.alarm(0)
+        _signal.signal(_signal.SIGALRM, old_handler)
+
+    return response
+
+
+def _submit_fok_order(token_id, side, amount, price):
+    """
+    Submit a Fill-Or-Kill order to Polymarket CLOB.
+
+    FOK fills immediately at the specified price or cancels entirely.
+    No partial fills, no resting in the book, no adverse selection.
+
+    Args:
+        token_id: CLOB token ID for the outcome
+        side: "BUY" or "SELL"
+        amount: Dollar amount (NOT shares — SDK handles conversion)
+        price: Execution price (best_ask for BUY, best_bid for SELL)
+
+    Returns:
+        API response dict. FOK fills are immediate — check response for
+        fill status. No pending→filled transition needed.
+    """
+    from py_clob_client.clob_types import MarketOrderArgs, OrderType
+
+    client, BUY, SELL = _init_clob_client()
+
+    clob_side = BUY if side.upper() == "BUY" else SELL
+
+    market_order_args = MarketOrderArgs(
+        token_id=token_id,
+        amount=round(amount, 2),
+        side=clob_side,
+        price=round(price, 2),
+    )
+
+    import signal as _signal
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError(f"FOK order submission timed out after {API_TIMEOUT_SUBMIT}s")
+
+    old_handler = _signal.signal(_signal.SIGALRM, _timeout_handler)
+    _signal.alarm(API_TIMEOUT_SUBMIT)
+    try:
+        signed_order = client.create_market_order(market_order_args)
+        response = client.post_order(signed_order, orderType=OrderType.FOK)
+    finally:
+        _signal.alarm(0)
         _signal.signal(_signal.SIGALRM, old_handler)
 
     return response
@@ -630,8 +814,22 @@ def resolve_clob_prices(pred, tokens):
     if not tokens:
         return market_row, tokens
 
-    yes_mid = _get_live_token_mid(tokens.get("yes", ""))
-    no_mid = _get_live_token_mid(tokens.get("no", ""))
+    # Try WS cache first — get full entry (bid/ask/spread/mid)
+    yes_entry = _get_live_token_entry(tokens.get("yes", ""))
+    no_entry = _get_live_token_entry(tokens.get("no", ""))
+
+    yes_mid = yes_entry.valid_mid() if yes_entry else None
+    no_mid = no_entry.valid_mid() if no_entry else None
+
+    # Populate bid/ask/spread from WS cache
+    if yes_entry:
+        market_row["_yes_best_bid"] = yes_entry.best_bid
+        market_row["_yes_best_ask"] = yes_entry.best_ask
+        market_row["_yes_spread"] = yes_entry.spread
+    if no_entry:
+        market_row["_no_best_bid"] = no_entry.best_bid
+        market_row["_no_best_ask"] = no_entry.best_ask
+        market_row["_no_spread"] = no_entry.spread
 
     # WS cache miss → try CLOB REST as fallback
     if yes_mid is None or no_mid is None:
@@ -640,11 +838,21 @@ def resolve_clob_prices(pred, tokens):
             if yes_mid is None and tokens.get("yes"):
                 book = get_order_book(tokens["yes"])
                 if book:
-                    yes_mid = analyze_depth(book).get("mid")
+                    depth = analyze_depth(book)
+                    yes_mid = depth.get("mid")
+                    if "_yes_best_ask" not in market_row:
+                        market_row["_yes_best_bid"] = depth.get("best_bid")
+                        market_row["_yes_best_ask"] = depth.get("best_ask")
+                        market_row["_yes_spread"] = depth.get("spread")
             if no_mid is None and tokens.get("no"):
                 book = get_order_book(tokens["no"])
                 if book:
-                    no_mid = analyze_depth(book).get("mid")
+                    depth = analyze_depth(book)
+                    no_mid = depth.get("mid")
+                    if "_no_best_ask" not in market_row:
+                        market_row["_no_best_bid"] = depth.get("best_bid")
+                        market_row["_no_best_ask"] = depth.get("best_ask")
+                        market_row["_no_spread"] = depth.get("spread")
         except Exception as e:
             print(f"    [CLOB_REST] Fallback failed: {e}")
 

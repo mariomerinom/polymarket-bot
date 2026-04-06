@@ -174,6 +174,50 @@ class TestGetFreshMid:
         assert cache.get_fresh_mid("tok_a") is None
 
 
+# ── OrderbookCache.get_fresh_entry tests ──────────────────────────────────
+
+
+class TestGetFreshEntry:
+    def test_fresh_entry_returns_token_entry(self, tmp_path):
+        """Fresh entry returns full TokenEntry with bid/ask/spread."""
+        now = datetime.now(timezone.utc).isoformat()
+        data = {"version": 2, "tokens": {
+            "tok_a": {"mid": 0.55, "best_bid": 0.54, "best_ask": 0.56,
+                      "spread": 0.02, "updated_at": now},
+        }}
+        p = tmp_path / "live_orderbook.json"
+        p.write_text(json.dumps(data))
+        cache = OrderbookCache.load(p)
+        entry = cache.get_fresh_entry("tok_a")
+        assert entry is not None
+        assert entry.best_bid == 0.54
+        assert entry.best_ask == 0.56
+        assert entry.spread == 0.02
+        assert entry.mid == 0.55
+
+    def test_stale_entry_returns_none(self, tmp_path):
+        """Stale entry returns None."""
+        old = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+        data = {"version": 2, "tokens": {
+            "tok_a": {"mid": 0.55, "best_bid": 0.54, "best_ask": 0.56,
+                      "spread": 0.02, "updated_at": old},
+        }}
+        p = tmp_path / "live_orderbook.json"
+        p.write_text(json.dumps(data))
+        cache = OrderbookCache.load(p)
+        assert cache.get_fresh_entry("tok_a") is None
+
+    def test_missing_token_returns_none(self):
+        """Unknown token_id returns None."""
+        cache = OrderbookCache()
+        assert cache.get_fresh_entry("nonexistent") is None
+
+    def test_empty_token_id_returns_none(self):
+        """Empty string returns None."""
+        cache = OrderbookCache()
+        assert cache.get_fresh_entry("") is None
+
+
 # ── OrderbookCache.save tests ─────────────────────────────────────────────
 
 

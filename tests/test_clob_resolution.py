@@ -108,27 +108,32 @@ class TestClobResolution:
 
     def test_ws_hit_uses_live_price(self):
         """When WS cache has fresh price for both tokens, order uses WS price, not Gamma."""
+        from orderbook_cache import TokenEntry
+        from datetime import datetime, timezone
         db = _make_db()
         _insert_market(db, price_yes=0.50)  # Gamma says 0.50
         _insert_qualifying_prediction(db, estimate=0.62, conviction=4)
 
         fake_tokens = {"yes": "tok_yes", "no": "tok_no"}
         ws_prices = {"tok_yes": 0.55, "tok_no": 0.45}
+        now = datetime.now(timezone.utc).isoformat()
+        ws_entries = {
+            "tok_yes": TokenEntry(mid=0.55, best_bid=0.54, best_ask=0.56, spread=0.02, updated_at=now),
+            "tok_no": TokenEntry(mid=0.45, best_bid=0.44, best_ask=0.46, spread=0.02, updated_at=now),
+        }
 
         with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
-             patch("trade._get_live_token_mid", side_effect=lambda tid: ws_prices.get(tid)):
+             patch("trade._get_live_token_mid", side_effect=lambda tid: ws_prices.get(tid)), \
+             patch("trade._get_live_token_entry", side_effect=lambda tid: ws_entries.get(tid)):
             orders = execute_trades(db, cycle=1)
 
-        # Order should exist and use WS price (0.55), not Gamma (0.50)
+        # Order should exist and use WS price, not Gamma
         assert len(orders) == 1
         order = orders[0]
         assert order["direction"] == "UP"
-        # place_order stores price_limit from compute_order, which used CLOB price 0.55
-        # Verify order was placed (not skipped) — the CLOB price was used
         assert order["status"] == "paper"
-        # Price limit should be capped relative to WS mid (0.55), not Gamma (0.50)
-        # compute_order: price_limit = min(estimate + FILL_SPREAD, market_yes + MAX_SLIP + FILL_SPREAD)
-        # With market_yes=0.55 (from WS), this is different than market_yes=0.50 (Gamma)
+        # FOK: price_limit = best_ask = 0.56
+        assert order["price_limit"] == 0.56
         assert order["price_limit"] is not None
 
         db.close()

@@ -42,9 +42,14 @@ from config import (
 @pytest.fixture(autouse=True)
 def _mock_clob_for_e2e():
     """Provide fake CLOB token resolution so execute_trades() doesn't skip."""
+    from orderbook_cache import TokenEntry
+    from datetime import datetime, timezone
     fake_tokens = {"yes": "tok_yes_e2e", "no": "tok_no_e2e"}
+    now = datetime.now(timezone.utc).isoformat()
+    fake_entry = TokenEntry(mid=0.50, best_bid=0.49, best_ask=0.51, spread=0.02, updated_at=now)
     with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
-         patch("trade._get_live_token_mid", return_value=0.50):
+         patch("trade._get_live_token_mid", return_value=0.50), \
+         patch("trade._get_live_token_entry", return_value=fake_entry):
         yield
 
 

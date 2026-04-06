@@ -87,6 +87,15 @@ class OrderbookCache:
             return None
         return entry.valid_mid()
 
+    def get_fresh_entry(self, token_id: str, max_age_s: float = DEFAULT_MAX_AGE_S) -> Optional[TokenEntry]:
+        """Get full TokenEntry if fresh, else None. Used for bid/ask/spread access."""
+        if not token_id:
+            return None
+        entry = self.tokens.get(token_id)
+        if not entry or not entry.is_fresh(max_age_s):
+            return None
+        return entry
+
     def save(self, path: Path = DEFAULT_PATH):
         """Write cache to disk atomically (temp file + rename)."""
         data = {

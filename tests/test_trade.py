@@ -435,9 +435,14 @@ class TestExecuteTrades:
         db.commit()
 
         # Mock CLOB token resolution so the CLOB-verified gate passes
+        from orderbook_cache import TokenEntry
+        from datetime import datetime as dt, timezone as tz
+        now = dt.now(tz.utc).isoformat()
+        fake_entry = TokenEntry(mid=0.50, best_bid=0.49, best_ask=0.51, spread=0.02, updated_at=now)
         fake_tokens = {"yes": "tok_yes", "no": "tok_no"}
         with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
-             patch("trade._get_live_token_mid", return_value=0.50):
+             patch("trade._get_live_token_mid", return_value=0.50), \
+             patch("trade._get_live_token_entry", return_value=fake_entry):
             orders = execute_trades(db, cycle=10)
         assert len(orders) == 1
         assert orders[0]["status"] == "paper"
@@ -475,9 +480,14 @@ class TestExecuteTrades:
             VALUES (1, 'mkt_3', 'momentum_rule', 0.65, 0.15, 'high', '{}', '2026-01-01T00:00:00', 10, 4)""")
         db.commit()
 
+        from orderbook_cache import TokenEntry
+        from datetime import datetime as dt, timezone as tz
+        now = dt.now(tz.utc).isoformat()
+        fake_entry = TokenEntry(mid=0.50, best_bid=0.49, best_ask=0.51, spread=0.02, updated_at=now)
         fake_tokens = {"yes": "tok_yes", "no": "tok_no"}
         with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
-             patch("trade._get_live_token_mid", return_value=0.50):
+             patch("trade._get_live_token_mid", return_value=0.50), \
+             patch("trade._get_live_token_entry", return_value=fake_entry):
             orders_1 = execute_trades(db, cycle=10)
             orders_2 = execute_trades(db, cycle=10)  # Second call, same cycle
         assert len(orders_1) == 1
