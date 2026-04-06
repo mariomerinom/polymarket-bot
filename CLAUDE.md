@@ -191,6 +191,7 @@ Active specs addressing the adverse selection / fill rate problem (Decision #24)
 | `docs/analysis/postmortem_exhaustion_gate.md` | Postmortem on exhaustion + cooldown gate removal |
 | `docs/analysis/thesis_paper_to_live_degradation.md` | Paper-to-live WR degradation thesis (Decision #17) |
 | `docs/analysis/pipeline_recommendations_mar25-27.md` | Source data for decisions #1-9 |
+| `docs/analysis/kalshi_pipeline_review.md` | Kalshi Phase 0 analysis: mock mode detected, all WR data invalid |
 
 ### Archived (superseded, in `docs/archive/`)
 
