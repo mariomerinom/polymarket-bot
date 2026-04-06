@@ -10,6 +10,7 @@
 
 ## Development Process
 
+- **TDD-first for all refactoring.** Write behavioral tests BEFORE restructuring code. Tests assert WHAT the system does (contracts), not HOW it's organized. These survive refactoring. See `docs/plans/tdd-plan.md` and `docs/core/TESTING.md` Layer 8.
 - **Commit when work is done, not when told.** Tests pass → commit → push. Don't wait for permission.
 - Run `pytest tests/ -v` before every commit. Tests gate CI — a broken push stops the pipeline.
 - Never skip pre-commit hooks.

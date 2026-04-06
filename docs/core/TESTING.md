@@ -2,9 +2,11 @@
 
 **Purpose:** Prevent production incidents. Nine incidents since March 15, 2026 cost $1,000+ in losses and 48+ hours of downtime. Every test exists because something broke. The integrity system exists because tests alone weren't enough.
 
-**Current count: 382 tests** (as of 2026-04-04). Runtime: ~60 seconds.
+**Current count: 440 tests** (as of 2026-04-05). Runtime: ~80 seconds.
 
 **Defense layers:** Tests gate CI (pre-deploy). Integrity checks run post-cycle (runtime). Together they cover what neither can alone.
+
+**Methodology: TDD-first.** As of 2026-04-05, all refactoring follows TDD: write behavioral tests BEFORE restructuring code. Tests assert WHAT the system does (contracts), not HOW it's organized — they survive refactoring. See `docs/plans/tdd-plan.md` for the full plan.
 
 ---
 
@@ -53,7 +55,7 @@ No `conftest.py`, `pytest.ini`, or `pyproject.toml`. Each test file is self-cont
 
 ---
 
-## Test Layers (24 files, 382 tests)
+## Test Layers (28 files, 440 tests)
 
 ### Layer 1: Smoke Tests — `test_smoke.py` (8 tests)
 
@@ -117,7 +119,20 @@ Paper-trading signals that run alongside production but never place orders.
 | `test_daily_report.py` | 21 | Report generation, P&L rollups, agent breakdowns, empty data, integrity alerts |
 | `test_activity_digest.py` | 6 | Session log generation, skip-when-exists, health queries |
 
-### Layer 8: End-to-End — `test_pipeline_e2e.py` (21 tests, 5 classes)
+### Layer 8: Golden-Path Behavioral (TDD Phase A) — 4 files, 26 tests
+
+Written BEFORE refactoring as behavioral contracts. These test WHAT the system does, not HOW it's organized — they survive restructuring.
+
+| File | Tests | What It Covers |
+|------|-------|----------------|
+| `test_clob_resolution.py` | 6 | CLOB price resolution: WS hit, REST fallback, both-miss skip, stale cache, `_clob_verified` propagation, token resolution failure |
+| `test_ci_run_lifecycle.py` | 8 | BTC 5m pipeline lifecycle: happy path, no markets, candle fail, kill switch, passthrough, dashboard, exception handling |
+| `test_engine_dispatch.py` | 6 | Engine dispatch: routing, dedup, pruning, candle data building |
+| `test_ci_run_bybit_lifecycle.py` | 6 | Bybit pipeline lifecycle: synthetic market, regime skip, dead hours, consensus boost, position sync |
+
+**Why these exist:** The $2.18 smoke test bug (2026-04-05) happened because code was changed without tests proving correct behavior. These tests are the safety net for Phase B refactoring (extract functions, unify pipelines). See `docs/plans/tdd-plan.md`.
+
+### Layer 9: End-to-End — `test_pipeline_e2e.py` (21 tests, 5 classes)
 
 Full predict → trade → settle → score lifecycle on in-memory DB. Created after the cold-start drawdown breaker incident.
 
@@ -129,7 +144,7 @@ Full predict → trade → settle → score lifecycle on in-memory DB. Created a
 | `TestPnLComputation` | 5 | Winning/losing UP/DOWN, only filled+resolved get P&L |
 | `TestMultiCycleIntegration` | 3 | Full 5-cycle pipeline, breaker trips, daily loss accumulates |
 
-### Layer 9: Regression — `test_regression.py` (17 tests)
+### Layer 10: Regression — `test_regression.py` (17 tests)
 
 One test per past production incident or optimization. The incident log in code form.
 
@@ -153,7 +168,7 @@ One test per past production incident or optimization. The incident log in code 
 | `test_extreme_estimate_shadow_price_gate` | Extreme estimates shadow at extreme prices |
 | `test_eth_mr_shadow_extreme_estimate` | ETH MR shadow mirrors BTC pattern |
 
-### Layer 10: Manual & Operational (2 files, 18 tests)
+### Layer 11: Manual & Operational (2 files, 18 tests)
 
 | File | Tests | What It Covers |
 |------|-------|----------------|
@@ -345,6 +360,10 @@ tests/
 ├── test_bybit.py                  # Bybit perps pipeline
 ├── test_kalshi.py                 # Kalshi integration
 ├── test_clob_depth.py             # CLOB book depth, spread, thin book
+├── test_clob_resolution.py        # CLOB price resolution behavioral tests (TDD Phase A)
+├── test_ci_run_lifecycle.py       # BTC 5m pipeline lifecycle (TDD Phase A)
+├── test_engine_dispatch.py        # Engine dispatch routing/dedup (TDD Phase A)
+├── test_ci_run_bybit_lifecycle.py # Bybit pipeline lifecycle (TDD Phase A)
 ├── test_manual_test_bet.py        # $5 manual smoke test
 └── test_optimization_tracker.py   # Experiment tracking
 ```
@@ -362,3 +381,5 @@ tests/
 4. **Circuit breakers need cold-start awareness.** Percentage-based thresholds (drawdown from peak) are pathological when the denominator is tiny. Prefer absolute thresholds or add minimum floor.
 
 5. **Runtime checks complement deploy-time tests.** Tests prove code is correct. Integrity checks prove the environment is correct (APIs up, tokens resolvable, DB healthy). Both are required.
+
+6. **TDD-first for refactoring.** Tests written BEFORE refactoring prove behavioral preservation. Tests written after cannot. AI writes tests in minutes — the "weeks of testing" objection is invalid. Behavioral tests (test contracts, not structure) survive restructuring. The $2.18 pricing bug proved that changing code without tests proving correct behavior is gambling with real money.
