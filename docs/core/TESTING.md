@@ -6,7 +6,7 @@
 
 **Defense layers:** Tests gate CI (pre-deploy). Integrity checks run post-cycle (runtime). Together they cover what neither can alone.
 
-**Methodology: TDD-first.** As of 2026-04-05, all refactoring follows TDD: write behavioral tests BEFORE restructuring code. Tests assert WHAT the system does (contracts), not HOW it's organized — they survive refactoring. See `docs/plans/tdd-plan.md` for the full plan.
+**Methodology: TDD-first.** As of 2026-04-05, all development follows TDD: write behavioral tests BEFORE writing code. Before any implementation, evaluate existing tests for gaps and drift, review relevant plans, then determine both what to test and what to code. Tests assert WHAT the system does (contracts), not HOW it's organized. See `docs/plans/tdd-plan.md` for the full plan.
 
 ---
 
@@ -382,4 +382,4 @@ tests/
 
 5. **Runtime checks complement deploy-time tests.** Tests prove code is correct. Integrity checks prove the environment is correct (APIs up, tokens resolvable, DB healthy). Both are required.
 
-6. **TDD-first for refactoring.** Tests written BEFORE refactoring prove behavioral preservation. Tests written after cannot. AI writes tests in minutes — the "weeks of testing" objection is invalid. Behavioral tests (test contracts, not structure) survive restructuring. The $2.18 pricing bug proved that changing code without tests proving correct behavior is gambling with real money.
+6. **TDD-first for everything.** Write behavioral tests BEFORE writing code. Before implementation, evaluate existing tests for gaps and drift, review relevant plans, then determine both what to test and what to code. Tests written before prove behavioral preservation — tests written after cannot. The $2.18 pricing bug proved that changing code without tests proving correct behavior is gambling with real money.
