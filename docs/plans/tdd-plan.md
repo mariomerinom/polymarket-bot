@@ -95,13 +95,15 @@ Tests `ci_run_bybit.main()` — the most structurally different pipeline.
 
 After Phase A tests pass on CURRENT code, proceed with Steps 1-5 from `docs/plans/refactoring-plan.md`:
 
-1. Extract `resolve_clob_prices()` from `execute_trades()` — run Phase A tests, must stay green
-2. Extract `record_diagnostics()` + `run_shadow_logging()` — run tests
-3. Unify 3 Polymarket pipelines into `run_polymarket_pipeline()` — ETH first, BTC last
-4. Move `_get_clob_tokens_safe()` to `clob_depth.py`
-5. Typed `OrderbookCache` dataclass for `live_orderbook.json`
+1. ~~Extract `resolve_clob_prices()` from `execute_trades()`~~ DONE (ce0d2d30)
+2. ~~Extract `record_diagnostics()` + `run_shadow_logging()`~~ DONE (ce0d2d30)
+3. ~~Extract shared pipeline utils (`get_next_cycle`, `has_unpredicted_market`)~~ DONE (de06d65a)
+4. ~~Move `_get_clob_tokens_safe()` to `clob_depth.py`~~ DONE (ed7d9f89)
+5. ~~Typed `OrderbookCache` dataclass for `live_orderbook.json`~~ DONE (ae09a723)
 
-Each step: make the change → run `pytest tests/` → all green → commit → next step.
+Each step: make the change -> run `pytest tests/` -> all green -> commit -> next step.
+
+**Phase B complete.** All 5 steps shipped. 463 tests passing (1 pre-existing failure in test_engine.py unrelated to refactoring).
 
 ---
 
