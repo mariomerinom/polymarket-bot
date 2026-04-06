@@ -578,18 +578,17 @@ def _submit_clob_order(token_id, side, size, price):
         side=clob_side,
     )
 
-    import signal as _signal
-
-    def _timeout_handler(signum, frame):
-        raise TimeoutError(f"CLOB order submission timed out after {API_TIMEOUT_SUBMIT}s")
-
-    old_handler = _signal.signal(_signal.SIGALRM, _timeout_handler)
-    _signal.alarm(API_TIMEOUT_SUBMIT)
-    try:
-        response = client.create_and_post_order(order_args)
-    finally:
-        _signal.alarm(0)
-        _signal.signal(_signal.SIGALRM, old_handler)
+    # Thread-safe timeout (SIGALRM only works from main thread; the VPS
+    # engine dispatches pipelines off the main thread).
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FTimeout
+    with ThreadPoolExecutor(max_workers=1) as _ex:
+        _fut = _ex.submit(client.create_and_post_order, order_args)
+        try:
+            response = _fut.result(timeout=API_TIMEOUT_SUBMIT)
+        except _FTimeout:
+            raise TimeoutError(
+                f"CLOB order submission timed out after {API_TIMEOUT_SUBMIT}s"
+            )
 
     return response
 
@@ -624,19 +623,22 @@ def _submit_fok_order(token_id, side, amount, price):
         price=round(price, 2),
     )
 
-    import signal as _signal
+    # Thread-safe timeout (SIGALRM only works from main thread; the VPS
+    # engine dispatches pipelines off the main thread).
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FTimeout
 
-    def _timeout_handler(signum, frame):
-        raise TimeoutError(f"FOK order submission timed out after {API_TIMEOUT_SUBMIT}s")
-
-    old_handler = _signal.signal(_signal.SIGALRM, _timeout_handler)
-    _signal.alarm(API_TIMEOUT_SUBMIT)
-    try:
+    def _submit():
         signed_order = client.create_market_order(market_order_args)
-        response = client.post_order(signed_order, orderType=OrderType.FOK)
-    finally:
-        _signal.alarm(0)
-        _signal.signal(_signal.SIGALRM, old_handler)
+        return client.post_order(signed_order, orderType=OrderType.FOK)
+
+    with ThreadPoolExecutor(max_workers=1) as _ex:
+        _fut = _ex.submit(_submit)
+        try:
+            response = _fut.result(timeout=API_TIMEOUT_SUBMIT)
+        except _FTimeout:
+            raise TimeoutError(
+                f"FOK order submission timed out after {API_TIMEOUT_SUBMIT}s"
+            )
 
     return response
 
