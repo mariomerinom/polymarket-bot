@@ -373,41 +373,57 @@ class BotsyEngine:
                 log(f"[WS] Polymarket disconnected: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
 
-    def _get_active_token_ids(self) -> list:
-        """Get CLOB token IDs for currently active (unresolved) markets."""
-        import sqlite3
-        token_ids = []
-        db_path = DATA_DIR / "predictions.db"
-        if not db_path.exists():
-            return []
-        try:
-            db = sqlite3.connect(str(db_path))
-            db.row_factory = sqlite3.Row
-            # Get recent unresolved markets
-            rows = db.execute("""
-                SELECT DISTINCT m.id FROM markets m
-                WHERE m.resolved = 0
-                ORDER BY m.fetched_at DESC
-                LIMIT 10
-            """).fetchall()
-            db.close()
+    # All Polymarket pipeline DBs — query each for active market tokens
+    _POLYMARKET_DB_PATHS = [
+        "predictions.db",       # BTC 5m
+        "predictions_15m.db",   # BTC 15m
+        "predictions_eth.db",   # ETH 5m
+    ]
 
-            # Resolve token IDs via Gamma API
-            from clob_depth import get_clob_tokens
-            for row in rows:
-                market_id = row["id"]
-                try:
-                    tokens = get_clob_tokens(market_id)
-                    if tokens:
-                        if tokens.get("yes"):
-                            token_ids.append(tokens["yes"])
-                        if tokens.get("no"):
-                            token_ids.append(tokens["no"])
-                except Exception:
-                    continue
-        except Exception as e:
-            log(f"[WS] Polymarket token lookup failed: {e}")
-        return token_ids
+    def _get_active_token_ids(self) -> list:
+        """Get CLOB token IDs for currently active (unresolved) markets.
+
+        Queries all Polymarket pipeline DBs so the WS feed subscribes to
+        BTC 5m, BTC 15m, AND ETH 5m tokens. Deduplicates (BTC 5m and 15m
+        share the same underlying markets).
+        """
+        import sqlite3
+        from clob_depth import get_clob_tokens
+
+        market_ids = set()
+        for db_name in self._POLYMARKET_DB_PATHS:
+            db_path = DATA_DIR / db_name
+            if not db_path.exists():
+                continue
+            try:
+                db = sqlite3.connect(str(db_path))
+                db.row_factory = sqlite3.Row
+                rows = db.execute("""
+                    SELECT DISTINCT m.id FROM markets m
+                    WHERE m.resolved = 0
+                    ORDER BY m.fetched_at DESC
+                    LIMIT 10
+                """).fetchall()
+                db.close()
+                for row in rows:
+                    market_ids.add(row["id"])
+            except Exception as e:
+                log(f"[WS] Polymarket token lookup failed for {db_name}: {e}")
+
+        # Resolve unique market IDs to token IDs via Gamma API
+        token_ids = set()
+        for market_id in market_ids:
+            try:
+                tokens = get_clob_tokens(market_id)
+                if tokens:
+                    if tokens.get("yes"):
+                        token_ids.add(tokens["yes"])
+                    if tokens.get("no"):
+                        token_ids.add(tokens["no"])
+            except Exception:
+                continue
+
+        return list(token_ids)
 
     def _update_orderbook_cache(self, data: dict):
         """Write live orderbook to data/live_orderbook.json (per-token cache).

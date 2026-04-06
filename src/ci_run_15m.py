@@ -16,19 +16,24 @@ from fetch_markets import init_db_15m, fetch_active_markets_15m, store_markets, 
 from predict import run_predictions
 from score import auto_resolve, calculate_brier_scores, print_scorecard
 from btc_data import fetch_btc_candles
+from trade import execute_trades, is_kill_switched, get_trading_summary, ensure_orders_table
 from pipeline_utils import get_next_cycle, has_unpredicted_market
+from pipeline_control import load_pipeline_config, is_pipeline_live
 
 
 def main(candle_data=None, indicators=None):
     DB_PATH_15M.parent.mkdir(parents=True, exist_ok=True)
     db = init_db_15m()
 
-    from pipeline_control import load_pipeline_config
     cfg = load_pipeline_config("btc_15m")
     if cfg["mode"] == "paused":
         print(f"BTC 15m pipeline PAUSED: {cfg['notes']}")
         db.close()
         return
+
+    # Override trade.py's TRADING_ENABLED based on pipeline config
+    import trade
+    trade.TRADING_ENABLED = is_pipeline_live("btc_15m")
 
     # 1. Fetch 15-min markets
     print("[15M 1/5] Fetching 15-min markets...")
@@ -108,6 +113,21 @@ def main(candle_data=None, indicators=None):
             shadow_log_cycle(db, cycle, btc_data["candles"], "btc_15m")
     except Exception as e:
         print(f"    [shadow] skipped: {e}")
+
+    # 3b. Execute trades
+    if is_kill_switched():
+        print("[15M 3b/5] Trading KILLED — kill switch active")
+    else:
+        print(f"[15M 3b/5] Trade execution...")
+        try:
+            ensure_orders_table(db)
+            orders = execute_trades(db, cycle)
+            summary = get_trading_summary(db)
+            print(f"  Mode: {summary['mode']} | Bet size: ${summary['bet_size']:.0f} | "
+                  f"Today: {summary['total_orders']} orders, ${summary['total_wagered']:.0f} wagered, "
+                  f"${summary['total_pnl']:+.0f} P&L")
+        except Exception as e:
+            print(f"  Trade execution error: {e}")
 
     # 4. Score
     print("[15M 4/5] Scoring...")
