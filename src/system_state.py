@@ -1,0 +1,341 @@
+"""
+system_state.py — The ONE authoritative runtime state for a pipeline.
+
+This module is the single source of truth for every "runtime fact" that
+used to be re-derived independently across trade.py, dashboard_v2/data.py,
+daily_report.py, and pipeline_integrity.py.
+
+Incident that motivated this module (2026-04-06):
+    - trade.py::_check_consecutive_losses  → 5 (blocked trading)
+    - dashboard_v2::get_breaker_status     → 0 (showed green)
+    - Both queried the same DB. Both were "correct" by their own logic.
+    - BTC 5m was locked out for 30+ hours while the dashboard lied.
+
+Rule: no caller outside this module may query orders.pnl, daily_loss,
+consecutive losses, or TRADING_ENABLED state directly. All reads go
+through get_system_state(). Enforced by tests/test_state_invariants.py.
+
+The module is READ-ONLY. It never writes to the DB. It never mutates
+anything. SystemState is frozen.
+"""
+
+import os
+from dataclasses import dataclass, field
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import List, Optional
+
+from config import (
+    CONSECUTIVE_LOSS_MAX,
+    DAILY_LOSS_LIMIT,
+    MAX_LOSS_LOOKBACK,
+    MIN_CONVICTION,
+)
+
+# Auto-reset window — matches src/trade.py behavior. If this drifts, the
+# incident (dashboard lie) recurs. Single constant here enforces parity.
+CONSECUTIVE_LOSS_COOLDOWN_HOURS = 8
+
+# Silent-failure threshold: if N qualifying signals fire today but 0
+# orders are placed and trading is enabled, flag as unhealthy.
+SILENT_FAILURE_SIGNAL_THRESHOLD = 3
+
+# Stale prediction threshold for the health check.
+STALE_PREDICTION_SECONDS = 15 * 60
+
+
+# ── Kill switch ──────────────────────────────────────────────────────────────
+
+def _kill_switch_file_path(pipeline_name: str) -> Path:
+    """Location of the kill switch file for a given pipeline.
+
+    Monkeypatched in tests. Pipelines with dedicated kill switches (bybit)
+    use a suffixed filename; everything else shares KILL_SWITCH.
+    """
+    base = Path(__file__).parent.parent / "data"
+    if pipeline_name.startswith("bybit"):
+        return base / "KILL_SWITCH_BYBIT"
+    return base / "KILL_SWITCH"
+
+
+def _kill_switch_env_var(pipeline_name: str) -> str:
+    return "KILL_SWITCH_BYBIT" if pipeline_name.startswith("bybit") else "KILL_SWITCH"
+
+
+def _check_kill_switch(pipeline_name: str) -> bool:
+    if _kill_switch_file_path(pipeline_name).exists():
+        return True
+    return os.environ.get(_kill_switch_env_var(pipeline_name), "").lower() == "true"
+
+
+# ── Dataclass ────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class SystemState:
+    """Authoritative runtime state snapshot for a pipeline. Immutable.
+
+    Every caller that needs to answer "can we trade?", "are we healthy?",
+    or "what's our current loss streak?" reads from here — never by
+    re-querying the DB.
+    """
+
+    pipeline_name: str
+    computed_at: datetime
+
+    # Trading mode
+    trading_enabled: bool
+    kill_switch: bool
+    mode: str  # "LIVE" | "PAPER"
+
+    # Financial state
+    daily_loss: float
+    daily_loss_limit: float
+    total_pnl_today: float
+
+    # Breaker state
+    consecutive_losses: int
+    consecutive_loss_max: int
+    breaker_cooldown_hours: int
+    seconds_since_last_settled: Optional[float]
+
+    # Activity state
+    last_settled_at: Optional[datetime]
+    last_prediction_at: Optional[datetime]
+    last_qualifying_signal_at: Optional[datetime]
+    orders_today: int
+    qualifying_signals_today: int
+
+    # Final answers — the ONLY fields callers should branch on
+    can_trade: bool
+    blockers: List[str]
+    is_healthy: bool
+    health_warnings: List[str]
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _parse_ts(ts: Optional[str]) -> Optional[datetime]:
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def _today_prefix() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _table_exists(db, name: str) -> bool:
+    row = db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (name,),
+    ).fetchone()
+    return row is not None
+
+
+# ── Individual read helpers ──────────────────────────────────────────────────
+
+def _compute_consecutive_losses(db, now: datetime) -> tuple[int, Optional[datetime], Optional[float]]:
+    """Return (streak, last_settled_at, seconds_since_last_settled).
+
+    Applies the 8h auto-reset — if the last settled order is older than
+    CONSECUTIVE_LOSS_COOLDOWN_HOURS, streak is 0 regardless of the raw
+    loss sequence. Prevents permanent deadlock where the breaker blocks
+    all trades so no win can reset it.
+    """
+    if not _table_exists(db, "orders"):
+        return 0, None, None
+
+    last = db.execute("""
+        SELECT settled_at FROM orders
+        WHERE status = 'settled' AND settled_at IS NOT NULL
+        ORDER BY settled_at DESC LIMIT 1
+    """).fetchone()
+
+    last_settled_at = _parse_ts(last[0]) if last else None
+    seconds_since = None
+    if last_settled_at is not None:
+        seconds_since = (now - last_settled_at).total_seconds()
+
+    # Auto-reset
+    if (
+        seconds_since is not None
+        and seconds_since > CONSECUTIVE_LOSS_COOLDOWN_HOURS * 3600
+    ):
+        return 0, last_settled_at, seconds_since
+
+    rows = db.execute("""
+        SELECT pnl FROM orders
+        WHERE status = 'settled' AND pnl IS NOT NULL
+        ORDER BY settled_at DESC LIMIT ?
+    """, (MAX_LOSS_LOOKBACK,)).fetchall()
+
+    streak = 0
+    for (pnl,) in rows:
+        if pnl is not None and pnl < 0:
+            streak += 1
+        else:
+            break
+    return streak, last_settled_at, seconds_since
+
+
+def _compute_daily_loss(db) -> tuple[float, float]:
+    """Return (daily_loss_abs, total_pnl_today)."""
+    if not _table_exists(db, "orders"):
+        return 0.0, 0.0
+    today = _today_prefix()
+    row = db.execute("""
+        SELECT
+            COALESCE(SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END), 0) AS loss,
+            COALESCE(SUM(COALESCE(pnl, 0)), 0) AS total
+        FROM orders
+        WHERE placed_at LIKE ?
+          AND status IN ('filled', 'settled')
+    """, (f"{today}%",)).fetchone()
+    loss = abs(row[0]) if row and row[0] else 0.0
+    total = float(row[1]) if row and row[1] is not None else 0.0
+    return loss, total
+
+
+def _compute_orders_today(db) -> int:
+    if not _table_exists(db, "orders"):
+        return 0
+    today = _today_prefix()
+    row = db.execute("""
+        SELECT COUNT(*) FROM orders WHERE placed_at LIKE ?
+    """, (f"{today}%",)).fetchone()
+    return int(row[0]) if row else 0
+
+
+def _compute_prediction_activity(db) -> tuple[int, Optional[datetime], Optional[datetime]]:
+    """Return (qualifying_today, last_prediction_at, last_qualifying_at)."""
+    if not _table_exists(db, "predictions"):
+        return 0, None, None
+    today = _today_prefix()
+
+    row = db.execute("""
+        SELECT COUNT(*) FROM predictions
+        WHERE predicted_at LIKE ? AND conviction_score >= ?
+    """, (f"{today}%", MIN_CONVICTION)).fetchone()
+    qualifying = int(row[0]) if row else 0
+
+    last_any = db.execute("""
+        SELECT predicted_at FROM predictions
+        ORDER BY predicted_at DESC LIMIT 1
+    """).fetchone()
+    last_qual = db.execute("""
+        SELECT predicted_at FROM predictions
+        WHERE conviction_score >= ?
+        ORDER BY predicted_at DESC LIMIT 1
+    """, (MIN_CONVICTION,)).fetchone()
+
+    return (
+        qualifying,
+        _parse_ts(last_any[0]) if last_any else None,
+        _parse_ts(last_qual[0]) if last_qual else None,
+    )
+
+
+def _trading_enabled_for(pipeline_name: str) -> bool:
+    """Source of truth for "are we live?". Always via pipeline_control."""
+    try:
+        from pipeline_control import is_pipeline_live
+        return bool(is_pipeline_live(pipeline_name))
+    except Exception:
+        return False
+
+
+# ── Public API ───────────────────────────────────────────────────────────────
+
+def get_system_state(db, pipeline_name: str) -> SystemState:
+    """The ONE authoritative state function.
+
+    No caller is allowed to recompute any of these fields from the DB
+    independently. If you need more state, add a field here — don't
+    write a new query elsewhere.
+    """
+    now = datetime.now(timezone.utc)
+
+    trading_enabled = _trading_enabled_for(pipeline_name)
+    kill_switch = _check_kill_switch(pipeline_name)
+
+    consec, last_settled_at, seconds_since = _compute_consecutive_losses(db, now)
+    daily_loss, total_pnl_today = _compute_daily_loss(db)
+    orders_today = _compute_orders_today(db)
+    qualifying_today, last_prediction_at, last_qualifying_at = (
+        _compute_prediction_activity(db)
+    )
+
+    # Final answer: can we trade?
+    blockers: List[str] = []
+    if kill_switch:
+        blockers.append("kill_switch_active")
+    if daily_loss >= DAILY_LOSS_LIMIT:
+        blockers.append(
+            f"daily_loss_limit (${daily_loss:.0f} >= ${DAILY_LOSS_LIMIT:.0f})"
+        )
+    if consec >= CONSECUTIVE_LOSS_MAX:
+        blockers.append(
+            f"consecutive_loss_breaker ({consec} >= {CONSECUTIVE_LOSS_MAX})"
+        )
+    can_trade = len(blockers) == 0
+
+    # Health check — stricter than can_trade
+    warnings: List[str] = []
+    if (
+        qualifying_today >= SILENT_FAILURE_SIGNAL_THRESHOLD
+        and orders_today == 0
+        and trading_enabled
+    ):
+        warnings.append(
+            f"SILENT FAILURE: {qualifying_today} qualifying signals today "
+            f"but 0 orders placed"
+        )
+    if (
+        consec >= CONSECUTIVE_LOSS_MAX
+        and seconds_since is not None
+        and seconds_since > 6 * 3600
+    ):
+        warnings.append(
+            f"BREAKER LOCKED: {consec} losses, "
+            f"{seconds_since / 3600:.1f}h since last trade"
+        )
+    if last_prediction_at is not None:
+        age = (now - last_prediction_at).total_seconds()
+        if age > STALE_PREDICTION_SECONDS:
+            warnings.append(
+                f"STALE: last prediction was {age / 60:.0f}m ago"
+            )
+    is_healthy = len(warnings) == 0
+
+    return SystemState(
+        pipeline_name=pipeline_name,
+        computed_at=now,
+        trading_enabled=trading_enabled,
+        kill_switch=kill_switch,
+        mode="LIVE" if trading_enabled else "PAPER",
+        daily_loss=daily_loss,
+        daily_loss_limit=float(DAILY_LOSS_LIMIT),
+        total_pnl_today=total_pnl_today,
+        consecutive_losses=consec,
+        consecutive_loss_max=int(CONSECUTIVE_LOSS_MAX),
+        breaker_cooldown_hours=CONSECUTIVE_LOSS_COOLDOWN_HOURS,
+        seconds_since_last_settled=seconds_since,
+        last_settled_at=last_settled_at,
+        last_prediction_at=last_prediction_at,
+        last_qualifying_signal_at=last_qualifying_at,
+        orders_today=orders_today,
+        qualifying_signals_today=qualifying_today,
+        can_trade=can_trade,
+        blockers=blockers,
+        is_healthy=is_healthy,
+        health_warnings=warnings,
+    )
+
+
+def pipeline_is_healthy(state: SystemState) -> tuple[bool, List[str]]:
+    """Health check accessor. Same data as state.is_healthy/warnings,
+    exposed as a function for callers that prefer the verb form."""
+    return state.is_healthy, list(state.health_warnings)
