@@ -69,6 +69,7 @@ def run_integrity_checks(
         lambda: _check_db_health(db),
         lambda: _check_expired_would_win(db, pipeline),
         lambda: _check_kill_switch(pipeline),
+        lambda: _check_system_state_health(db, pipeline),
     ]
 
     for check_fn in checks:
@@ -246,6 +247,32 @@ def _check_kill_switch(pipeline) -> dict:
             "detail": f"{file_name} is ACTIVE — trading halted",
         }
     return {"check_name": "kill_switch", "status": "OK", "detail": ""}
+
+
+def _check_system_state_health(db, pipeline) -> dict:
+    """Run the runtime state contract health check.
+
+    Surfaces silent failures (qualifying signals but no orders) and
+    breaker lockouts (5 losses + hours of silence before auto-reset).
+    This is the check that would have caught the 2026-04-06 deadlock.
+    """
+    result = {"check_name": "system_state_health", "status": "OK", "detail": ""}
+    try:
+        from system_state import get_system_state, pipeline_is_healthy
+        state = get_system_state(db, pipeline)
+        healthy, warnings = pipeline_is_healthy(state)
+        if not healthy:
+            # SILENT FAILURE and BREAKER LOCKED are hard errors; STALE is soft.
+            is_fail = any(
+                ("SILENT FAILURE" in w or "BREAKER LOCKED" in w)
+                for w in warnings
+            )
+            result["status"] = "FAIL" if is_fail else "WARN"
+            result["detail"] = " | ".join(warnings)
+    except Exception as e:
+        result["status"] = "WARN"
+        result["detail"] = f"system_state unavailable: {e}"
+    return result
 
 
 def _log_result(db, pipeline, cycle, result: dict) -> None:
