@@ -626,21 +626,26 @@ class BotsyEngine:
         try:
             os.chdir(str(REPO_DIR))
 
-            # Pull latest first
+            # Stage data files FIRST — unstaged changes block git pull --rebase
+            subprocess.run(
+                ["git", "add", "data/", "docs/daily/"],
+                capture_output=True, timeout=10,
+            )
+
+            # Pull latest (rebase our staged changes on top)
             result = subprocess.run(
-                ["git", "pull", "--rebase"],
+                ["git", "pull", "--rebase", "-X", "theirs"],
                 capture_output=True, timeout=30,
             )
             if result.returncode != 0:
                 log(f"WARNING: git pull --rebase failed: {result.stderr.decode()[:200]}")
                 subprocess.run(["git", "rebase", "--abort"], capture_output=True, timeout=10)
+                # Re-stage after abort (rebase --abort unstages)
+                subprocess.run(
+                    ["git", "add", "data/", "docs/daily/"],
+                    capture_output=True, timeout=10,
+                )
                 return
-
-            # Stage data files + daily reports
-            subprocess.run(
-                ["git", "add", "data/", "docs/daily/"],
-                capture_output=True, timeout=10,
-            )
 
             # Check if there are changes
             result = subprocess.run(
