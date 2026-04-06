@@ -184,33 +184,14 @@ def _get_live_token_mid(token_id: str):
     """
     Read live mid for a specific CLOB token from per-token WS cache.
 
-    Cache format: {"tokens": {token_id: {mid, best_bid, best_ask, updated_at, ...}}}
+    Uses typed OrderbookCache dataclass for safe, validated reads.
     Written by botsy_engine.py Polymarket WS feed.
 
     Returns float mid if cache entry is fresh (<10s), else None.
     """
-    if not token_id:
-        return None
-    try:
-        if not LIVE_ORDERBOOK_PATH.exists():
-            return None
-        cache = json.loads(LIVE_ORDERBOOK_PATH.read_text())
-        entry = cache.get("tokens", {}).get(token_id)
-        if not entry:
-            return None
-        updated_at = entry.get("updated_at", "")
-        if not updated_at:
-            return None
-        cache_dt = datetime.fromisoformat(updated_at)
-        age_s = (datetime.now(timezone.utc) - cache_dt).total_seconds()
-        if age_s > LIVE_ORDERBOOK_MAX_AGE_S:
-            return None
-        mid = entry.get("mid")
-        if mid is not None and 0.01 <= mid <= 0.99:
-            return mid
-    except (json.JSONDecodeError, OSError, ValueError, TypeError):
-        pass
-    return None
+    from orderbook_cache import OrderbookCache
+    cache = OrderbookCache.load(LIVE_ORDERBOOK_PATH, LIVE_ORDERBOOK_MAX_AGE_S)
+    return cache.get_fresh_mid(token_id, LIVE_ORDERBOOK_MAX_AGE_S)
 
 
 def compute_order(prediction_row, market_row, liquidity=None):
