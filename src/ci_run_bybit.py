@@ -35,15 +35,10 @@ from bybit_trade import (
 from predict import compute_regime_from_candles, momentum_signal
 from score import calculate_brier_scores, print_scorecard
 from config import BYBIT_MIN_CONVICTION, MAX_CONVICTION
+from pipeline_utils import get_next_cycle
 
 # Dead hours gate — EMPTY until calibrated from Bybit trading data.
 DEAD_HOURS_UTC = set()
-
-
-def get_next_cycle(db):
-    """Derive cycle number from the highest cycle recorded."""
-    cursor = db.execute("SELECT COALESCE(MAX(cycle), 0) + 1 FROM predictions")
-    return cursor.fetchone()[0]
 
 
 def store_prediction_bybit(db, market_id, signal, regime, cycle,

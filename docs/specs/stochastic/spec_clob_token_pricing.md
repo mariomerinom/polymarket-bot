@@ -239,6 +239,28 @@ This data answers: "How wrong is Gamma?" and "Does the gap correlate with fill p
 - **Cache corruption.** If `_update_orderbook_cache()` crashes mid-write, `_get_live_token_mid()` returns None and falls back to Gamma. Safe degradation.
 - **WS disconnection.** If Polymarket WS drops, all token entries age out (>10s) and trade.py falls back to Gamma + logs `DIAG|clob_fallback=true`. No silent failure.
 
+### Startup guard
+
+Add a 60-second post-boot check in `botsy_engine.py`: if `live_orderbook.json` does not contain the `"tokens"` key structure within 60s of engine start, log a `WARNING` and emit a DIAG line. This catches the case where the cache writer update didn't deploy but `trade.py` is already expecting the new per-token format — otherwise every order silently falls back to Gamma and the fix is effectively dead with no signal.
+
+```python
+# In engine startup, after WS connections are established:
+async def _verify_cache_format():
+    await asyncio.sleep(60)
+    try:
+        cache = json.loads(LIVE_ORDERBOOK_PATH.read_text())
+        if "tokens" not in cache:
+            logger.warning("Cache still in legacy format after 60s — per-token pricing inactive")
+            logger.info("DIAG|cache_format=legacy|age_s=60")
+    except (FileNotFoundError, json.JSONDecodeError):
+        logger.warning("No orderbook cache found after 60s — WS feed may not be writing")
+        logger.info("DIAG|cache_format=missing|age_s=60")
+```
+
+### Tech debt note
+
+The JSON file as IPC between the engine (writer) and trade.py (reader) works at current volume (one read per 5-min cycle, ~41 orders/day). When Phase 3 moves everything in-process, this file should be replaced with an in-memory shared dict. Until then, it's fine — but flag it so it doesn't calcify.
+
 ### What this enables next
 - **Dynamic slippage formula** (`spec_dynamic_price_cap.md`) — now has a real price anchor.
 - **Cancel-replace strategy** — per-token cache enables price-tracking for order amendment.
@@ -255,3 +277,4 @@ This data answers: "How wrong is Gamma?" and "Does the gap correlate with fill p
 5. Run live $5 smoke bet — verify TRADED amount ≈ $5
 6. `grep "DIAG|clob_fallback" logs/loop.log` — should NOT fire while WS is connected
 7. `grep "DIAG|gamma_yes" logs/loop.log` — measure the gap on real orders
+8. `grep "DIAG|cache_format" logs/loop.log` — should NOT appear (means new format is live within 60s of boot)

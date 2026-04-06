@@ -16,24 +16,7 @@ from fetch_markets import init_db_15m, fetch_active_markets_15m, store_markets, 
 from predict import run_predictions
 from score import auto_resolve, calculate_brier_scores, print_scorecard
 from btc_data import fetch_btc_candles
-
-
-def get_next_cycle(db):
-    """Derive cycle number from the highest cycle recorded."""
-    cursor = db.execute("SELECT COALESCE(MAX(cycle), 0) + 1 FROM predictions")
-    return cursor.fetchone()[0]
-
-
-def has_unpredicted_market(db):
-    """Check if there's an upcoming market we haven't predicted on yet."""
-    now_iso = datetime.now(timezone.utc).isoformat()
-    cursor = db.execute("""
-        SELECT m.id FROM markets m
-        WHERE m.resolved = 0 AND m.end_date > ?
-        AND m.id NOT IN (SELECT DISTINCT market_id FROM predictions)
-        ORDER BY m.end_date ASC LIMIT 1
-    """, (now_iso,))
-    return cursor.fetchone() is not None
+from pipeline_utils import get_next_cycle, has_unpredicted_market
 
 
 def main(candle_data=None, indicators=None):
