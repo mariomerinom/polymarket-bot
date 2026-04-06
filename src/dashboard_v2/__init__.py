@@ -82,7 +82,7 @@ def build_html(db_path=None, subtitle="BTC 5-Minute Momentum (Live)", nav_links=
     # Assemble sections
     body_parts = [
         header_section(pipeline_name, mode, summary, integrity=integrity),
-        engine_health_section(engine),
+        engine_health_section(engine, pipeline_label=active_label),
         live_pnl_section(live_data),
         trade_execution_section(exec_data),
         recent_bets_section(recent_bets),

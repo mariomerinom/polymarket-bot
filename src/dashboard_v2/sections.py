@@ -56,9 +56,22 @@ def header_section(pipeline_name, mode, summary, integrity=None):
             integrity_dot = f'&nbsp;&middot;&nbsp; <span style="color:#eab308">&#9679; {warnings} warning(s)</span>'
         else:
             integrity_dot = '&nbsp;&middot;&nbsp; <span style="color:#22c55e">&#9679; Integrity OK</span>'
-        # Show issues as visible list if any
+        # Deduplicate + collapse identical warnings
         if issues:
-            items = "".join(f'<li>{_esc(i)}</li>' for i in issues[:8])
+            from collections import Counter
+            # Extract check name (text before the colon) for grouping
+            grouped = Counter()
+            for issue in issues:
+                # "[WARN] orphaned_predictions: 1 conv>=3..." → "orphaned_predictions"
+                key = issue.split(":")[0].strip().replace("[WARN] ", "").replace("[FAIL] ", "")
+                grouped[key] += 1
+            deduped = []
+            for key, count in grouped.most_common(3):
+                if count > 1:
+                    deduped.append(f"{key} ({count}x)")
+                else:
+                    deduped.append(key)
+            items = "".join(f'<li>{_esc(i)}</li>' for i in deduped)
             integrity_detail = f'<ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:{C.TEXT_DIM};list-style:disc">{items}</ul>'
 
     return f"""<div class="header">
@@ -381,14 +394,42 @@ def _ws_status_html(status, last_event):
     return f'{icon} {label}{age_str}'
 
 
-def engine_health_section(health):
+# Which WS feeds each pipeline uses
+_PIPELINE_FEEDS = {
+    "BTC 5m": ["bybit_spot", "polymarket"],
+    "BTC 15m": ["bybit_spot", "polymarket"],
+    "ETH 5m": ["bybit_spot", "polymarket"],
+    "Kalshi": ["bybit_spot"],
+    "Bybit Perps": ["bybit_spot", "bybit_linear"],
+}
+
+_FEED_LABELS = {
+    "bybit_spot": "Bybit Spot",
+    "bybit_linear": "Bybit Linear",
+    "polymarket": "Polymarket",
+}
+
+
+def engine_health_section(health, pipeline_label="BTC 5m"):
     if not health:
         return ""
 
-    # Feed statuses
-    spot_html = _ws_status_html(health["bybit_spot_status"], health["bybit_spot_last"])
-    linear_html = _ws_status_html(health["bybit_linear_status"], health["bybit_linear_last"])
-    polymarket_html = _ws_status_html(health["polymarket_status"], health["polymarket_last"])
+    # Only show feeds relevant to this pipeline
+    relevant = _PIPELINE_FEEDS.get(pipeline_label, ["bybit_spot", "polymarket"])
+
+    feed_cards = ""
+    recon_total = 0
+    for feed_key in relevant:
+        status_key = f"{feed_key}_status"
+        last_key = f"{feed_key}_last"
+        recon_key = f"{feed_key}_reconnects"
+        label = _FEED_LABELS.get(feed_key, feed_key)
+        status_html = _ws_status_html(health.get(status_key, "unknown"), health.get(last_key))
+        recon_total += health.get(recon_key, 0)
+        feed_cards += f"""<div class="metric">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value" style="font-size:13px">{status_html}</div>
+        </div>"""
 
     # Latency
     lat = health.get("dispatch_latency", {})
@@ -401,31 +442,15 @@ def engine_health_section(health):
     ob_p50 = ob.get("p50", 0)
     ob_p95 = ob.get("p95", 0)
 
-    # Reconnects
-    recon_total = (health["bybit_spot_reconnects"]
-                   + health["bybit_linear_reconnects"]
-                   + health["polymarket_reconnects"])
     recon_color = C.PROFIT if recon_total == 0 else (C.WARN if recon_total < 5 else C.LOSS)
 
-    # Fallback fires
     fb = health.get("fallback_fires", 0)
     fb_color = C.PROFIT if fb == 0 else C.WARN
 
     return f"""<div class="section">
     <div class="section-title">Engine Health</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px">
-        <div class="metric">
-            <div class="metric-label">Bybit Spot</div>
-            <div class="metric-value" style="font-size:13px">{spot_html}</div>
-        </div>
-        <div class="metric">
-            <div class="metric-label">Bybit Linear</div>
-            <div class="metric-value" style="font-size:13px">{linear_html}</div>
-        </div>
-        <div class="metric">
-            <div class="metric-label">Polymarket</div>
-            <div class="metric-value" style="font-size:13px">{polymarket_html}</div>
-        </div>
+        {feed_cards}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:11px;color:{C.TEXT_DIM};border-top:1px solid {C.BORDER};padding-top:8px">
         <span>Dispatch: <span style="color:{lat_color}">{lat_p50}ms p50 / {lat_p95}ms p95</span></span>
