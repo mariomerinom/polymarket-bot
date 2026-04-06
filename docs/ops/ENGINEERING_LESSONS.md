@@ -223,7 +223,39 @@ pytest tests/test_regression.py -v
 
 ---
 
-## Summary: The 10 Rules
+## 11. Module-Level Constants Are Import-Time Landmines
+
+**Incident:** BTC 5m pipeline ran as PAPER for ~24 hours on VPS despite `TRADING_ENABLED=true` in `.env`. The engine loaded `.env` into `os.environ` correctly, but `trade.py` had already evaluated `TRADING_ENABLED = os.environ.get("TRADING_ENABLED", "false") == "true"` at import time — before `.env` was loaded. Once Python cached the module, the constant was locked to `False` forever.
+
+**What made it worse:** Two separate systemd services (`botsy.service` and `polymarket-bot.service`) ran the same engine process. One got `True`, the other got `False`. The dashboard showed alternating LIVE/PAPER rows — confusing because the bug was intermittent by design.
+
+**Why it wasn't caught sooner:** Fail-closed design meant the bug produced paper orders, not errors. Everything "worked" — just in the wrong mode. No alert fires on paper orders.
+
+**Remediation:**
+- Every pipeline now overrides `trade.TRADING_ENABLED` from `pipeline_control.is_pipeline_live()` at the start of `main()` — evaluated at runtime, not import time
+- Disabled the duplicate systemd service
+- Added VPS deployment checklist: verify single process, verify trading mode in logs
+
+**Best practice:** Never rely on module-level constants derived from environment variables when the env may be set after import. Either load env before any imports, or override the constant at runtime. And always check `systemctl list-units` after deploying a new service — name collisions hide duplicate processes.
+
+---
+
+## 12. Check for Duplicate Processes After Every Deployment
+
+**Incident:** Two systemd services — created at different times, with different names, but identical `ExecStart` commands — ran the same trading engine simultaneously. Each produced predictions and orders independently, doubling output and creating confusing interleaved results.
+
+**Why it's easy to miss:** `systemctl restart botsy` correctly restarts one service. But `polymarket-bot.service` was never touched and kept running. No error, no log collision, no crash. Just silent duplication.
+
+**Remediation:**
+- Post-deployment check: `ps aux | grep <engine_name> | grep -v grep` — count must be 1
+- `systemctl list-units --type=service | grep -i <project>` — count must be 1
+- If migrating service names, always `systemctl stop && systemctl disable` the old one
+
+**Best practice:** Treat process count as a deployment invariant. One engine, one process, one service. Verify after every restart, migration, or service rename.
+
+---
+
+## Summary: The 12 Rules
 
 1. **One source of truth.** The deployed system is canonical. Local state is a cache.
 2. **Test from deployment.** If it works on your machine but not in CI, it doesn't work.
@@ -235,3 +267,5 @@ pytest tests/test_regression.py -v
 8. **Checklist before change.** 30 seconds prevents 12-hour outages.
 9. **Names are contracts.** If the code does X, name it X.
 10. **Stage everything.** Define the gate before you start. Never skip a stage.
+11. **No import-time env.** Override module constants at runtime, not import time.
+12. **One process per engine.** Verify process count after every deployment.

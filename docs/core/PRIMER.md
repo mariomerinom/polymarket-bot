@@ -259,7 +259,10 @@ All config values live in `src/config.py` and are env-overridable where noted. T
 | `score.py` | Market resolution and Brier score computation. **FROZEN.** |
 | `fetch_markets.py` | Active Polymarket markets via Gamma API. |
 | `kalshi_markets.py` | Active Kalshi markets via REST API (HMAC auth). |
-| `dashboard.py` | Static HTML dashboard generator. Breaker panels, shadow labels, P&L. |
+| `dashboard.py` | Thin shim re-exporting from `dashboard_v2/`. Preserves Flask dev server. |
+| `dashboard_v2/` | D3.js dashboard package. `data.py` (queries), `sections.py` (HTML), `layout.py` (CSS/JS), `charts.py` (data prep). |
+| `dashboard_server.py` | Production Flask server serving all 5 dashboards with 60s TTL cache. Runs on VPS. |
+| `botsy_engine.py` | Async websocket-driven engine. Receives candle-close events from Bybit WS, dispatches pipeline cycles. Replaces vps-loop.sh. |
 | `config.py` | **All thresholds, gates, and sizing constants.** Single source of truth. |
 | `shadow_conviction_scorer.py` | Parameterized shadow scoring engine. |
 | `shadow_indicators.py` | RSI, OBV, VWAP shadow indicator logging. |
@@ -293,6 +296,19 @@ All config values live in `src/config.py` and are env-overridable where noted. T
 | `daily-report.yml` | 06:00 CST daily | `daily_report.py` |
 
 Each workflow has a `*/30 * * * *` cron fallback. The primary mechanism is `repository_dispatch` — each successful run schedules its own next run. Max 300 dispatches/day guard prevents runaway loops.
+
+### VPS Engine (DigitalOcean)
+
+The primary execution environment is a DigitalOcean VPS (`134.209.196.239`) running `botsy_engine.py` as a systemd service (`botsy.service`). The engine connects to Bybit websockets and fires pipeline cycles on candle-close events — sub-second latency vs CI's 30-60 second cold start.
+
+| Component | Details |
+|-----------|---------|
+| Engine | `botsy.service` → `botsy_engine.py` |
+| Dashboard | `polymarket-dashboard.service` → `dashboard_server.py` (Flask, port 5050) |
+| Reverse proxy | Nginx on port 80 → Flask 5050 |
+| Trading mode | Controlled by `config/pipelines.json` via `pipeline_control.py`, NOT by env vars |
+
+**Critical:** Only ONE engine process may run at a time. After any deployment, verify: `ps aux | grep botsy_engine | grep -v grep` (must show exactly 1 process) and `systemctl list-units | grep -i bots` (must show exactly 1 service).
 
 **CI auto-commits constantly.** Always `git pull --rebase` before pushing. If DB conflicts, your code changes win — CI regenerates the DB next cycle.
 
@@ -334,7 +350,7 @@ The E2E tests exercise the complete lifecycle on an in-memory DB with real funct
 | `daily/` | Auto-generated daily reports |
 | `sessions/` | Working session logs |
 | `archive/` | Superseded docs (V3 contrarian, old plans) |
-| `*.html` | Dashboard pages (auto-generated, do not edit) |
+| `*.html` | Deleted — dashboards now served dynamically by Flask on VPS |
 
 ---
 
@@ -342,7 +358,7 @@ The E2E tests exercise the complete lifecycle on an in-memory DB with real funct
 
 The BTC 5m pipeline is the money-maker. These files must have **zero lines changed** unless explicitly approved:
 
-`src/ci_run.py`, `src/btc_data.py`, `src/predict.py`, `src/score.py`, `src/clob_depth.py`, `.github/workflows/predict-and-score.yml`, `data/predictions.db`
+`src/btc_data.py`, `src/predict.py`, `src/score.py`, `src/clob_depth.py`, `.github/workflows/predict-and-score.yml`, `data/predictions.db`
 
 Run `git diff --name-only` before committing and verify none of these appear.
 
