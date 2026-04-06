@@ -232,26 +232,30 @@ def compute_order(prediction_row, market_row, liquidity=None):
     # FILL_PRIORITY_SPREAD (2¢ default): widen limit price to improve fill rate.
     # Reconciliation 2026-04-02: 53% fill rate, 8/8 expired orders were winners.
     # $165 missed profit. Trading 2¢ edge for dramatically higher fill rate is +EV.
+    # CLOB verification gate — no CLOB price = no trade
+    clob_verified = market_row.get("_clob_verified", {})
+
     market_price_yes = market_row.get("price_yes") or 0.5
     if direction == "UP":
         side = "buy"
         token = "yes"
+        if not clob_verified.get("yes"):
+            import logging
+            logging.getLogger(__name__).info(
+                f"DIAG|clob_skip=true|side=YES|gamma={market_price_yes:.4f}|reason=no_clob_price")
+            return None, "no CLOB price for YES token"
         fill_adjusted = estimate + FILL_PRIORITY_SPREAD
         max_price = market_price_yes + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
         price_limit = min(fill_adjusted, max_price)
     else:
         side = "buy"
         token = "no"
-        # Use real CLOB NO price when available, fall back to implied
-        real_no = market_row.get("price_no")
-        implied_no = 1 - market_price_yes
-        if real_no and abs(real_no - implied_no) > 0.005:
-            market_price_no = real_no
-        else:
-            market_price_no = implied_no
+        market_price_no = market_row.get("price_no")
+        if not clob_verified.get("no") or market_price_no is None:
             import logging
             logging.getLogger(__name__).info(
-                f"DIAG|clob_fallback=true|side=NO|implied={implied_no:.4f}")
+                f"DIAG|clob_skip=true|side=NO|implied={round(1 - market_price_yes, 4):.4f}|reason=no_clob_price")
+            return None, "no CLOB price for NO token"
         fill_adjusted = (1 - estimate) + FILL_PRIORITY_SPREAD
         max_price = market_price_no + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
         price_limit = min(fill_adjusted, max_price)
@@ -743,6 +747,12 @@ def execute_trades(db, cycle):
             if no_mid is not None:
                 market_row["price_no"] = no_mid
 
+            # Mark which tokens have real CLOB prices — compute_order() gates on this
+            market_row["_clob_verified"] = {
+                "yes": yes_mid is not None,
+                "no": no_mid is not None,
+            }
+
             # DIAG: log source and gap
             src_yes = "ws" if _get_live_token_mid(tokens.get("yes", "")) else ("rest" if yes_mid else "gamma")
             src_no = "ws" if _get_live_token_mid(tokens.get("no", "")) else ("rest" if no_mid else "gamma")
@@ -754,9 +764,14 @@ def execute_trades(db, cycle):
                       f"|gamma_no={gamma_no:.4f}|clob_no={no_mid:.4f}"
                       f"|gap_yes={abs(yes_mid - gamma_yes):.4f}"
                       f"|gap_no={abs(no_mid - gamma_no):.4f}")
-            elif not yes_mid and not no_mid:
-                print(f"    WARNING: Both CLOB sources failed — using Gamma prices")
-                print(f"    DIAG|clob_fallback=true|side=BOTH|gamma_yes={gamma_yes:.4f}")
+            else:
+                # At least one token missing — log which
+                missing = []
+                if not yes_mid:
+                    missing.append("YES")
+                if not no_mid:
+                    missing.append("NO")
+                print(f"    DIAG|clob_missing={'+'.join(missing)}|gamma_yes={gamma_yes:.4f}|gamma_no={gamma_no:.4f}")
 
         order_params, order_reason = compute_order(pred, market_row, liquidity)
 

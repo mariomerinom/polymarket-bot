@@ -113,7 +113,8 @@ class TestComputeOrder:
     def test_up_prediction_buys_yes(self):
         from trade import compute_order
         pred = {"estimate": 0.65, "conviction_score": 4}
-        market = {"price_yes": 0.50, "price_no": 0.50}
+        market = {"price_yes": 0.50, "price_no": 0.50,
+                  "_clob_verified": {"yes": True, "no": True}}
         order, reason = compute_order(pred, market)
         assert order is not None
         assert order["direction"] == "UP"
@@ -123,7 +124,8 @@ class TestComputeOrder:
     def test_down_prediction_buys_no(self):
         from trade import compute_order
         pred = {"estimate": 0.38, "conviction_score": 3}
-        market = {"price_yes": 0.55, "price_no": 0.45}
+        market = {"price_yes": 0.55, "price_no": 0.45,
+                  "_clob_verified": {"yes": True, "no": True}}
         order, reason = compute_order(pred, market)
         assert order is not None
         assert order["direction"] == "DOWN"
@@ -132,7 +134,8 @@ class TestComputeOrder:
     def test_thin_book_caps_size(self):
         from trade import compute_order
         pred = {"estimate": 0.65, "conviction_score": 4}
-        market = {"price_yes": 0.50, "price_no": 0.50}
+        market = {"price_yes": 0.50, "price_no": 0.50,
+                  "_clob_verified": {"yes": True, "no": True}}
         liquidity = {"max_bet_2pct": 15.0}  # Only $15 available
         order, reason = compute_order(pred, market, liquidity)
         assert order is not None
@@ -141,18 +144,19 @@ class TestComputeOrder:
     def test_very_thin_book_rejects(self):
         from trade import compute_order
         pred = {"estimate": 0.65, "conviction_score": 4}
-        market = {"price_yes": 0.50, "price_no": 0.50}
+        market = {"price_yes": 0.50, "price_no": 0.50,
+                  "_clob_verified": {"yes": True, "no": True}}
         liquidity = {"max_bet_2pct": 3.0}  # Only $3 — not worth it
         order, reason = compute_order(pred, market, liquidity)
         assert order is None
         assert "book_too_thin" in reason
 
-
     def test_price_cap_limits_slippage_up(self):
         """When market is far below estimate, limit price is capped at market + spread + fill priority."""
         from trade import compute_order, MAX_SLIPPAGE_SPREAD, FILL_PRIORITY_SPREAD
         pred = {"estimate": 0.62, "conviction_score": 4}
-        market = {"price_yes": 0.34}  # Market at 34¢, estimate at 62¢
+        market = {"price_yes": 0.34,
+                  "_clob_verified": {"yes": True, "no": True}}
         order, reason = compute_order(pred, market)
         assert order is not None
         # Should be capped at 0.34 + 0.05 + 0.02 = 0.41, not 0.64
@@ -164,18 +168,19 @@ class TestComputeOrder:
         """DOWN prediction: limit price capped at market_no + spread + fill priority."""
         from trade import compute_order, MAX_SLIPPAGE_SPREAD, FILL_PRIORITY_SPREAD
         pred = {"estimate": 0.38, "conviction_score": 3}  # DOWN
-        market = {"price_yes": 0.55}  # market_no = 0.45, 1-estimate = 0.62
+        market = {"price_yes": 0.55, "price_no": 0.45,
+                  "_clob_verified": {"yes": True, "no": True}}
         order, reason = compute_order(pred, market)
         assert order is not None
-        market_no = 1 - 0.55
-        max_allowed = market_no + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
+        max_allowed = 0.45 + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
         assert order["price_limit"] <= max_allowed + 0.001
 
     def test_price_cap_no_effect_when_estimate_close(self):
         """When estimate is close to market, fill priority spread still applies."""
         from trade import compute_order, FILL_PRIORITY_SPREAD
         pred = {"estimate": 0.52, "conviction_score": 4}
-        market = {"price_yes": 0.50}  # estimate 0.52, fill-adjusted = 0.54
+        market = {"price_yes": 0.50,
+                  "_clob_verified": {"yes": True, "no": True}}
         order, reason = compute_order(pred, market)
         assert order is not None
         # Price should be estimate + FILL_PRIORITY_SPREAD
@@ -186,7 +191,8 @@ class TestComputeOrder:
         """compute_order returns slippage and market_price."""
         from trade import compute_order
         pred = {"estimate": 0.62, "conviction_score": 4}
-        market = {"price_yes": 0.49}
+        market = {"price_yes": 0.49,
+                  "_clob_verified": {"yes": True, "no": True}}
         order, reason = compute_order(pred, market)
         assert order is not None
         assert "slippage" in order
@@ -194,6 +200,57 @@ class TestComputeOrder:
         assert order["market_price"] == 0.49
         # Slippage should be price_limit - market_price
         assert order["slippage"] == round(order["price_limit"] - 0.49, 4)
+
+    # ── CLOB verification gate tests ──
+
+    def test_skips_up_without_clob_yes(self):
+        """UP prediction must be skipped when YES token has no CLOB price."""
+        from trade import compute_order
+        pred = {"estimate": 0.65, "conviction_score": 4}
+        market = {"price_yes": 0.50, "price_no": 0.50,
+                  "_clob_verified": {"yes": False, "no": True}}
+        order, reason = compute_order(pred, market)
+        assert order is None
+        assert "no CLOB price for YES token" in reason
+
+    def test_skips_down_without_clob_no(self):
+        """DOWN prediction must be skipped when NO token has no CLOB price."""
+        from trade import compute_order
+        pred = {"estimate": 0.38, "conviction_score": 3}
+        market = {"price_yes": 0.55, "price_no": 0.45,
+                  "_clob_verified": {"yes": True, "no": False}}
+        order, reason = compute_order(pred, market)
+        assert order is None
+        assert "no CLOB price for NO token" in reason
+
+    def test_skips_when_no_clob_verified_flag(self):
+        """Legacy market_row without _clob_verified must skip (safe default)."""
+        from trade import compute_order
+        pred = {"estimate": 0.65, "conviction_score": 4}
+        market = {"price_yes": 0.50, "price_no": 0.50}  # no _clob_verified
+        order, reason = compute_order(pred, market)
+        assert order is None
+        assert "no CLOB price" in reason
+
+    def test_up_trades_with_clob_yes_only(self):
+        """UP prediction only needs YES CLOB verified, not NO."""
+        from trade import compute_order
+        pred = {"estimate": 0.65, "conviction_score": 4}
+        market = {"price_yes": 0.50, "price_no": 0.50,
+                  "_clob_verified": {"yes": True, "no": False}}
+        order, reason = compute_order(pred, market)
+        assert order is not None
+        assert order["direction"] == "UP"
+
+    def test_down_trades_with_clob_no_only(self):
+        """DOWN prediction only needs NO CLOB verified, not YES."""
+        from trade import compute_order
+        pred = {"estimate": 0.38, "conviction_score": 3}
+        market = {"price_yes": 0.55, "price_no": 0.45,
+                  "_clob_verified": {"yes": False, "no": True}}
+        order, reason = compute_order(pred, market)
+        assert order is not None
+        assert order["direction"] == "DOWN"
 
 
 class TestPlaceOrder:
@@ -364,6 +421,7 @@ class TestExecuteTrades:
     """Full execution flow."""
 
     def test_executes_qualifying_predictions(self):
+        from unittest.mock import patch
         from trade import execute_trades, ensure_orders_table
         db = _make_db()
         ensure_orders_table(db)
@@ -376,7 +434,11 @@ class TestExecuteTrades:
             VALUES (1, 'mkt_1', 'momentum_rule', 0.65, 0.15, 'high', '{}', '2026-01-01T00:00:00', 10, 4)""")
         db.commit()
 
-        orders = execute_trades(db, cycle=10)
+        # Mock CLOB token resolution so the CLOB-verified gate passes
+        fake_tokens = {"yes": "tok_yes", "no": "tok_no"}
+        with patch("predict._get_clob_tokens_safe", return_value=fake_tokens), \
+             patch("trade._get_live_token_mid", return_value=0.50):
+            orders = execute_trades(db, cycle=10)
         assert len(orders) == 1
         assert orders[0]["status"] == "paper"
         assert orders[0]["direction"] == "UP"
@@ -401,6 +463,7 @@ class TestExecuteTrades:
 
     def test_no_duplicate_orders(self):
         """Same prediction in same cycle should not place two orders."""
+        from unittest.mock import patch
         from trade import execute_trades, ensure_orders_table
         db = _make_db()
         ensure_orders_table(db)
@@ -412,8 +475,11 @@ class TestExecuteTrades:
             VALUES (1, 'mkt_3', 'momentum_rule', 0.65, 0.15, 'high', '{}', '2026-01-01T00:00:00', 10, 4)""")
         db.commit()
 
-        orders_1 = execute_trades(db, cycle=10)
-        orders_2 = execute_trades(db, cycle=10)  # Second call, same cycle
+        fake_tokens = {"yes": "tok_yes", "no": "tok_no"}
+        with patch("predict._get_clob_tokens_safe", return_value=fake_tokens), \
+             patch("trade._get_live_token_mid", return_value=0.50):
+            orders_1 = execute_trades(db, cycle=10)
+            orders_2 = execute_trades(db, cycle=10)  # Second call, same cycle
         assert len(orders_1) == 1
         assert len(orders_2) == 0  # No duplicate
         db.close()

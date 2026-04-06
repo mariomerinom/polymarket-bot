@@ -16,6 +16,9 @@ import sys
 import json
 import sqlite3
 from datetime import datetime, timezone, timedelta
+from unittest.mock import patch
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -29,6 +32,20 @@ from config import (
     MIN_CONVICTION, EDGE_THRESHOLD, DAILY_LOSS_LIMIT,
     CONSECUTIVE_LOSS_MAX, BET_SIZE,
 )
+
+
+# ── CLOB mock for e2e tests ───────────────────────────────────────────────
+# Production requires real CLOB prices (no Gamma fallback). E2e tests don't
+# have a live CLOB, so we mock token resolution + WS cache to return the
+# Gamma price from the DB (good enough for lifecycle testing).
+
+@pytest.fixture(autouse=True)
+def _mock_clob_for_e2e():
+    """Provide fake CLOB token resolution so execute_trades() doesn't skip."""
+    fake_tokens = {"yes": "tok_yes_e2e", "no": "tok_no_e2e"}
+    with patch("predict._get_clob_tokens_safe", return_value=fake_tokens), \
+         patch("trade._get_live_token_mid", return_value=0.50):
+        yield
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────

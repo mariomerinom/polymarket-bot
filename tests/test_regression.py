@@ -338,7 +338,7 @@ def test_fill_priority_spread_widens_limit_price():
 
     # UP bet: limit price should be wider than raw estimate
     pred = {"estimate": 0.55, "conviction_score": 3, "agent": "momentum_rule"}
-    market = {"price_yes": 0.50}
+    market = {"price_yes": 0.50, "_clob_verified": {"yes": True, "no": True}}
     order, reason = compute_order(pred, market)
     assert order is not None
     # Price should be estimate + spread (0.55 + 0.02 = 0.57), not just 0.55
@@ -347,7 +347,9 @@ def test_fill_priority_spread_widens_limit_price():
 
     # DOWN bet: same principle (buying NO tokens)
     pred_down = {"estimate": 0.45, "conviction_score": 3, "agent": "momentum_rule"}
-    order_down, _ = compute_order(pred_down, market)
+    market_down = {"price_yes": 0.50, "price_no": 0.50,
+                   "_clob_verified": {"yes": True, "no": True}}
+    order_down, _ = compute_order(pred_down, market_down)
     assert order_down is not None
     raw_no_price = 1 - 0.45  # 0.55
     assert order_down["price_limit"] > raw_no_price, \
