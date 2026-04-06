@@ -87,13 +87,18 @@ def ensure_orders_table(db):
 
 # ── Core ──────────────────────────────────────────────────────────────────────
 
-def should_trade(prediction_row, db):
+def should_trade(prediction_row, db, pipeline_name="btc_5m"):
     """
     Decide if a prediction should become a live order.
 
+    Thin wrapper around system_state.get_system_state() — the runtime
+    state contract. Signal gates (conviction, edge) remain here because
+    they are prediction-level, not pipeline-level.
+
     Args:
         prediction_row: dict with keys from predictions table
-        db: sqlite3 connection (for daily loss check)
+        db: sqlite3 connection
+        pipeline_name: which pipeline's state to consult
 
     Returns:
         (should_trade: bool, reason: str)
@@ -107,64 +112,24 @@ def should_trade(prediction_row, db):
     if edge < EDGE_THRESHOLD:
         return False, f"edge_too_small ({edge:.3f})"
 
-    # Daily loss limit check
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    row = db.execute("""
-        SELECT COALESCE(SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END), 0)
-        FROM orders
-        WHERE placed_at LIKE ? AND status IN ('filled', 'settled')
-    """, (f"{today}%",)).fetchone()
-    daily_loss = abs(row[0]) if row else 0
-
-    if daily_loss >= DAILY_LOSS_LIMIT:
-        return False, f"daily_loss_limit (${daily_loss:.0f} >= ${DAILY_LOSS_LIMIT:.0f})"
-
-    # Consecutive loss breaker — halt after N losses in a row, reset on any win
-    consec = _check_consecutive_losses(db)
-    if consec >= CONSECUTIVE_LOSS_MAX:
-        return False, f"consecutive_loss_breaker ({consec} >= {CONSECUTIVE_LOSS_MAX})"
+    # Pipeline-level gates: kill switch, daily loss, consecutive losses.
+    # All via the single source of truth.
+    from system_state import get_system_state
+    state = get_system_state(db, pipeline_name)
+    if not state.can_trade:
+        return False, state.blockers[0]
 
     return True, "ok"
 
 
 def _check_consecutive_losses(db):
-    """Count current consecutive loss streak (most recent settled orders).
+    """Back-compat shim — delegates to system_state contract.
 
-    Auto-resets after CONSECUTIVE_LOSS_COOLDOWN_HOURS (default 8) hours
-    since the last settled order — prevents permanent deadlock where the
-    breaker blocks all trades so no win can ever reset it.
+    Kept only for callers that still import this symbol. New code must
+    use system_state.get_system_state() instead.
     """
-    from datetime import datetime, timezone, timedelta
-
-    CONSECUTIVE_LOSS_COOLDOWN_HOURS = 8
-
-    # Check if last settled order is old enough to auto-reset
-    last_settled = db.execute("""
-        SELECT settled_at FROM orders
-        WHERE status = 'settled' AND settled_at IS NOT NULL
-        ORDER BY settled_at DESC LIMIT 1
-    """).fetchone()
-    if last_settled and last_settled[0]:
-        try:
-            settled_time = datetime.fromisoformat(last_settled[0].replace("Z", "+00:00"))
-            now = datetime.now(timezone.utc)
-            if (now - settled_time) > timedelta(hours=CONSECUTIVE_LOSS_COOLDOWN_HOURS):
-                return 0  # Auto-reset: cooldown elapsed
-        except (ValueError, TypeError):
-            pass
-
-    rows = db.execute("""
-        SELECT pnl FROM orders
-        WHERE status = 'settled' AND pnl IS NOT NULL
-        ORDER BY settled_at DESC LIMIT ?
-    """, (MAX_LOSS_LOOKBACK,)).fetchall()
-    streak = 0
-    for (pnl,) in rows:
-        if pnl < 0:
-            streak += 1
-        else:
-            break
-    return streak
+    from system_state import get_system_state
+    return get_system_state(db, "btc_5m").consecutive_losses
 
 
 
@@ -1057,7 +1022,7 @@ def execute_trades(db, cycle, pipeline_name=None):
 
     for pred in predictions:
         # Check trade gates
-        ok, reason = should_trade(pred, db)
+        ok, reason = should_trade(pred, db, pipeline_name=pipeline_name or "btc_5m")
         if not ok:
             print(f"    [{mode_label}] SKIP {pred['market_id'][:12]}... — {reason}")
             continue
@@ -1137,41 +1102,43 @@ def is_kill_switched():
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 def get_trading_summary(db, pipeline_name=None):
-    """Get a summary of today's trading activity."""
-    if pipeline_name:
-        from pipeline_control import is_pipeline_live
-        _trading_enabled = is_pipeline_live(pipeline_name)
-    else:
-        _trading_enabled = TRADING_ENABLED
+    """Get a summary of today's trading activity.
 
+    Thin wrapper around the system_state contract plus a few order-level
+    aggregates that aren't part of the runtime state contract (total
+    wagered, failed count).
+    """
     ensure_orders_table(db)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from system_state import get_system_state
+    state = get_system_state(db, pipeline_name or "btc_5m")
 
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     row = db.execute("""
         SELECT
             COUNT(*) as total,
             SUM(CASE WHEN status IN ('filled', 'settled', 'paper') THEN 1 ELSE 0 END) as executed,
             SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
-            COALESCE(SUM(size), 0) as total_wagered,
-            COALESCE(SUM(pnl), 0) as total_pnl
+            COALESCE(SUM(size), 0) as total_wagered
         FROM orders
         WHERE placed_at LIKE ?
     """, (f"{today}%",)).fetchone()
-
-    consec_losses = _check_consecutive_losses(db)
 
     return {
         "total_orders": row[0],
         "executed": row[1],
         "failed": row[2],
         "total_wagered": row[3],
-        "total_pnl": row[4],
-        "mode": "LIVE" if _trading_enabled else "PAPER",
+        "total_pnl": state.total_pnl_today,
+        "mode": state.mode,
         "bet_size": BET_SIZE,
-        "daily_loss_limit": DAILY_LOSS_LIMIT,
-        "consecutive_losses": consec_losses,
-        "consecutive_loss_max": CONSECUTIVE_LOSS_MAX,
+        "daily_loss_limit": state.daily_loss_limit,
+        "consecutive_losses": state.consecutive_losses,
+        "consecutive_loss_max": state.consecutive_loss_max,
         "breakers": {
-            "consecutive_loss": consec_losses >= CONSECUTIVE_LOSS_MAX,
+            "consecutive_loss": state.consecutive_losses >= state.consecutive_loss_max,
         },
+        "can_trade": state.can_trade,
+        "blockers": state.blockers,
+        "is_healthy": state.is_healthy,
+        "health_warnings": state.health_warnings,
     }

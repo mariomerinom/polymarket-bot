@@ -118,9 +118,13 @@ def _parse_ts(ts: Optional[str]) -> Optional[datetime]:
     if not ts:
         return None
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except (ValueError, TypeError):
         return None
+    # Always return tz-aware UTC (some legacy rows are naive)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _today_prefix() -> str:
@@ -215,6 +219,14 @@ def _compute_prediction_activity(db) -> tuple[int, Optional[datetime], Optional[
         return 0, None, None
     today = _today_prefix()
 
+    try:
+        return _compute_prediction_activity_impl(db, today)
+    except Exception:
+        # Legacy schemas without predicted_at/conviction_score — fail open
+        return 0, None, None
+
+
+def _compute_prediction_activity_impl(db, today):
     row = db.execute("""
         SELECT COUNT(*) FROM predictions
         WHERE predicted_at LIKE ? AND conviction_score >= ?

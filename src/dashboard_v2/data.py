@@ -667,63 +667,106 @@ def get_integrity_status(db):
 # ---------------------------------------------------------------------------
 
 def get_breaker_status(db, asset="BTC", subtitle=""):
-    """Current circuit breaker state."""
+    """Current circuit breaker state.
+
+    Thin wrapper around system_state.get_system_state() — the single
+    source of truth. Bybit uses a custom positions table, not the
+    standard orders schema, so it keeps its legacy path until its
+    pipeline migrates to the contract.
+
+    Incident 2026-04-06: this function used to have its own SQL that
+    diverged from trade.py::should_trade, causing the dashboard to
+    show 0/5 while trading was deadlocked. Never again.
+    """
     is_bybit = "BYBIT" in (subtitle or "").upper()
     loss_limit = BYBIT_DAILY_LOSS_LIMIT if is_bybit else DAILY_LOSS_LIMIT
     min_conv = BYBIT_MIN_CONVICTION if is_bybit else MIN_CONVICTION
-    ks_file = "KILL_SWITCH_BYBIT" if is_bybit else "KILL_SWITCH"
-    ks_env = "KILL_SWITCH_BYBIT" if is_bybit else "KILL_SWITCH"
 
+    if is_bybit:
+        # Bybit pipeline uses positions table, not orders — legacy path
+        # until it migrates to the contract.
+        return _get_breaker_status_bybit(db, loss_limit, min_conv)
+
+    # Polymarket pipelines → system_state contract
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).parent.parent))
+    from system_state import get_system_state
+
+    # Pipeline name is derived from the subtitle / asset. Default btc_5m.
+    pipeline_name = _pipeline_name_from_subtitle(subtitle)
+    state = get_system_state(db, pipeline_name)
+
+    daily_pct = (state.daily_loss / loss_limit * 100) if loss_limit > 0 else 0
+    return {
+        "kill_switch": state.kill_switch,
+        "daily_loss": round(state.daily_loss, 2),
+        "daily_loss_limit": loss_limit,
+        "daily_loss_pct": min(round(daily_pct, 1), 100),
+        "consecutive_losses": state.consecutive_losses,
+        "consecutive_loss_max": state.consecutive_loss_max,
+        "min_conviction": min_conv,
+        "edge_threshold": EDGE_THRESHOLD,
+        "price_gate": (PRICE_GATE_LOWER, PRICE_GATE_UPPER),
+        "extreme_estimate": (EXTREME_ESTIMATE_LOWER, EXTREME_ESTIMATE_UPPER),
+        "can_trade": state.can_trade,
+        "blockers": state.blockers,
+        "is_healthy": state.is_healthy,
+        "health_warnings": state.health_warnings,
+    }
+
+
+def _pipeline_name_from_subtitle(subtitle: str) -> str:
+    """Heuristic: map dashboard subtitle/asset to pipeline_name."""
+    s = (subtitle or "").upper()
+    if "ETH" in s:
+        return "eth_5m"
+    if "15" in s:
+        return "btc_15m"
+    if "KALSHI" in s:
+        return "kalshi"
+    return "btc_5m"
+
+
+def _get_breaker_status_bybit(db, loss_limit, min_conv):
+    """Legacy bybit path — positions table, not orders. To migrate."""
+    ks_file = "KILL_SWITCH_BYBIT"
     kill_switch = (
         Path(__file__).parent.parent.parent.joinpath("data", ks_file).exists()
-        or os.environ.get(ks_env, "").lower() == "true"
+        or os.environ.get(ks_file, "").lower() == "true"
     )
-
     daily_loss = 0.0
     consecutive_losses = 0
-    table_name = "positions" if is_bybit else "orders"
-    date_col = "opened_at" if is_bybit else "placed_at"
-    settled_col = "closed_at" if is_bybit else "settled_at"
-    status_settled = "closed" if is_bybit else "settled"
-
     try:
         tbl = db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table_name,)
+            ("positions",)
         ).fetchone()
         if tbl:
             today = _now_utc().strftime("%Y-%m-%d")
-            row = db.execute(f"""
+            row = db.execute("""
                 SELECT COALESCE(SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END), 0)
-                FROM {table_name}
-                WHERE {date_col} LIKE ? AND status IN ('filled', ?)
-            """, (f"{today}%", status_settled)).fetchone()
+                FROM positions
+                WHERE opened_at LIKE ? AND status IN ('filled', 'closed')
+            """, (f"{today}%",)).fetchone()
             daily_loss = abs(row[0]) if row else 0.0
 
-            # Match trade.py::_check_consecutive_losses — no date filter.
-            # The breaker blocks on ANY recent consecutive losses, not just
-            # today's. Dashboard must reflect the same reality or it lies
-            # (incident 2026-04-06: 5 losses from yesterday blocked trading
-            # while dashboard cheerfully showed 0/5).
-            rows = db.execute(f"""
-                SELECT pnl FROM {table_name}
-                WHERE status = ? AND pnl IS NOT NULL
-                ORDER BY {settled_col} DESC LIMIT 50
-            """, (status_settled,)).fetchall()
+            rows = db.execute("""
+                SELECT pnl FROM positions
+                WHERE status = 'closed' AND pnl IS NOT NULL
+                ORDER BY closed_at DESC LIMIT 50
+            """).fetchall()
 
-            # Apply same 8h auto-reset as the actual breaker so dashboard
-            # matches should_trade() behavior.
             try:
-                last = db.execute(f"""
-                    SELECT {settled_col} FROM {table_name}
-                    WHERE status = ? AND {settled_col} IS NOT NULL
-                    ORDER BY {settled_col} DESC LIMIT 1
-                """, (status_settled,)).fetchone()
+                last = db.execute("""
+                    SELECT closed_at FROM positions
+                    WHERE status = 'closed' AND closed_at IS NOT NULL
+                    ORDER BY closed_at DESC LIMIT 1
+                """).fetchone()
                 if last and last[0]:
-                    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+                    from datetime import datetime as _dt, timedelta as _td
                     settled_time = _dt.fromisoformat(last[0].replace("Z", "+00:00"))
                     if (_now_utc() - settled_time) > _td(hours=8):
-                        rows = []  # Auto-reset: cooldown elapsed
+                        rows = []
             except (ValueError, TypeError):
                 pass
 
@@ -736,7 +779,6 @@ def get_breaker_status(db, asset="BTC", subtitle=""):
         pass
 
     daily_pct = (daily_loss / loss_limit * 100) if loss_limit > 0 else 0
-
     return {
         "kill_switch": kill_switch,
         "daily_loss": round(daily_loss, 2),
