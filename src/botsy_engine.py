@@ -130,22 +130,34 @@ class BotsyEngine:
             from ta_engine import TAEngine
             self.ta_engine = TAEngine(self.candle_buffer)
             log("[TA] Engine initialized with pandas-ta")
-        except ImportError as e:
-            log(f"[TA] pandas-ta not available, running without indicators: {e}")
+        except Exception as e:
+            log(f"[TA] TA engine init failed, running without indicators: {e}")
             self.ta_engine = None
 
         tasks = [
-            self.bybit_spot_feed(),
-            self.bybit_linear_feed(),
-            self.polymarket_feed(),
-            self.git_commit_loop(),
-            self.daily_report_check(),
-            self.fallback_timer(),
-            self.metrics_writer(),
-            self.log_rotator(),
-            self._verify_orderbook_cache_format(),
+            self._supervise(self.bybit_spot_feed, name="bybit_spot"),
+            self._supervise(self.bybit_linear_feed, name="bybit_linear"),
+            self._supervise(self.polymarket_feed, name="polymarket"),
+            self._supervise(self.git_commit_loop, name="git_commit"),
+            self._supervise(self.daily_report_check, name="daily_report"),
+            self._supervise(self.fallback_timer, name="fallback"),
+            self._supervise(self.metrics_writer, name="metrics"),
+            self._supervise(self.log_rotator, name="log_rotator"),
+            self._verify_orderbook_cache_format(),  # one-shot, no supervision
         ]
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _supervise(self, coro_func, *args, name="task"):
+        """Restart a coroutine on crash. Re-raises CancelledError for shutdown."""
+        while True:
+            try:
+                await coro_func(*args)
+                return  # Normal completion (one-shot tasks)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log(f"CRITICAL: {name} crashed: {e}. Restarting in 10s...")
+                await asyncio.sleep(10)
 
     def _load_or_seed_buffer(self):
         """Load candle buffer from disk snapshot. Fall back to REST if stale."""
@@ -588,7 +600,10 @@ class BotsyEngine:
         """Commit and push data/ every 5 minutes."""
         while True:
             await asyncio.sleep(GIT_COMMIT_INTERVAL_S)
-            await asyncio.to_thread(self._git_commit_push)
+            try:
+                await asyncio.to_thread(self._git_commit_push)
+            except Exception as e:
+                log(f"WARNING: git commit loop error: {e}")
 
     def _git_commit_push(self):
         """Synchronous git add + commit + push."""
@@ -596,10 +611,14 @@ class BotsyEngine:
             os.chdir(str(REPO_DIR))
 
             # Pull latest first
-            subprocess.run(
+            result = subprocess.run(
                 ["git", "pull", "--rebase"],
                 capture_output=True, timeout=30,
             )
+            if result.returncode != 0:
+                log(f"WARNING: git pull --rebase failed: {result.stderr.decode()[:200]}")
+                subprocess.run(["git", "rebase", "--abort"], capture_output=True, timeout=10)
+                return
 
             # Stage data files + daily reports
             subprocess.run(
@@ -634,10 +653,14 @@ class BotsyEngine:
             )
             if result.returncode != 0:
                 log("WARNING: Push failed — retrying with pull --rebase")
-                subprocess.run(
+                retry_result = subprocess.run(
                     ["git", "pull", "--rebase"],
                     capture_output=True, timeout=30,
                 )
+                if retry_result.returncode != 0:
+                    log(f"ERROR: Rebase conflict during retry — aborting")
+                    subprocess.run(["git", "rebase", "--abort"], capture_output=True, timeout=10)
+                    return
                 subprocess.run(
                     ["git", "push"],
                     capture_output=True, timeout=60,
