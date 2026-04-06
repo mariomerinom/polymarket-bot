@@ -509,8 +509,38 @@ def breaker_section(status):
     pg_lo, pg_hi = status["price_gate"]
     ee_lo, ee_hi = status["extreme_estimate"]
 
+    # Health banner — surfaces blockers (can't trade now) and warnings
+    # (silent failures, breaker lockouts, stale predictions). This is
+    # the surface that closes the dashboard/engine divergence loop from
+    # the 2026-04-06 incident.
+    banner_html = ""
+    blockers = status.get("blockers") or []
+    warnings = status.get("health_warnings") or []
+    if blockers or warnings:
+        items = []
+        for b in blockers:
+            items.append(
+                f'<div style="color:{C.LOSS};font-weight:600">&#x2716; BLOCKED: {b}</div>'
+            )
+        for w in warnings:
+            items.append(
+                f'<div style="color:{C.WARN};font-weight:600">&#x26A0; {w}</div>'
+            )
+        banner_html = (
+            f'<div style="background:rgba(220,60,60,0.08);border:1px solid {C.LOSS};'
+            f'border-radius:4px;padding:8px 12px;margin-bottom:10px;font-size:12px">'
+            + "".join(items)
+            + "</div>"
+        )
+    elif status.get("can_trade") is True and status.get("is_healthy") is True:
+        banner_html = (
+            f'<div style="color:{C.PROFIT};font-size:11px;margin-bottom:10px">'
+            f'&#x2714; Healthy — no blockers, no warnings</div>'
+        )
+
     return f"""<div class="section">
     <div class="section-title">Circuit Breakers</div>
+    {banner_html}
     <div class="breaker-row">
         <div class="breaker-item"><span style="color:{C.NEUTRAL}">Kill Switch:</span> {ks_html}</div>
         <div class="breaker-item">
