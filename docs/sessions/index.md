@@ -2,6 +2,7 @@
 
 Working session summaries — what was built, shipped, learned, and kicked forward.
 
+- [2026-04-06](2026-04-06.md) — Engine down since 01:34 UTC; manual Apr 5 daily report; VPS restart pending
 - [2026-04-04](2026-04-04.md) — Activity digest (auto-digest)
 - [2026-04-03](2026-04-03-0902.md) — Unified completion of dynamic pipeline constants (timeouts, limits, SQLite configuration delays) & complete removal of legacy conviction.py architecture.
 - [2026-04-02](2026-04-02.md) — Config centralization, fill rate fix, VWAP postmortem, pipeline control config (live/paper/paused), ETH moved to paper
