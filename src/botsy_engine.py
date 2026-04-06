@@ -656,41 +656,30 @@ class BotsyEngine:
                 log(f"WARNING: git commit loop error: {e}")
 
     def _git_commit_push(self):
-        """Synchronous git add + commit + push."""
+        """Synchronous git add + commit + push.
+
+        Order: add → diff check → commit → pull --rebase → push.
+        git pull --rebase refuses to run with ANY uncommitted changes
+        (staged OR unstaged), so we must commit first, then rebase.
+        """
         try:
             os.chdir(str(REPO_DIR))
 
-            # Stage data files FIRST — unstaged changes block git pull --rebase
+            # Stage data files
             subprocess.run(
                 ["git", "add", "data/", "docs/daily/"],
                 capture_output=True, timeout=10,
             )
 
-            # Pull latest (rebase our staged changes on top)
-            result = subprocess.run(
-                ["git", "pull", "--rebase", "-X", "theirs"],
-                capture_output=True, timeout=30,
-            )
-            if result.returncode != 0:
-                log(f"WARNING: git pull --rebase failed: {result.stderr.decode()[:200]}")
-                subprocess.run(["git", "rebase", "--abort"], capture_output=True, timeout=10)
-                # Re-stage after abort (rebase --abort unstages)
-                subprocess.run(
-                    ["git", "add", "data/", "docs/daily/"],
-                    capture_output=True, timeout=10,
-                )
-                return
-
-            # Check if there are changes
+            # Check if there are changes to commit
             result = subprocess.run(
                 ["git", "diff", "--cached", "--quiet"],
                 capture_output=True,
             )
             if result.returncode == 0:
-                log("No changes to commit")
-                return
+                return  # Nothing to commit
 
-            # Commit
+            # Commit FIRST (before pull — rebase needs clean working tree)
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             msg = f"Auto: cycle update {ts}"
             result = subprocess.run(
@@ -709,7 +698,7 @@ class BotsyEngine:
             if result.returncode != 0:
                 log("WARNING: Push failed — retrying with pull --rebase")
                 retry_result = subprocess.run(
-                    ["git", "pull", "--rebase"],
+                    ["git", "pull", "--rebase", "-X", "theirs"],
                     capture_output=True, timeout=30,
                 )
                 if retry_result.returncode != 0:
