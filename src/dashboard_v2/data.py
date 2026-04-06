@@ -456,6 +456,10 @@ def get_signal_pnl(db, asset="BTC"):
     max_dd = 0.0
     peak = 0.0
 
+    # Signal-level accuracy (all predictions, regardless of conviction)
+    signal_correct = 0
+    signal_total = 0
+
     # Sort by predicted_at for chronological series
     sorted_markets = sorted(market_data.items(), key=lambda x: x[1]["predicted_at"])
 
@@ -467,6 +471,11 @@ def get_signal_pnl(db, asset="BTC"):
         conv = md["conviction"] or 0
         bet_size = _get_bet_size(conv, md["predicted_at"], asset)
         avg_est = sum(md["estimates"]) / len(md["estimates"])
+
+        # Track signal accuracy for all predictions
+        signal_total += 1
+        if _is_correct(avg_est, md["outcome"]):
+            signal_correct += 1
 
         if bet_size == 0:
             num_skipped += 1
@@ -543,6 +552,9 @@ def get_signal_pnl(db, asset="BTC"):
         "num_wins": num_wins,
         "num_losses": num_losses,
         "num_skipped": num_skipped,
+        "signal_accuracy": round(signal_correct / signal_total * 100, 1) if signal_total > 0 else 0,
+        "signal_total": signal_total,
+        "signal_correct": signal_correct,
         "win_rate": round(wr, 1),
         "roi": round(roi, 1),
         "max_drawdown": round(max_dd, 2),

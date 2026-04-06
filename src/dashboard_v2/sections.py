@@ -165,11 +165,30 @@ def _build_live_pnl_series(live_data):
 # ---------------------------------------------------------------------------
 
 def signal_pnl_section(signal_data, mode):
-    if not signal_data or signal_data["num_bets"] == 0:
+    if not signal_data:
         return ""
 
-    pnl = signal_data["total_pnl"]
     section_cls = "section-live" if mode == "live" else "section-paper"
+
+    # No qualifying bets — show signal accuracy only
+    if signal_data["num_bets"] == 0:
+        sig_acc = signal_data.get("signal_accuracy", 0)
+        sig_total = signal_data.get("signal_total", 0)
+        sig_correct = signal_data.get("signal_correct", 0)
+        acc_color = C.PROFIT if sig_acc > 50 else (C.LOSS if sig_acc < 45 else C.NEUTRAL)
+        metrics_html = "".join([
+            _metric("Signal Accuracy", f"{sig_acc}%", acc_color),
+            _metric("Predictions", f"{sig_correct}/{sig_total}"),
+            _metric("Skipped", str(signal_data["num_skipped"])),
+        ])
+        return f"""<div class="section {section_cls}">
+    <div class="section-title">Signal Quality</div>
+    <div style="color:{C.TEXT_MUTED};font-size:13px;margin-bottom:12px">No qualifying bets (all predictions below conviction threshold)</div>
+    <div class="metrics">{metrics_html}</div>
+    {_provenance_html(signal_data.get("_provenance"))}
+</div>"""
+
+    pnl = signal_data["total_pnl"]
     chart_data = to_json(prepare_cumulative_pnl(signal_data["pnl_series"]))
     waterfall_data = to_json(prepare_waterfall(signal_data["bet_results"]))
 
