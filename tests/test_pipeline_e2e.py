@@ -43,7 +43,7 @@ from config import (
 def _mock_clob_for_e2e():
     """Provide fake CLOB token resolution so execute_trades() doesn't skip."""
     fake_tokens = {"yes": "tok_yes_e2e", "no": "tok_no_e2e"}
-    with patch("predict._get_clob_tokens_safe", return_value=fake_tokens), \
+    with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
          patch("trade._get_live_token_mid", return_value=0.50):
         yield
 

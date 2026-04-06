@@ -115,7 +115,7 @@ class TestClobResolution:
         fake_tokens = {"yes": "tok_yes", "no": "tok_no"}
         ws_prices = {"tok_yes": 0.55, "tok_no": 0.45}
 
-        with patch("predict._get_clob_tokens_safe", return_value=fake_tokens), \
+        with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
              patch("trade._get_live_token_mid", side_effect=lambda tid: ws_prices.get(tid)):
             orders = execute_trades(db, cycle=1)
 
@@ -142,7 +142,7 @@ class TestClobResolution:
         fake_tokens = {"yes": "tok_yes", "no": "tok_no"}
         rest_depth = {"mid": 0.53, "spread": 0.02, "depth_2pct": 500}
 
-        with patch("predict._get_clob_tokens_safe", return_value=fake_tokens), \
+        with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
              patch("trade._get_live_token_mid", return_value=None), \
              patch("clob_depth.get_order_book", return_value={"bids": [], "asks": []}) as mock_ob, \
              patch("clob_depth.analyze_depth", return_value=rest_depth):
@@ -165,7 +165,7 @@ class TestClobResolution:
 
         fake_tokens = {"yes": "tok_yes", "no": "tok_no"}
 
-        with patch("predict._get_clob_tokens_safe", return_value=fake_tokens), \
+        with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
              patch("trade._get_live_token_mid", return_value=None), \
              patch("clob_depth.get_order_book", return_value=None), \
              patch("clob_depth.analyze_depth", return_value=None):
@@ -186,7 +186,7 @@ class TestClobResolution:
         rest_depth = {"mid": 0.54, "spread": 0.02, "depth_2pct": 500}
 
         # WS returns None (stale cache), REST provides fallback
-        with patch("predict._get_clob_tokens_safe", return_value=fake_tokens), \
+        with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
              patch("trade._get_live_token_mid", return_value=None), \
              patch("clob_depth.get_order_book", return_value={"bids": [], "asks": []}) as mock_ob, \
              patch("clob_depth.analyze_depth", return_value=rest_depth):
@@ -249,7 +249,7 @@ class TestClobResolution:
         _insert_market(db, price_yes=0.50)
         _insert_qualifying_prediction(db, estimate=0.62, conviction=4)
 
-        with patch("predict._get_clob_tokens_safe", side_effect=Exception("API down")), \
+        with patch("clob_depth.get_clob_tokens_safe", side_effect=Exception("API down")), \
              patch("trade._get_live_token_mid", return_value=None):
             orders = execute_trades(db, cycle=1)
 

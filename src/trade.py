@@ -831,8 +831,8 @@ def execute_trades(db, cycle):
         # Resolve CLOB tokens + prices (WS cache → REST fallback → skip)
         tokens = None
         try:
-            from predict import _get_clob_tokens_safe
-            tokens = _get_clob_tokens_safe(pred["market_id"])
+            from clob_depth import get_clob_tokens_safe
+            tokens = get_clob_tokens_safe(pred["market_id"])
         except Exception as e:
             print(f"    CLOB token lookup failed: {e}")
 

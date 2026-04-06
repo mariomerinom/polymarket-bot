@@ -436,7 +436,7 @@ class TestExecuteTrades:
 
         # Mock CLOB token resolution so the CLOB-verified gate passes
         fake_tokens = {"yes": "tok_yes", "no": "tok_no"}
-        with patch("predict._get_clob_tokens_safe", return_value=fake_tokens), \
+        with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
              patch("trade._get_live_token_mid", return_value=0.50):
             orders = execute_trades(db, cycle=10)
         assert len(orders) == 1
@@ -476,7 +476,7 @@ class TestExecuteTrades:
         db.commit()
 
         fake_tokens = {"yes": "tok_yes", "no": "tok_no"}
-        with patch("predict._get_clob_tokens_safe", return_value=fake_tokens), \
+        with patch("clob_depth.get_clob_tokens_safe", return_value=fake_tokens), \
              patch("trade._get_live_token_mid", return_value=0.50):
             orders_1 = execute_trades(db, cycle=10)
             orders_2 = execute_trades(db, cycle=10)  # Second call, same cycle
@@ -588,21 +588,18 @@ class TestLiveOrderbook:
 
 
 class TestClobTokenImport:
-    """Regression: trade.py must import the correct clob token function name."""
+    """Regression: trade.py must import the correct clob token function."""
 
-    def test_clob_token_import_name_matches_predict(self):
-        """Verify trade.py imports _get_clob_tokens_safe (not the old name _get_clob_tokens).
+    def test_clob_token_import_from_clob_depth(self):
+        """Verify trade.py imports get_clob_tokens_safe from clob_depth (not predict).
 
-        Bug: trade.py imported _get_clob_tokens which was renamed to _get_clob_tokens_safe
-        in the refactor commit. The silent except swallowed the ImportError, causing all
-        live orders to fail with missing_clob_token_id.
+        History: Originally trade.py imported _get_clob_tokens from predict, which was
+        renamed to _get_clob_tokens_safe. The silent except swallowed ImportError.
+        Phase B Step 4 moved it to clob_depth.get_clob_tokens_safe (its proper home).
         """
         source = Path(__file__).parent.parent / "src" / "trade.py"
         content = source.read_text()
-        assert "_get_clob_tokens_safe" in content, \
-            "trade.py must import _get_clob_tokens_safe from predict"
-        # Ensure the old broken import is gone (could appear in comments, so check code lines)
-        code_lines = [l for l in content.splitlines() if not l.strip().startswith("#")]
-        code_only = "\n".join(code_lines)
-        assert "from predict import _get_clob_tokens\n" not in code_only, \
-            "trade.py still has old broken import 'from predict import _get_clob_tokens'"
+        assert "get_clob_tokens_safe" in content, \
+            "trade.py must import get_clob_tokens_safe"
+        assert "from clob_depth import get_clob_tokens_safe" in content, \
+            "trade.py must import get_clob_tokens_safe from clob_depth (not predict)"

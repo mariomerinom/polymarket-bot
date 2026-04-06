@@ -227,6 +227,15 @@ def format_liquidity_log(summary: dict) -> str:
     )
 
 
+def get_clob_tokens_safe(market_id):
+    """Wrapper that returns tokens or None without blowing up.
+
+    Moved from predict.py (was _get_clob_tokens_safe) — this is a CLOB concern,
+    not a prediction concern. Phase B Step 4 of TDD refactoring.
+    """
+    return get_clob_tokens(market_id)
+
+
 def get_clob_tokens(market_id):
     """
     Look up CLOB token IDs for a Polymarket market.

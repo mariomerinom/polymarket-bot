@@ -16,9 +16,9 @@ import sys
 from datetime import datetime, timezone
 
 from btc_data import fetch_btc_candles
-from clob_depth import get_order_book, analyze_depth
+from clob_depth import get_order_book, analyze_depth, get_clob_tokens_safe
 from fetch_markets import fetch_active_markets, init_db, store_markets
-from predict import momentum_signal, _get_clob_tokens_safe
+from predict import momentum_signal
 from trade import place_order, ensure_orders_table, TRADING_ENABLED
 
 BET_SIZE = 5  # $5 — hardcoded smoke test size
@@ -71,7 +71,7 @@ def main():
 
     # 4. Resolve CLOB tokens + get real orderbook price
     print("[4/5] Resolving CLOB tokens...")
-    tokens = _get_clob_tokens_safe(market["id"])
+    tokens = get_clob_tokens_safe(market["id"])
     if not tokens:
         print(f"FAIL: Could not resolve CLOB tokens for {market['id']}")
         sys.exit(1)

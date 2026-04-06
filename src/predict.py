@@ -208,7 +208,12 @@ def momentum_signal(candles, min_streak=None, config_key="btc_5m"):
 
 
 def _get_clob_tokens_safe(market_id):
-    """Wrapper that returns tokens or None without blowing up."""
+    """Wrapper that returns tokens or None without blowing up.
+
+    DEPRECATED: Use clob_depth.get_clob_tokens_safe() instead.
+    Kept here for internal predict.py usage and backward compatibility.
+    New callers should import from clob_depth directly.
+    """
     if get_clob_tokens:
         return get_clob_tokens(market_id)
     return None
