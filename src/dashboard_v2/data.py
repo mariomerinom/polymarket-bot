@@ -700,12 +700,33 @@ def get_breaker_status(db, asset="BTC", subtitle=""):
             """, (f"{today}%", status_settled)).fetchone()
             daily_loss = abs(row[0]) if row else 0.0
 
+            # Match trade.py::_check_consecutive_losses — no date filter.
+            # The breaker blocks on ANY recent consecutive losses, not just
+            # today's. Dashboard must reflect the same reality or it lies
+            # (incident 2026-04-06: 5 losses from yesterday blocked trading
+            # while dashboard cheerfully showed 0/5).
             rows = db.execute(f"""
                 SELECT pnl FROM {table_name}
                 WHERE status = ? AND pnl IS NOT NULL
-                  AND {settled_col} LIKE ?
                 ORDER BY {settled_col} DESC LIMIT 50
-            """, (status_settled, f"{today}%")).fetchall()
+            """, (status_settled,)).fetchall()
+
+            # Apply same 8h auto-reset as the actual breaker so dashboard
+            # matches should_trade() behavior.
+            try:
+                last = db.execute(f"""
+                    SELECT {settled_col} FROM {table_name}
+                    WHERE status = ? AND {settled_col} IS NOT NULL
+                    ORDER BY {settled_col} DESC LIMIT 1
+                """, (status_settled,)).fetchone()
+                if last and last[0]:
+                    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+                    settled_time = _dt.fromisoformat(last[0].replace("Z", "+00:00"))
+                    if (_now_utc() - settled_time) > _td(hours=8):
+                        rows = []  # Auto-reset: cooldown elapsed
+            except (ValueError, TypeError):
+                pass
+
             for r in rows:
                 if r[0] < 0:
                     consecutive_losses += 1

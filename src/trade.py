@@ -128,7 +128,31 @@ def should_trade(prediction_row, db):
 
 
 def _check_consecutive_losses(db):
-    """Count current consecutive loss streak (most recent settled orders)."""
+    """Count current consecutive loss streak (most recent settled orders).
+
+    Auto-resets after CONSECUTIVE_LOSS_COOLDOWN_HOURS (default 8) hours
+    since the last settled order — prevents permanent deadlock where the
+    breaker blocks all trades so no win can ever reset it.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    CONSECUTIVE_LOSS_COOLDOWN_HOURS = 8
+
+    # Check if last settled order is old enough to auto-reset
+    last_settled = db.execute("""
+        SELECT settled_at FROM orders
+        WHERE status = 'settled' AND settled_at IS NOT NULL
+        ORDER BY settled_at DESC LIMIT 1
+    """).fetchone()
+    if last_settled and last_settled[0]:
+        try:
+            settled_time = datetime.fromisoformat(last_settled[0].replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            if (now - settled_time) > timedelta(hours=CONSECUTIVE_LOSS_COOLDOWN_HOURS):
+                return 0  # Auto-reset: cooldown elapsed
+        except (ValueError, TypeError):
+            pass
+
     rows = db.execute("""
         SELECT pnl FROM orders
         WHERE status = 'settled' AND pnl IS NOT NULL

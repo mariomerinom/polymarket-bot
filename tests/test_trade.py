@@ -59,17 +59,19 @@ class TestShouldTrade:
 
     def test_consecutive_loss_breaker(self):
         """After N consecutive losses, should_trade returns False."""
+        from datetime import datetime, timezone, timedelta
         from trade import should_trade, ensure_orders_table
         db = _make_db()
         ensure_orders_table(db)
-        # Insert 5 consecutive losses (settled)
+        # Use recent timestamps (within 8h cooldown window)
+        now = datetime.now(timezone.utc)
         for i in range(5):
+            ts = (now - timedelta(minutes=10 + i)).isoformat()
             db.execute("""
                 INSERT INTO orders (market_id, direction, size, status, mode,
                     placed_at, settled_at, pnl)
-                VALUES (?, 'UP', 25, 'settled', 'paper', '2026-03-30T10:00:00',
-                    '2026-03-30T10:05:00', -25)
-            """, (f"mkt_loss_{i}",))
+                VALUES (?, 'UP', 25, 'settled', 'paper', ?, ?, -25)
+            """, (f"mkt_loss_{i}", ts, ts))
         db.commit()
         pred = {"conviction_score": 4, "estimate": 0.65}
         ok, reason = should_trade(pred, db)
@@ -79,28 +81,49 @@ class TestShouldTrade:
 
     def test_consecutive_loss_resets_on_win(self):
         """A win resets the consecutive loss streak."""
+        from datetime import datetime, timezone, timedelta
         from trade import should_trade, ensure_orders_table
         db = _make_db()
         ensure_orders_table(db)
         # 3 losses then 1 win then 2 losses = streak of 2 (not 5)
-        orders = [
-            ("mkt_1", -25, "2026-03-30T10:01:00"),
-            ("mkt_2", -25, "2026-03-30T10:02:00"),
-            ("mkt_3", -25, "2026-03-30T10:03:00"),
-            ("mkt_4", 30,  "2026-03-30T10:04:00"),  # WIN
-            ("mkt_5", -25, "2026-03-30T10:05:00"),
-            ("mkt_6", -25, "2026-03-30T10:06:00"),
-        ]
-        for mid, pnl, settled in orders:
+        # Use recent timestamps within 8h cooldown window
+        now = datetime.now(timezone.utc)
+        pnls = [-25, -25, -25, 30, -25, -25]
+        for i, pnl in enumerate(pnls):
+            ts = (now - timedelta(minutes=60 - i * 10)).isoformat()
             db.execute("""
                 INSERT INTO orders (market_id, direction, size, status, mode,
                     placed_at, settled_at, pnl)
-                VALUES (?, 'UP', 25, 'settled', 'paper', '2026-03-30T10:00:00', ?, ?)
-            """, (mid, settled, pnl))
+                VALUES (?, 'UP', 25, 'settled', 'paper', ?, ?, ?)
+            """, (f"mkt_{i}", ts, ts, pnl))
         db.commit()
         pred = {"conviction_score": 4, "estimate": 0.65}
         ok, reason = should_trade(pred, db)
         assert ok  # Only 2 consecutive losses, not 5
+        db.close()
+
+    def test_consecutive_loss_auto_resets_after_cooldown(self):
+        """Regression: consecutive loss breaker must auto-reset after 8h to
+        prevent permanent deadlock (incident 2026-04-06: 5 losses on Apr 5
+        locked out all trading for 30+ hours since breaker can't get a win
+        to reset itself if it blocks all trades).
+        """
+        from datetime import datetime, timezone, timedelta
+        from trade import should_trade, ensure_orders_table
+        db = _make_db()
+        ensure_orders_table(db)
+        # 5 losses, all > 8 hours ago → breaker should auto-reset
+        old = (datetime.now(timezone.utc) - timedelta(hours=10)).isoformat()
+        for i in range(5):
+            db.execute("""
+                INSERT INTO orders (market_id, direction, size, status, mode,
+                    placed_at, settled_at, pnl)
+                VALUES (?, 'UP', 25, 'settled', 'paper', ?, ?, -25)
+            """, (f"mkt_old_{i}", old, old))
+        db.commit()
+        pred = {"conviction_score": 4, "estimate": 0.65}
+        ok, reason = should_trade(pred, db)
+        assert ok, f"breaker should auto-reset after 8h cooldown, got: {reason}"
         db.close()
 
     # max_drawdown_breaker removed — cold start bug tripped at 78.5% on $17 peak.
