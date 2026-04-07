@@ -42,6 +42,18 @@ MAX_SLIPPAGE_SPREAD = float(_env("MAX_SLIPPAGE_SPREAD", "0.05"))  # 5¢ max abov
 # FOK execution layer (Phase 1): min_edge = spread + FOK_EDGE_BUFFER
 FOK_EDGE_BUFFER = float(_env("FOK_EDGE_BUFFER", "0.02"))  # 2¢ above spread
 
+# Lever B (spec_fill_adverse_selection.md): minimum edge that must remain
+# AFTER the price cushion is applied. If applying any cushion would push the
+# net edge below this floor, the bet is skipped instead of taken at worse EV.
+# Reference: 2026-04-06 incident — naive 1¢ cushion would convert marginal
+# +EV trades into losers when signal edge is small.
+MIN_POST_CUSHION_EDGE = float(_env("MIN_POST_CUSHION_EDGE", "0.02"))  # 2¢ floor
+
+# Lever B: maximum cushion above best_ask for FAK (IOC) orders. The actual
+# cushion applied is min(this, spread/2, alpha-cap). 1¢ is enough to walk
+# into the second level when the top-of-book gets pulled mid-flight.
+MAX_FAK_CUSHION = float(_env("MAX_FAK_CUSHION", "0.01"))  # 1¢ ceiling
+
 # Fee assumption for P&L.
 # Source: Polymarket docs — 2% on winning side, ~0% on losing.
 # 0.985 = (1 - 0.015) round-trip estimate. VERIFY if fee structure changes.

@@ -1,26 +1,192 @@
 """
-fill_diagnostic.py — Parse DIAG lines from VPS logs, compute summary statistics,
-output decision table for Phase 2 of the unified VPS + websocket spec.
+fill_diagnostic.py — Two complementary tools.
 
-Usage:
+(1) Lever B `fill_diagnostic` SQLite TABLE — `init_table`, `record`,
+    `fill_rate`, `fill_outcome_correlation`. Records every order attempt
+    (filled, killed, partial, skipped) so we can measure fill rate,
+    fill↔outcome correlation, and which failure mode dominates.
+    Reference: docs/specs/stochastic/spec_fill_adverse_selection.md
+
+(2) Phase-2 LOG PARSER — parses DIAG| lines emitted by trade.py and
+    produces snapshot_age, order_rtt, conviction-vs-drift verdicts. Older
+    feature, kept intact for backward compatibility.
+
+CLI usage (log parser):
     python src/fill_diagnostic.py --log-file logs/loop.log
-    python src/fill_diagnostic.py --log-file logs/loop.log --min-samples 20 --markdown
-
-Reads DIAG| lines emitted by trade.py and produces:
-  - snapshot_age_ms: p50, p95, p99
-  - order_rtt_ms: p50, p95, p99
-  - price_drift grouped by conviction tier: median, mean, std
-  - Mann-Whitney U test: conv=3 drift vs conv=5 drift
-  - Auto-generated decision verdicts from spec decision rules
 """
 
 import argparse
 import re
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# (1) Lever B — fill_diagnostic SQLite table
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Allowed result codes. Anything outside this set is rejected at insert time
+# to prevent silent corruption from typos.
+RESULT_CODES = frozenset({
+    # Filled paths (denominator + numerator of fill_rate)
+    "filled_full",
+    "filled_partial",
+    # Failed paths (denominator only)
+    "killed_fok",
+    "cancelled_ioc_residual",
+    # Skipped paths (excluded from fill_rate denominator)
+    "skipped_cushion_eats_edge",
+    "skipped_book_moved",
+    "skipped_ghost_liquidity",
+    # Pipeline-level pause (Lever C)
+    "paused_adverse_microstructure",
+    # Catch-all for unexpected exceptions during submission
+    "submit_error",
+})
+
+
+def init_table(db):
+    """Create the fill_diagnostic table if it does not exist. Idempotent."""
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS fill_diagnostic (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER,
+            timestamp TEXT NOT NULL,
+            cycle INTEGER,
+            pipeline TEXT NOT NULL,
+            decision_best_bid REAL,
+            decision_best_ask REAL,
+            decision_spread REAL,
+            decision_top_ask_size REAL,
+            decision_max_bet_2pct REAL,
+            response_best_bid REAL,
+            response_best_ask REAL,
+            requested_size REAL,
+            requested_limit REAL,
+            filled_size REAL,
+            filled_avg_price REAL,
+            order_type TEXT,
+            cushion REAL,
+            result TEXT NOT NULL,
+            outcome INTEGER,
+            resolved_at TEXT
+        )
+    """)
+    db.commit()
+
+
+def record(
+    db,
+    *,
+    pipeline,
+    result,
+    order_id=None,
+    cycle=None,
+    decision_best_bid=None,
+    decision_best_ask=None,
+    decision_spread=None,
+    decision_top_ask_size=None,
+    decision_max_bet_2pct=None,
+    response_best_bid=None,
+    response_best_ask=None,
+    requested_size=None,
+    requested_limit=None,
+    filled_size=None,
+    filled_avg_price=None,
+    order_type=None,
+    cushion=None,
+    outcome=None,
+    resolved_at=None,
+):
+    """Insert one diagnostic row. Required: pipeline, result. Other fields nullable."""
+    if result not in RESULT_CODES:
+        raise ValueError(
+            f"unknown fill_diagnostic result code: {result!r}. "
+            f"Allowed: {sorted(RESULT_CODES)}"
+        )
+    init_table(db)
+    db.execute("""
+        INSERT INTO fill_diagnostic (
+            order_id, timestamp, cycle, pipeline,
+            decision_best_bid, decision_best_ask, decision_spread,
+            decision_top_ask_size, decision_max_bet_2pct,
+            response_best_bid, response_best_ask,
+            requested_size, requested_limit,
+            filled_size, filled_avg_price,
+            order_type, cushion, result,
+            outcome, resolved_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        order_id,
+        datetime.now(timezone.utc).isoformat(),
+        cycle,
+        pipeline,
+        decision_best_bid, decision_best_ask, decision_spread,
+        decision_top_ask_size, decision_max_bet_2pct,
+        response_best_bid, response_best_ask,
+        requested_size, requested_limit,
+        filled_size, filled_avg_price,
+        order_type, cushion, result,
+        outcome, resolved_at,
+    ))
+    db.commit()
+
+
+# Result codes that count as "fired" (i.e. went to CLOB)
+FIRED_CODES = ("filled_full", "filled_partial", "killed_fok",
+               "cancelled_ioc_residual", "submit_error")
+FILLED_CODES = ("filled_full", "filled_partial")
+
+
+def fill_rate(db, pipeline):
+    """Fraction of fired orders that filled (full or partial). Skips excluded."""
+    placeholders = ",".join("?" * len(FIRED_CODES))
+    fired = db.execute(
+        f"SELECT COUNT(*) FROM fill_diagnostic WHERE pipeline = ? AND result IN ({placeholders})",
+        (pipeline, *FIRED_CODES),
+    ).fetchone()[0]
+    if fired == 0:
+        return 0.0
+    placeholders_filled = ",".join("?" * len(FILLED_CODES))
+    filled = db.execute(
+        f"SELECT COUNT(*) FROM fill_diagnostic WHERE pipeline = ? AND result IN ({placeholders_filled})",
+        (pipeline, *FILLED_CODES),
+    ).fetchone()[0]
+    return filled / fired
+
+
+def fill_outcome_correlation(db, pipeline):
+    """Pearson corr(filled, won) on fired+resolved rows. None if n<10."""
+    placeholders = ",".join("?" * len(FIRED_CODES))
+    rows = db.execute(
+        f"""SELECT result, outcome
+            FROM fill_diagnostic
+            WHERE pipeline = ? AND result IN ({placeholders}) AND outcome IS NOT NULL""",
+        (pipeline, *FIRED_CODES),
+    ).fetchall()
+    if len(rows) < 10:
+        return None
+    pairs = [(1 if r[0] in FILLED_CODES else 0, int(r[1])) for r in rows]
+    n = len(pairs)
+    sum_x = sum(p[0] for p in pairs)
+    sum_y = sum(p[1] for p in pairs)
+    sum_xy = sum(p[0] * p[1] for p in pairs)
+    sum_x2 = sum(p[0] ** 2 for p in pairs)
+    sum_y2 = sum(p[1] ** 2 for p in pairs)
+    num = n * sum_xy - sum_x * sum_y
+    den_sq = (n * sum_x2 - sum_x ** 2) * (n * sum_y2 - sum_y ** 2)
+    if den_sq <= 0:
+        return 0.0
+    return num / (den_sq ** 0.5)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# (2) Legacy log parser — DIAG line analysis
+# ═══════════════════════════════════════════════════════════════════════════
 
 
 def parse_diag_lines(log_path):

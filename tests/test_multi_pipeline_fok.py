@@ -216,9 +216,10 @@ class TestFOKAcrossAllPipelines:
 
         order, reason = compute_order(pred, market)
         assert order is not None, f"Should produce order: {reason}"
-        assert order["order_type"] == "fok"
-        assert order["action"] == "fok_take"
-        assert order["price_limit"] == 0.56  # best_ask for BUY
+        assert order["order_type"] == "fak"
+        assert order["action"] == "fak_take"
+        # best_ask + cushion(min(0.01, spread/2=0.01, alpha)) = 0.56 + 0.01
+        assert order["price_limit"] == 0.57
 
     def test_15m_gets_fok_with_ws_data(self):
         """BTC 15m pipeline with WS bid/ask produces order_type=fok, not gtc."""
@@ -234,5 +235,5 @@ class TestFOKAcrossAllPipelines:
 
         order, reason = compute_order(pred, market)
         assert order is not None, f"Should produce order: {reason}"
-        assert order["order_type"] == "fok"
-        assert order["action"] == "fok_take"
+        assert order["order_type"] == "fak"
+        assert order["action"] == "fak_take"

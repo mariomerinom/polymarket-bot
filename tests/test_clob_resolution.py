@@ -132,8 +132,8 @@ class TestClobResolution:
         order = orders[0]
         assert order["direction"] == "UP"
         assert order["status"] == "paper"
-        # FOK: price_limit = best_ask = 0.56
-        assert order["price_limit"] == 0.56
+        # FAK: price_limit = best_ask + cushion = 0.56 + 0.01 = 0.57
+        assert order["price_limit"] == 0.57
         assert order["price_limit"] is not None
 
         db.close()

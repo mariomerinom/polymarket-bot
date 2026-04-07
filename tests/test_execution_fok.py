@@ -91,7 +91,7 @@ class TestTakeOrSkip:
         order, reason = compute_order(pred, market)
         assert order is not None
         # edge = 0.70 - 0.57 = 0.13; min_edge = 0.04 + 0.02 = 0.06; take
-        assert order["action"] == "fok_take"
+        assert order["action"] == "fak_take"
 
     def test_weak_edge_skips(self):
         """Edge below min_edge => skip, no order (AC-2.2)."""
@@ -119,7 +119,8 @@ class TestTakeOrSkip:
             "_no_best_ask": 0.47, "_no_best_bid": 0.43, "_no_spread": 0.04,
         }
         order, _ = compute_order(pred, market)
-        assert order["price_limit"] == 0.57  # best_ask, not estimate
+        # best_ask + cushion(min(0.01, 0.04/2, alpha)) = 0.57 + 0.01
+        assert order["price_limit"] == 0.58
 
     def test_fok_price_is_no_best_ask_for_sell(self):
         """FOK submits at no_best_ask for DOWN."""
@@ -133,7 +134,8 @@ class TestTakeOrSkip:
         }
         order, _ = compute_order(pred, market)
         assert order is not None
-        assert order["price_limit"] == 0.47  # NO token best_ask
+        # no_best_ask + cushion = 0.47 + 0.01
+        assert order["price_limit"] == 0.48
 
     def test_no_bid_ask_falls_back_to_legacy(self):
         """Without _yes_best_ask, falls back to legacy GTC logic (paper pipelines)."""
@@ -192,7 +194,7 @@ class TestFOKMetadata:
         assert "best_ask" in order
         assert "best_bid" in order
         assert "action" in order
-        assert order["action"] == "fok_take"
+        assert order["action"] == "fak_take"
         assert order["spread"] == 0.04
         assert order["best_ask"] == 0.57
         assert order["best_bid"] == 0.53
@@ -407,12 +409,12 @@ class TestFOKSubmission:
 
         fake_response = {"orderID": "fok_123", "status": "MATCHED", "success": True}
         with patch("trade.TRADING_ENABLED", True), \
-             patch("trade._submit_fok_order", return_value=fake_response):
+             patch("trade._submit_fak_order", return_value=fake_response):
             result = place_order(db, "mkt_1", 1, order_params, cycle=1,
                                  clob_token_id="tok_yes")
 
         assert result["status"] == "filled"
-        assert result["action"] == "fok_filled"
+        assert result["action"] == "fak_filled"
         assert result["filled_at"] is not None
         assert result["order_id"] == "fok_123"
 
@@ -432,12 +434,12 @@ class TestFOKSubmission:
 
         fake_response = {"orderID": None, "status": "UNMATCHED", "success": False}
         with patch("trade.TRADING_ENABLED", True), \
-             patch("trade._submit_fok_order", return_value=fake_response):
+             patch("trade._submit_fak_order", return_value=fake_response):
             result = place_order(db, "mkt_1", 1, order_params, cycle=1,
                                  clob_token_id="tok_yes")
 
-        assert result["status"] == "fok_rejected"
-        assert result["action"] == "fok_rejected"
+        assert result["status"] == "fak_rejected"
+        assert result["action"] == "fak_rejected"
 
         db.close()
 
@@ -454,7 +456,7 @@ class TestFOKSubmission:
         }
 
         with patch("trade.TRADING_ENABLED", True), \
-             patch("trade._submit_fok_order", side_effect=RuntimeError("API down")):
+             patch("trade._submit_fak_order", side_effect=RuntimeError("API down")):
             result = place_order(db, "mkt_1", 1, order_params, cycle=1,
                                  clob_token_id="tok_yes")
 
@@ -478,13 +480,13 @@ class TestFOKSubmission:
         fake_response = {"orderID": "gtc_456", "status": "live"}
         with patch("trade.TRADING_ENABLED", True), \
              patch("trade._submit_clob_order", return_value=fake_response) as mock_gtc, \
-             patch("trade._submit_fok_order") as mock_fok:
+             patch("trade._submit_fak_order") as mock_fak:
             result = place_order(db, "mkt_1", 1, order_params, cycle=1,
                                  clob_token_id="tok_yes")
 
         assert result["status"] == "submitted"
         mock_gtc.assert_called_once()
-        mock_fok.assert_not_called()
+        mock_fak.assert_not_called()
 
         db.close()
 
@@ -502,11 +504,11 @@ class TestFOKSubmission:
 
         fake_response = {"orderID": "fok_789", "status": "MATCHED", "success": True}
         with patch("trade.TRADING_ENABLED", True), \
-             patch("trade._submit_fok_order", return_value=fake_response) as mock_fok:
+             patch("trade._submit_fak_order", return_value=fake_response) as mock_fak:
             place_order(db, "mkt_1", 1, order_params, cycle=1,
                         clob_token_id="tok_yes")
 
-        mock_fok.assert_called_once_with(
+        mock_fak.assert_called_once_with(
             token_id="tok_yes",
             side="BUY",
             amount=25,

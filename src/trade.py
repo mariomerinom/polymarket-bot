@@ -216,7 +216,7 @@ def compute_order(prediction_row, market_row, liquidity=None):
         edge, spread, best_bid, best_ask, action, order_type.
         Or (None, reason_string) if order can't be placed.
     """
-    from config import FOK_EDGE_BUFFER
+    from config import FOK_EDGE_BUFFER, MAX_FAK_CUSHION, MIN_POST_CUSHION_EDGE
 
     estimate = prediction_row["estimate"]
     direction = "UP" if estimate > 0.5 else "DOWN"
@@ -244,11 +244,17 @@ def compute_order(prediction_row, market_row, liquidity=None):
             min_edge = spread + FOK_EDGE_BUFFER
             if edge < min_edge:
                 return None, f"skipped_low_edge (edge={edge:.4f} < min={min_edge:.4f})"
-            price_limit = best_ask
-            action = "fok_take"
-            order_type = "fok"
+            spread_cushion = min(MAX_FAK_CUSHION, spread / 2)
+            alpha_cushion = max(0.0, (estimate - best_ask) - MIN_POST_CUSHION_EDGE)
+            cushion = min(spread_cushion, alpha_cushion)
+            if cushion <= 0:
+                return None, "skipped_cushion_eats_edge"
+            price_limit = best_ask + cushion
+            action = "fak_take"
+            order_type = "fak"
         else:
             # Legacy fallback for paper pipelines without WS feed
+            cushion = None
             fill_adjusted = estimate + FILL_PRIORITY_SPREAD
             max_price = market_price_yes + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
             price_limit = min(fill_adjusted, max_price)
@@ -279,14 +285,20 @@ def compute_order(prediction_row, market_row, liquidity=None):
             min_edge = no_spread + FOK_EDGE_BUFFER
             if edge < min_edge:
                 return None, f"skipped_low_edge (edge={edge:.4f} < min={min_edge:.4f})"
-            price_limit = no_best_ask
+            spread_cushion = min(MAX_FAK_CUSHION, no_spread / 2)
+            alpha_cushion = max(0.0, ((1 - estimate) - no_best_ask) - MIN_POST_CUSHION_EDGE)
+            cushion = min(spread_cushion, alpha_cushion)
+            if cushion <= 0:
+                return None, "skipped_cushion_eats_edge"
+            price_limit = no_best_ask + cushion
             best_ask = no_best_ask
             best_bid = no_best_bid
             spread = no_spread
-            action = "fok_take"
-            order_type = "fok"
+            action = "fak_take"
+            order_type = "fak"
         else:
             # Legacy fallback
+            cushion = None
             fill_adjusted = (1 - estimate) + FILL_PRIORITY_SPREAD
             max_price = market_price_no + MAX_SLIPPAGE_SPREAD + FILL_PRIORITY_SPREAD
             price_limit = min(fill_adjusted, max_price)
@@ -326,6 +338,7 @@ def compute_order(prediction_row, market_row, liquidity=None):
         "best_ask": best_ask,
         "action": action,
         "order_type": order_type,
+        "cushion": cushion,
     }, "ok"
 
 
@@ -393,13 +406,13 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         _store_order(db, order_record)
         return order_record
 
-    is_fok = order_params.get("order_type") == "fok"
+    is_fak = order_params.get("order_type") in ("fak", "fok")
 
     try:
         t0 = time.monotonic()
-        if is_fok:
-            # FOK: immediate fill or cancel — no resting in book
-            result = _submit_fok_order(
+        if is_fak:
+            # FAK (IOC): take available liquidity, kill remainder
+            result = _submit_fak_order(
                 token_id=clob_token_id,
                 side=order_params["side"],
                 amount=order_params["size"],  # dollars, SDK handles conversion
@@ -418,19 +431,19 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         order_id = result.get("orderID") or result.get("order_id")
         order_record["order_id"] = order_id
 
-        if is_fok:
-            # FOK fills instantly — no pending state. Check response status.
+        if is_fak:
+            # FAK (IOC): immediate take or kill, partial fills allowed.
             status = (result.get("status") or "").upper()
             if status == "MATCHED" or result.get("success"):
                 order_record["status"] = "filled"
-                order_record["action"] = "fok_filled"
+                order_record["action"] = "fak_filled"
                 order_record["filled_at"] = datetime.now(timezone.utc).isoformat()
                 order_record["price_filled"] = order_params["price_limit"]
-                print(f"    FOK|filled|rtt={rtt_ms:.0f}ms|edge={order_params.get('edge', '?')}")
+                print(f"    FAK|filled|rtt={rtt_ms:.0f}ms|edge={order_params.get('edge', '?')}")
             else:
-                order_record["status"] = "fok_rejected"
-                order_record["action"] = "fok_rejected"
-                print(f"    FOK|rejected|rtt={rtt_ms:.0f}ms|reason={result.get('status', 'unknown')}")
+                order_record["status"] = "fak_rejected"
+                order_record["action"] = "fak_rejected"
+                print(f"    FAK|rejected|rtt={rtt_ms:.0f}ms|reason={result.get('status', 'unknown')}")
         else:
             # GTC: order rests in book, settle later
             order_record["status"] = "submitted"
@@ -439,7 +452,7 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         order_record["reason"] = json.dumps(result)
     except Exception as e:
         rtt_ms = (time.monotonic() - t0) * 1000
-        print(f"    {'FOK' if is_fok else 'DIAG'}|order_rtt_ms={rtt_ms:.0f}|status=error")
+        print(f"    {'FAK' if is_fak else 'DIAG'}|order_rtt_ms={rtt_ms:.0f}|status=error")
         order_record["status"] = "failed"
         order_record["reason"] = str(e)
 
@@ -558,12 +571,12 @@ def _submit_clob_order(token_id, side, size, price):
     return response
 
 
-def _submit_fok_order(token_id, side, amount, price):
+def _submit_fak_order(token_id, side, amount, price):
     """
-    Submit a Fill-Or-Kill order to Polymarket CLOB.
+    Submit a Fill-And-Kill (IOC) order to Polymarket CLOB.
 
-    FOK fills immediately at the specified price or cancels entirely.
-    No partial fills, no resting in the book, no adverse selection.
+    FAK takes whatever liquidity is available at the limit and cancels
+    the unfilled remainder. Allows partial fills (unlike FOK).
 
     Args:
         token_id: CLOB token ID for the outcome
@@ -594,7 +607,7 @@ def _submit_fok_order(token_id, side, amount, price):
 
     def _submit():
         signed_order = client.create_market_order(market_order_args)
-        return client.post_order(signed_order, orderType=OrderType.FOK)
+        return client.post_order(signed_order, orderType=OrderType.FAK)
 
     with ThreadPoolExecutor(max_workers=1) as _ex:
         _fut = _ex.submit(_submit)
@@ -606,6 +619,10 @@ def _submit_fok_order(token_id, side, amount, price):
             )
 
     return response
+
+
+# Backward-compat alias during FOK→FAK transition.
+_submit_fok_order = _submit_fak_order
 
 
 # ── Settlement ────────────────────────────────────────────────────────────────
