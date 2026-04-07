@@ -40,12 +40,21 @@ RESULT_CODES = frozenset({
     "cancelled_ioc_residual",
     # Skipped paths (excluded from fill_rate denominator)
     "skipped_cushion_eats_edge",
+    "skipped_low_edge",
+    "skipped_thin_book",
     "skipped_book_moved",
     "skipped_ghost_liquidity",
+    "skipped_other",
     # Pipeline-level pause (Lever C)
     "paused_adverse_microstructure",
     # Catch-all for unexpected exceptions during submission
     "submit_error",
+    # Paper-mode placeholder (would have fired in live)
+    "paper_would_fire",
+    # Infrastructure failures
+    "missing_token",
+    # Legacy GTC path still in use for paper pipelines w/o WS bid/ask
+    "gtc_submitted",
 })
 
 

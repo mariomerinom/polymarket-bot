@@ -343,7 +343,7 @@ def compute_order(prediction_row, market_row, liquidity=None):
 
 
 def place_order(db, market_id, prediction_id, order_params, cycle,
-                clob_token_id=None, trading_enabled=None):
+                clob_token_id=None, trading_enabled=None, pipeline_name=None):
     """
     Place an order — either log-only (paper) or live via CLOB SDK.
 
@@ -392,11 +392,35 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         "action": order_params.get("action"),
     }
 
+    def _diag(result_code, filled_size=None, filled_avg_price=None):
+        try:
+            import fill_diagnostic
+            fill_diagnostic.init_table(db)
+            fill_diagnostic.record(
+                db,
+                pipeline=pipeline_name or "unknown",
+                result=result_code,
+                cycle=cycle,
+                decision_best_bid=order_params.get("best_bid"),
+                decision_best_ask=order_params.get("best_ask"),
+                decision_spread=order_params.get("spread"),
+                requested_size=order_params.get("size"),
+                requested_limit=order_params.get("price_limit"),
+                filled_size=filled_size,
+                filled_avg_price=filled_avg_price,
+                order_type=order_params.get("order_type"),
+                cushion=order_params.get("cushion"),
+            )
+        except Exception as _e:
+            import logging
+            logging.getLogger("trade").warning(f"fill_diagnostic.record failed: {_e}")
+
     if not trading_enabled:
         # Paper mode — log what we would have done
         order_record["status"] = "paper"
         order_record["reason"] = "trading_disabled"
         _store_order(db, order_record)
+        _diag("paper_would_fire")
         return order_record
 
     # Live mode — submit to Polymarket CLOB
@@ -404,6 +428,7 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         order_record["status"] = "failed"
         order_record["reason"] = "missing_clob_token_id"
         _store_order(db, order_record)
+        _diag("missing_token")
         return order_record
 
     is_fak = order_params.get("order_type") in ("fak", "fok")
@@ -440,14 +465,21 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
                 order_record["filled_at"] = datetime.now(timezone.utc).isoformat()
                 order_record["price_filled"] = order_params["price_limit"]
                 print(f"    FAK|filled|rtt={rtt_ms:.0f}ms|edge={order_params.get('edge', '?')}")
+                _diag(
+                    "filled_full",
+                    filled_size=order_params.get("size"),
+                    filled_avg_price=order_params.get("price_limit"),
+                )
             else:
                 order_record["status"] = "fak_rejected"
                 order_record["action"] = "fak_rejected"
                 print(f"    FAK|rejected|rtt={rtt_ms:.0f}ms|reason={result.get('status', 'unknown')}")
+                _diag("killed_fok", filled_size=0)
         else:
             # GTC: order rests in book, settle later
             order_record["status"] = "submitted"
             print(f"    DIAG|order_rtt_ms={rtt_ms:.0f}|status={result.get('status', 'ok')}")
+            _diag("gtc_submitted")
 
         order_record["reason"] = json.dumps(result)
     except Exception as e:
@@ -455,6 +487,7 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         print(f"    {'FAK' if is_fak else 'DIAG'}|order_rtt_ms={rtt_ms:.0f}|status=error")
         order_record["status"] = "failed"
         order_record["reason"] = str(e)
+        _diag("submit_error")
 
     _store_order(db, order_record)
     return order_record
@@ -1066,6 +1099,30 @@ def execute_trades(db, cycle, pipeline_name=None):
 
         if order_params is None:
             print(f"    [{mode_label}] SKIP {pred['market_id'][:12]}... — {order_reason}")
+            # Record skips to fill_diagnostic for adverse-selection analysis
+            try:
+                import fill_diagnostic
+                fill_diagnostic.init_table(db)
+                if "cushion_eats_edge" in order_reason:
+                    result_code = "skipped_cushion"
+                elif "low_edge" in order_reason:
+                    result_code = "skipped_low_edge"
+                elif "book_too_thin" in order_reason:
+                    result_code = "skipped_thin_book"
+                else:
+                    result_code = "skipped_other"
+                fill_diagnostic.record(
+                    db,
+                    pipeline=pipeline_name or "unknown",
+                    result=result_code,
+                    cycle=cycle,
+                    decision_best_bid=market_row.get("_yes_best_bid"),
+                    decision_best_ask=market_row.get("_yes_best_ask"),
+                    decision_spread=market_row.get("_yes_spread"),
+                )
+            except Exception as _e:
+                import logging
+                logging.getLogger("trade").warning(f"fill_diagnostic skip-record failed: {_e}")
             continue
 
         # CLOB token ID for order submission (already resolved above)
@@ -1081,6 +1138,7 @@ def execute_trades(db, cycle, pipeline_name=None):
             db, pred["market_id"], pred["id"], order_params, cycle,
             clob_token_id=clob_token_id,
             trading_enabled=trading_enabled,
+            pipeline_name=pipeline_name,
         )
 
         symbol = ">" if trading_enabled else "~"
