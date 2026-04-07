@@ -94,6 +94,43 @@ expected reversal loss on a streak=+5 bet.
 **What should have happened:** ≈ +$92 net (5W, 1L)
 **Delta cost of the bug in one 20-minute window:** ≈ $97
 
+### Verification: would the orders have filled?
+
+A fair question when claiming counterfactual P&L is whether the
+orders would have actually crossed the spread and filled, or
+whether a secondary issue (limit pricing, thin book) would have
+dropped them for a different reason.
+
+The orders table records the live CLOB book snapshot at
+order-placement time. For all 6 FOK orders in the project's
+history through 2026-04-06:
+
+| id | dir | price_limit | best_ask | Δ | action | status |
+|---|---|---|---|---|---|---|
+| 70 | DOWN | 0.51 | 0.51 | 0 | fok_take | failed (SIGALRM) |
+| 71 | DOWN | 0.50 | 0.50 | 0 | fok_take | failed (SIGALRM) |
+| 72 | DOWN | 0.49 | 0.49 | 0 | fok_take | failed (SIGALRM) |
+| 73 | DOWN | 0.37 | 0.37 | 0 | fok_take | failed (SIGALRM) |
+| 74 | DOWN | 0.56 | 0.56 | 0 | fok_filled | settled +$19.35 |
+| 75 | UP   | 0.53 | 0.53 | 0 | fok_filled | settled −$25.00 |
+
+**`price_limit == best_ask` on every order, zero deviation.** This
+matches the `compute_order` logic (`src/trade.py:247, 282`):
+
+```python
+price_limit = best_ask   # UP path
+price_limit = no_best_ask  # DOWN path
+```
+
+The pricing is deterministic: take the ask. Orders 70-73 were
+priced correctly to cross at submission time. The SIGALRM bug
+is the sole and sufficient cause of their failure; no secondary
+pricing issue exists.
+
+Once the fix shipped, the next two FOK orders (74, 75) filled
+cleanly at 0 slippage and settled with real P&L in both
+directions. The ~$97 counterfactual is defensible.
+
 ## Lessons
 
 ### 1. Silent failure is the most expensive class of bug
