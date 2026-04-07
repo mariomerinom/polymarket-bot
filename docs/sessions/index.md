@@ -2,7 +2,7 @@
 
 Working session summaries — what was built, shipped, learned, and kicked forward.
 
-- [2026-04-06](2026-04-06.md) — Engine down since 01:34 UTC; manual Apr 5 daily report; VPS restart pending
+- [2026-04-06](2026-04-06.md) — Incident response + major hardening: FOK execution, pipeline isolation, runtime state contract, breaker deadlock fix, dashboard health surfacing (22 commits)
 - [2026-04-05](2026-04-05.md) — Massive build day: VPS websocket engine (38 commits), CLOB pricing fix, TDD refactoring Phase B complete, GitHub Actions retired
 - [2026-04-04](2026-04-04.md) — Activity digest (auto-digest)
 - [2026-04-03](2026-04-03-0902.md) — Unified completion of dynamic pipeline constants (timeouts, limits, SQLite configuration delays) & complete removal of legacy conviction.py architecture.
