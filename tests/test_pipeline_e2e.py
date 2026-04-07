@@ -467,15 +467,15 @@ class TestPnLComputation:
         db.close()
 
     def test_only_filled_resolved_get_pnl(self):
-        """Paper orders and unresolved markets are skipped."""
+        """Paper orders on resolved markets settle; unresolved markets skip."""
         db = _make_pipeline_db()
-        # Paper order on resolved market
+        # Paper order on resolved market — should now settle (paper_settled)
         _insert_market(db, "m1", price_yes=0.50, resolved=1, outcome=1)
         db.execute("""INSERT INTO orders (market_id, prediction_id, direction, size,
             price_limit, status, mode, placed_at, cycle)
             VALUES ('m1', 1, 'UP', 25.0, 0.55, 'paper', 'paper',
             '2026-04-04T10:00:00', 1)""")
-        # Filled order on unresolved market
+        # Filled order on unresolved market — still skipped
         _insert_market(db, "m2", price_yes=0.50)
         db.execute("""INSERT INTO orders (market_id, prediction_id, direction, size,
             price_limit, price_filled, status, mode, placed_at, cycle)
@@ -484,7 +484,14 @@ class TestPnLComputation:
         db.commit()
 
         updated = compute_order_pnl(db)
-        assert updated == 0, "Neither paper nor unresolved should get PnL"
+        # Paper row m1 settles (1); m2 is unresolved (skip).
+        assert updated == 1
+        m1 = db.execute("SELECT status, pnl FROM orders WHERE market_id='m1'").fetchone()
+        assert m1[0] == "paper_settled"
+        assert m1[1] is not None and m1[1] > 0
+        m2 = db.execute("SELECT status, pnl FROM orders WHERE market_id='m2'").fetchone()
+        assert m2[0] == "filled"
+        assert m2[1] is None
         db.close()
 
 

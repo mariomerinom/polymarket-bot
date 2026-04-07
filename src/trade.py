@@ -811,22 +811,34 @@ def settle_orders(db, trading_enabled=None):
 
 def compute_order_pnl(db):
     """
-    Compute P&L for filled orders whose markets have resolved.
-    Updates the pnl column in orders table.
+    Compute P&L for orders whose markets have resolved.
+
+    Two paths:
+      - LIVE: status='filled' → 'settled', pnl from price_filled.
+      - PAPER: status='paper' → 'paper_settled', pnl assuming optimistic
+        fill at price_limit. Paper P&L is the upper-bound "what the
+        signal said." Real fill cost is measured separately via
+        fill_diagnostic on live FAK attempts.
+
+    Paper rows use a distinct status ('paper_settled') so they are
+    naturally excluded from the live circuit breaker in
+    system_state._compute_daily_loss().
 
     Returns number of orders with newly computed P&L.
     """
     cursor = db.execute("""
-        SELECT o.id, o.direction, o.size, o.price_filled, m.outcome
+        SELECT o.id, o.direction, o.size, o.price_filled, o.price_limit,
+               o.status, m.outcome
         FROM orders o
         JOIN markets m ON o.market_id = m.id
-        WHERE o.status = 'filled' AND o.pnl IS NULL AND m.resolved = 1
+        WHERE o.status IN ('filled', 'paper')
+          AND o.pnl IS NULL AND m.resolved = 1
     """)
     rows = cursor.fetchall()
 
     updated = 0
     for row in rows:
-        order_id, direction, size, price_filled, outcome = row
+        order_id, direction, size, price_filled, price_limit, status, outcome = row
 
         # Did we win?
         if direction == "UP":
@@ -834,18 +846,29 @@ def compute_order_pnl(db):
         else:
             won = outcome == 0
 
+        # Paper rows assume optimistic fill at price_limit.
+        is_paper = status == "paper"
+        execution_price = price_limit if is_paper else (price_filled or 0.5)
+        new_status = "paper_settled" if is_paper else "settled"
+
         if won:
             # Payout is $1 per share. Profit = (1/price - 1) * size * (1 - fee)
-            price = price_filled or 0.5
-            pnl = size * (1.0 / price - 1) * POLYMARKET_FEE_FACTOR
+            pnl = size * (1.0 / execution_price - 1) * POLYMARKET_FEE_FACTOR
         else:
             pnl = -size
 
         now = datetime.now(timezone.utc).isoformat()
-        db.execute("""
-            UPDATE orders SET pnl = ?, settled_at = ?, status = 'settled'
-            WHERE id = ?
-        """, (round(pnl, 2), now, order_id))
+        if is_paper:
+            db.execute("""
+                UPDATE orders SET pnl = ?, settled_at = ?, status = ?,
+                                  price_filled = ?
+                WHERE id = ?
+            """, (round(pnl, 2), now, new_status, execution_price, order_id))
+        else:
+            db.execute("""
+                UPDATE orders SET pnl = ?, settled_at = ?, status = ?
+                WHERE id = ?
+            """, (round(pnl, 2), now, new_status, order_id))
         updated += 1
 
     if updated:
