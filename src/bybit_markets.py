@@ -106,8 +106,24 @@ def init_db_bybit():
         )
     """)
 
+    # Phase 3: funding_cost column (idempotent migration for existing DBs)
+    cols = {r[1] for r in db.execute("PRAGMA table_info(positions)").fetchall()}
+    if "funding_cost" not in cols:
+        db.execute("ALTER TABLE positions ADD COLUMN funding_cost REAL DEFAULT 0")
+
     db.commit()
     return db
+
+
+def ensure_funding_cost_column(db):
+    """Idempotent ALTER for in-memory / test DBs that skipped init_db_bybit."""
+    try:
+        cols = {r[1] for r in db.execute("PRAGMA table_info(positions)").fetchall()}
+        if "funding_cost" not in cols:
+            db.execute("ALTER TABLE positions ADD COLUMN funding_cost REAL DEFAULT 0")
+            db.commit()
+    except Exception:
+        pass
 
 
 def create_synthetic_market(db, current_price, cycle_time=None):
@@ -191,8 +207,9 @@ def open_position(db, market_id, side, size, entry_price, stop_loss,
 
 
 def close_position(db, position_id, close_price, pnl, reason,
-                   bybit_order_id=None):
-    """Mark a position as closed with PnL and reason."""
+                   bybit_order_id=None, funding_cost=0.0):
+    """Mark a position as closed with PnL, reason, and funding cost."""
+    ensure_funding_cost_column(db)
     db.execute("""
         UPDATE positions SET
             status = 'closed',
@@ -200,11 +217,12 @@ def close_position(db, position_id, close_price, pnl, reason,
             close_price = ?,
             pnl = ?,
             close_reason = ?,
-            bybit_order_id = COALESCE(?, bybit_order_id)
+            bybit_order_id = COALESCE(?, bybit_order_id),
+            funding_cost = ?
         WHERE id = ?
     """, (
         datetime.now(timezone.utc).isoformat(),
-        close_price, pnl, reason, bybit_order_id, position_id,
+        close_price, pnl, reason, bybit_order_id, funding_cost, position_id,
     ))
     db.commit()
 

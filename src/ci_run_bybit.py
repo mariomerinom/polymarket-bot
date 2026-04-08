@@ -226,7 +226,8 @@ def main(candle_data=None, indicators=None):
     if is_bybit_kill_switched():
         print("  KILL SWITCH ACTIVE — skipping trades")
     else:
-        orders = execute_bybit_trades(db, cycle, candles, prediction)
+        orders = execute_bybit_trades(db, cycle, candles, prediction,
+                                      funding_rate=funding_rate or 0.0)
         if orders:
             for o in orders:
                 action = o.get("action", "?")

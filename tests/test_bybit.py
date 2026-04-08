@@ -523,6 +523,62 @@ class TestPaperOrderPlacement:
         assert get_open_position(bybit_db) is None
 
 
+class TestBybitFundingCost:
+    """Phase 3: funding cost accrues into P&L and is stored per position."""
+
+    def test_compute_funding_cost_long_pays_positive_rate(self):
+        from bybit_trade import _compute_funding_cost
+        # $25 notional ≈ 0.000298 BTC at 84k; use bigger size for clarity
+        cost = _compute_funding_cost(
+            side="Buy", size=1.0, entry_price=84000,
+            cycles_held=96, funding_rate=0.0001, cycle_minutes=5,
+        )
+        # 96 cycles × 5m = 480m = 8h → full funding window
+        # notional=84000, rate=0.0001 → charge=$8.40
+        assert abs(cost - 8.4) < 0.01
+
+    def test_compute_funding_cost_short_is_negative_of_long(self):
+        from bybit_trade import _compute_funding_cost
+        long = _compute_funding_cost("Buy", 1.0, 84000, 96, 0.0001)
+        short = _compute_funding_cost("Sell", 1.0, 84000, 96, 0.0001)
+        assert abs(long + short) < 1e-6
+
+    def test_compute_funding_cost_zero_rate_is_zero(self):
+        from bybit_trade import _compute_funding_cost
+        assert _compute_funding_cost("Buy", 0.005, 84000, 6, 0.0) == 0.0
+        assert _compute_funding_cost("Buy", 0.005, 84000, 6, None) == 0.0
+
+    def test_compute_funding_cost_prorates_by_hold_time(self):
+        from bybit_trade import _compute_funding_cost
+        full = _compute_funding_cost("Buy", 1.0, 84000, 96, 0.0001)
+        half = _compute_funding_cost("Buy", 1.0, 84000, 48, 0.0001)
+        assert abs(half - full / 2) < 1e-6
+
+    def test_close_position_stores_funding_cost(self, bybit_db):
+        from bybit_trade import close_bybit_position
+        from bybit_markets import open_position, get_open_position
+        open_position(bybit_db, "fund-test", "Buy", 1.0, 84000, 83850)
+        pos = get_open_position(bybit_db)
+        # Simulate 48 cycles held = 4h (half a funding window)
+        bybit_db.execute(
+            "UPDATE positions SET cycles_held = 48 WHERE id = ?", (pos["id"],)
+        )
+        bybit_db.commit()
+        pos = get_open_position(bybit_db)
+        with patch("bybit_trade.BYBIT_TRADING_ENABLED", False):
+            result = close_bybit_position(
+                bybit_db, pos, "time_ceiling", 84000, funding_rate=0.0001
+            )
+        row = bybit_db.execute(
+            "SELECT funding_cost, pnl FROM positions WHERE id = ?", (pos["id"],)
+        ).fetchone()
+        assert row[0] is not None
+        # Half window → ~$4.20 funding cost
+        assert abs(row[0] - 4.2) < 0.05
+        # PnL reflects funding subtraction (even on flat close)
+        assert result["pnl"] < 0  # entry=close → only fees + funding are charged
+
+
 class TestBybitFillDiagnostic:
     """Phase 1: every terminal bybit_trade event writes a fill_diagnostic row."""
 

@@ -391,8 +391,14 @@ def sync_position_status(db):
             if exec_list:
                 close_price = float(exec_list[0].get("execPrice", close_price))
 
-            pnl = _compute_pnl(pos["side"], pos["size"], pos["entry_price"], close_price)
-            close_position_db(db, pos["id"], close_price, pnl, "stop_loss")
+            funding_cost = _compute_funding_cost(
+                pos["side"], pos["size"], pos["entry_price"],
+                pos.get("cycles_held", 0) or 0, 0.0,
+            )
+            pnl = _compute_pnl(pos["side"], pos["size"], pos["entry_price"],
+                               close_price, funding_cost)
+            close_position_db(db, pos["id"], close_price, pnl, "stop_loss",
+                              funding_cost=funding_cost)
             print(f"    [bybit] Stop-loss triggered: PnL=${pnl:.2f}")
             _fd_record(
                 db, result="bybit_stop_triggered",
@@ -403,7 +409,7 @@ def sync_position_status(db):
         print(f"    [bybit] Position sync error: {e}")
 
 
-def close_bybit_position(db, position, reason, mark_price):
+def close_bybit_position(db, position, reason, mark_price, funding_rate=0.0):
     """
     Close an open position.
 
@@ -438,10 +444,15 @@ def close_bybit_position(db, position, reason, mark_price):
         except Exception as e:
             print(f"    [bybit] Close order failed: {e}")
 
+    funding_cost = _compute_funding_cost(
+        position["side"], position["size"], position["entry_price"],
+        position.get("cycles_held", 0) or 0, funding_rate,
+    )
     pnl = _compute_pnl(position["side"], position["size"],
-                        position["entry_price"], close_price)
+                        position["entry_price"], close_price, funding_cost)
 
-    close_position_db(db, position["id"], close_price, pnl, reason, bybit_order_id)
+    close_position_db(db, position["id"], close_price, pnl, reason,
+                      bybit_order_id, funding_cost=funding_cost)
 
     print(f"    [bybit] Closed {position['side']} @ ${close_price:,.2f} "
           f"(reason={reason}, PnL=${pnl:.2f})")
@@ -459,8 +470,13 @@ def close_bybit_position(db, position, reason, mark_price):
     return {"pnl": pnl, "reason": reason, "close_price": close_price}
 
 
-def _compute_pnl(side, size, entry_price, close_price):
-    """Compute PnL for a position, net of fees."""
+def _compute_pnl(side, size, entry_price, close_price, funding_cost=0.0):
+    """Compute PnL for a position, net of fees and funding.
+
+    funding_cost is a dollar-denominated charge already accrued by
+    `_compute_funding_cost`. Passed separately so fees and funding can
+    be audited independently in tests.
+    """
     if side == "Buy":
         raw_pnl = (close_price - entry_price) * size
     else:
@@ -469,12 +485,36 @@ def _compute_pnl(side, size, entry_price, close_price):
     # Subtract fees (round-trip: entry + exit)
     notional = entry_price * size
     fees = notional * BYBIT_FEE_RATE * 2
-    return round(raw_pnl - fees, 4)
+    return round(raw_pnl - fees - funding_cost, 4)
+
+
+def _compute_funding_cost(side, size, entry_price, cycles_held,
+                           funding_rate, cycle_minutes=5):
+    """Accrue funding for a perp position.
+
+    Bybit pays/charges funding every 8 hours at the 8h funding rate.
+    Our pipeline holds positions for minutes, so we prorate the rate
+    by the fraction of an 8h window that has elapsed.
+
+    Longs (Buy) pay funding when rate > 0, receive when rate < 0.
+    Shorts (Sell) are the opposite sign.
+
+    Returns dollar amount (positive = cost, negative = credit).
+    """
+    if funding_rate is None or funding_rate == 0 or cycles_held <= 0:
+        return 0.0
+    notional = entry_price * size
+    held_hours = cycles_held * cycle_minutes / 60.0
+    fraction = held_hours / 8.0
+    charge = notional * funding_rate * fraction
+    if side != "Buy":
+        charge = -charge
+    return round(charge, 6)
 
 
 # ── Main entry point ─────────────────────────────────────────────────────────
 
-def execute_bybit_trades(db, cycle, candles, prediction=None):
+def execute_bybit_trades(db, cycle, candles, prediction=None, funding_rate=0.0):
     """
     Main trade execution entry point. Called from ci_run_bybit.py.
 
@@ -498,7 +538,8 @@ def execute_bybit_trades(db, cycle, candles, prediction=None):
         if pos and mark_price:
             should_exit, reason = check_exit_conditions(candles, pos)
             if should_exit:
-                result = close_bybit_position(db, pos, reason, mark_price)
+                result = close_bybit_position(db, pos, reason, mark_price,
+                                              funding_rate=funding_rate)
                 orders.append({"action": "close", **result})
 
     # 3. Enter new position if qualifying signal (no single-position gate)
