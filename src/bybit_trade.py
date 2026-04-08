@@ -55,49 +55,31 @@ def should_trade_bybit(prediction_row, db):
     if edge < EDGE_THRESHOLD:
         return False, f"edge_too_small ({edge:.3f})"
 
-    # Kill switch
-    if is_bybit_kill_switched():
+    # Kill switch / daily loss / breaker — single source of truth.
+    from system_state import get_system_state
+    state = get_system_state(db, "bybit")
+    if state.kill_switch:
         return False, "kill_switch_active"
-
-    # Daily loss limit
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    row = db.execute("""
-        SELECT COALESCE(SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END), 0)
-        FROM positions
-        WHERE closed_at LIKE ? AND status = 'closed'
-    """, (f"{today}%",)).fetchone()
-    daily_loss = abs(row[0]) if row else 0
-
-    if daily_loss >= BYBIT_DAILY_LOSS_LIMIT:
-        return False, f"daily_loss_limit (${daily_loss:.0f} >= ${BYBIT_DAILY_LOSS_LIMIT:.0f})"
-
-    # Consecutive loss breaker
-    consec = _check_consecutive_losses(db)
-    if consec >= CONSECUTIVE_LOSS_MAX:
-        return False, f"consecutive_loss_breaker ({consec} >= {CONSECUTIVE_LOSS_MAX})"
+    if state.daily_loss >= BYBIT_DAILY_LOSS_LIMIT:
+        return False, f"daily_loss_limit (${state.daily_loss:.0f} >= ${BYBIT_DAILY_LOSS_LIMIT:.0f})"
+    if state.consecutive_losses >= CONSECUTIVE_LOSS_MAX:
+        return False, (
+            f"consecutive_loss_breaker ({state.consecutive_losses} >= {CONSECUTIVE_LOSS_MAX})"
+        )
 
     return True, "ok"
 
 
 def _check_consecutive_losses(db):
-    """Count current consecutive loss streak from today's closed positions.
+    """Back-compat shim: delegates to the system_state contract.
 
-    Resets daily at midnight UTC — yesterday's losses don't carry over.
+    Kept as a thin wrapper so existing tests and callers still import
+    this symbol, but the implementation lives in `system_state` —
+    single source of truth for breaker state. Incident #66 regression
+    guard.
     """
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    rows = db.execute("""
-        SELECT pnl FROM positions
-        WHERE status = 'closed' AND pnl IS NOT NULL
-          AND closed_at LIKE ?
-        ORDER BY closed_at DESC LIMIT 50
-    """, (f"{today}%",)).fetchall()
-    streak = 0
-    for row in rows:
-        if row[0] < 0:
-            streak += 1
-        else:
-            break
-    return streak
+    from system_state import get_system_state
+    return get_system_state(db, "bybit").consecutive_losses
 
 
 def _check_drawdown_pct(db):

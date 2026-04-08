@@ -132,6 +132,11 @@ def _today_prefix() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
+def _is_bybit(pipeline_name: str) -> bool:
+    """Bybit pipelines track state in `positions`, not `orders`."""
+    return pipeline_name.startswith("bybit")
+
+
 def _table_exists(db, name: str) -> bool:
     row = db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -184,6 +189,71 @@ def _compute_consecutive_losses(db, now: datetime) -> tuple[int, Optional[dateti
         else:
             break
     return streak, last_settled_at, seconds_since
+
+
+def _compute_consecutive_losses_bybit(db, now: datetime) -> tuple[int, Optional[datetime], Optional[float]]:
+    """Bybit variant — reads closed positions from the `positions` table."""
+    if not _table_exists(db, "positions"):
+        return 0, None, None
+
+    last = db.execute("""
+        SELECT closed_at FROM positions
+        WHERE status = 'closed' AND closed_at IS NOT NULL
+        ORDER BY closed_at DESC LIMIT 1
+    """).fetchone()
+
+    last_closed_at = _parse_ts(last[0]) if last else None
+    seconds_since = None
+    if last_closed_at is not None:
+        seconds_since = (now - last_closed_at).total_seconds()
+
+    # Auto-reset on stale streaks (same 8h rule as Polymarket)
+    if (
+        seconds_since is not None
+        and seconds_since > CONSECUTIVE_LOSS_COOLDOWN_HOURS * 3600
+    ):
+        return 0, last_closed_at, seconds_since
+
+    rows = db.execute("""
+        SELECT pnl FROM positions
+        WHERE status = 'closed' AND pnl IS NOT NULL
+        ORDER BY closed_at DESC LIMIT ?
+    """, (MAX_LOSS_LOOKBACK,)).fetchall()
+
+    streak = 0
+    for (pnl,) in rows:
+        if pnl is not None and pnl < 0:
+            streak += 1
+        else:
+            break
+    return streak, last_closed_at, seconds_since
+
+
+def _compute_daily_loss_bybit(db) -> tuple[float, float]:
+    if not _table_exists(db, "positions"):
+        return 0.0, 0.0
+    today = _today_prefix()
+    row = db.execute("""
+        SELECT
+            COALESCE(SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END), 0) AS loss,
+            COALESCE(SUM(COALESCE(pnl, 0)), 0) AS total
+        FROM positions
+        WHERE closed_at LIKE ? AND status = 'closed'
+    """, (f"{today}%",)).fetchone()
+    loss = abs(row[0]) if row and row[0] else 0.0
+    total = float(row[1]) if row and row[1] is not None else 0.0
+    return loss, total
+
+
+def _compute_orders_today_bybit(db) -> int:
+    """Bybit 'orders today' := positions opened today."""
+    if not _table_exists(db, "positions"):
+        return 0
+    today = _today_prefix()
+    row = db.execute("""
+        SELECT COUNT(*) FROM positions WHERE opened_at LIKE ?
+    """, (f"{today}%",)).fetchone()
+    return int(row[0]) if row else 0
 
 
 def _compute_daily_loss(db) -> tuple[float, float]:
@@ -274,9 +344,14 @@ def get_system_state(db, pipeline_name: str) -> SystemState:
     trading_enabled = _trading_enabled_for(pipeline_name)
     kill_switch = _check_kill_switch(pipeline_name)
 
-    consec, last_settled_at, seconds_since = _compute_consecutive_losses(db, now)
-    daily_loss, total_pnl_today = _compute_daily_loss(db)
-    orders_today = _compute_orders_today(db)
+    if _is_bybit(pipeline_name):
+        consec, last_settled_at, seconds_since = _compute_consecutive_losses_bybit(db, now)
+        daily_loss, total_pnl_today = _compute_daily_loss_bybit(db)
+        orders_today = _compute_orders_today_bybit(db)
+    else:
+        consec, last_settled_at, seconds_since = _compute_consecutive_losses(db, now)
+        daily_loss, total_pnl_today = _compute_daily_loss(db)
+        orders_today = _compute_orders_today(db)
     qualifying_today, last_prediction_at, last_qualifying_at = (
         _compute_prediction_activity(db)
     )

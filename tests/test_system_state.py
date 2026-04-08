@@ -255,6 +255,119 @@ class TestActivityCounters:
         assert state.orders_today == 2
 
 
+class TestBybitState:
+    """Bybit pipelines must read runtime state from the positions table,
+    not orders. Regression guard: diag.py Trade Execution panel silently
+    lied about Bybit state for the life of the retirement commit until
+    Phase 0 of the Bybit pivot landed."""
+
+    def _make_bybit_db(self):
+        d = sqlite3.connect(":memory:")
+        d.execute("""CREATE TABLE markets (
+            id TEXT PRIMARY KEY, question TEXT, category TEXT, end_date TEXT,
+            volume REAL, price_yes REAL, price_no REAL, fetched_at TEXT,
+            resolved INTEGER DEFAULT 0, outcome INTEGER DEFAULT NULL
+        )""")
+        d.execute("""CREATE TABLE predictions (
+            id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT, estimate REAL,
+            edge REAL, confidence TEXT, reasoning TEXT, predicted_at TEXT,
+            cycle INTEGER, conviction_score INTEGER, regime TEXT
+        )""")
+        d.execute("""CREATE TABLE positions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market_id TEXT, side TEXT, size REAL, entry_price REAL,
+            stop_loss REAL, status TEXT DEFAULT 'open',
+            opened_at TEXT, closed_at TEXT, close_price REAL,
+            pnl REAL, cycles_held INTEGER DEFAULT 0,
+            close_reason TEXT, bybit_order_id TEXT
+        )""")
+        return d
+
+    def _insert_closed_position(self, d, pnl, minutes_ago):
+        opened = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago + 5)).isoformat()
+        closed = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat()
+        d.execute("""
+            INSERT INTO positions (market_id, side, size, entry_price, stop_loss,
+                                   status, opened_at, closed_at, close_price, pnl,
+                                   cycles_held, close_reason)
+            VALUES (?, 'Buy', 0.005, 84000, 83850, 'closed',
+                    ?, ?, 83900, ?, 3, 'streak_break')
+        """, (f"mkt_{minutes_ago}_{pnl}", opened, closed, pnl))
+        d.commit()
+
+    def test_bybit_state_reads_positions_not_orders(self):
+        from system_state import get_system_state
+        d = self._make_bybit_db()
+        try:
+            for i in range(5):
+                self._insert_closed_position(d, pnl=-5, minutes_ago=10 + i)
+            state = get_system_state(d, "bybit")
+            assert state.consecutive_losses == 5
+            assert state.daily_loss == 25.0
+            assert state.can_trade is False
+            assert any("consecutive" in b.lower() for b in state.blockers)
+        finally:
+            d.close()
+
+    def test_bybit_state_no_positions_table_safe(self):
+        """Bybit DB with no positions table yet — must not crash."""
+        from system_state import get_system_state
+        d = sqlite3.connect(":memory:")
+        try:
+            state = get_system_state(d, "bybit")
+            assert state.consecutive_losses == 0
+            assert state.daily_loss == 0.0
+            assert state.can_trade is True
+        finally:
+            d.close()
+
+    def test_bybit_state_win_breaks_streak(self):
+        from system_state import get_system_state
+        d = self._make_bybit_db()
+        try:
+            self._insert_closed_position(d, pnl=-5, minutes_ago=30)
+            self._insert_closed_position(d, pnl=-5, minutes_ago=20)
+            self._insert_closed_position(d, pnl=+10, minutes_ago=10)
+            state = get_system_state(d, "bybit")
+            assert state.consecutive_losses == 0
+        finally:
+            d.close()
+
+    def test_bybit_state_auto_resets_after_8h(self):
+        from system_state import get_system_state
+        d = self._make_bybit_db()
+        try:
+            for i in range(5):
+                self._insert_closed_position(d, pnl=-5, minutes_ago=9 * 60 + i)
+            state = get_system_state(d, "bybit")
+            assert state.consecutive_losses == 0
+            assert state.can_trade is True
+        finally:
+            d.close()
+
+    def test_bybit_orders_today_counts_positions_opened(self):
+        from system_state import get_system_state
+        d = self._make_bybit_db()
+        try:
+            ts = datetime.now(timezone.utc).isoformat()
+            d.execute("""
+                INSERT INTO positions (market_id, side, size, entry_price,
+                                       stop_loss, status, opened_at)
+                VALUES ('m1', 'Buy', 0.005, 84000, 83850, 'open', ?)
+            """, (ts,))
+            d.execute("""
+                INSERT INTO positions (market_id, side, size, entry_price,
+                                       stop_loss, status, opened_at, closed_at,
+                                       close_price, pnl)
+                VALUES ('m2', 'Sell', 0.005, 84000, 84150, 'closed', ?, ?, 84100, -0.5)
+            """, (ts, ts))
+            d.commit()
+            state = get_system_state(d, "bybit")
+            assert state.orders_today == 2
+        finally:
+            d.close()
+
+
 class TestHealth:
     """Health check beyond 'cycle ran OK'."""
 
