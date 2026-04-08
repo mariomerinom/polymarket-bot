@@ -39,6 +39,11 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 # Reuse the counterfactual P&L logic from signal_pnl.py
 from signal_pnl import hypothetical_pnl  # noqa: E402
+# Pipeline-internal modules reused for diagnostic surface
+from system_state import get_system_state  # noqa: E402
+from pnl_legacy import compute_pnl, compute_ev_breakeven  # noqa: E402
+from pipeline_integrity import get_recent_integrity  # noqa: E402
+import json  # noqa: E402
 
 # ── Pipeline registry ──────────────────────────────────────────────────────
 
@@ -254,10 +259,121 @@ col3.metric("Counterfactual P&L", f"${counter_total:,.0f}")
 col4.metric("Actual P&L", f"${actual_total:,.0f}",
             delta=f"${actual_total - counter_total:,.0f} gap")
 
+# ── Trade Execution strip (P1 #1) ──────────────────────────────────────────
+
+st.divider()
+st.subheader("Trade execution status")
+st.caption(
+    "Per-pipeline runtime state from `system_state.get_system_state`. "
+    "Answers: 'did the bot trade today and is it allowed to?'"
+)
+
+
+@st.cache_data(ttl=30)
+def load_system_state(db_path: str, pipeline_name: str) -> dict | None:
+    if not Path(db_path).exists():
+        return None
+    try:
+        db = sqlite3.connect(db_path)
+        s = get_system_state(db, pipeline_name)
+        db.close()
+        return {
+            "pipeline": pipeline_name,
+            "mode": s.mode,
+            "kill_switch": s.kill_switch,
+            "can_trade": s.can_trade,
+            "blockers": "; ".join(s.blockers) or "—",
+            "daily_loss": s.daily_loss,
+            "daily_loss_limit": s.daily_loss_limit,
+            "consec_losses": s.consecutive_losses,
+            "consec_max": s.consecutive_loss_max,
+            "orders_today": s.orders_today,
+            "qual_signals_today": s.qualifying_signals_today,
+            "last_settled": s.last_settled_at.isoformat() if s.last_settled_at else "—",
+            "is_healthy": s.is_healthy,
+            "warnings": "; ".join(s.health_warnings) or "—",
+        }
+    except Exception as e:
+        return {"pipeline": pipeline_name, "error": str(e)}
+
+
+state_rows = []
+for label in enabled_pipelines:
+    spec = PIPELINES[label]
+    s = load_system_state(spec["db"], spec["name"])
+    if s:
+        s["label"] = label
+        state_rows.append(s)
+
+if state_rows:
+    cols = st.columns(len(state_rows))
+    for col, s in zip(cols, state_rows):
+        with col:
+            mode_emoji = "🟢" if s.get("can_trade") else "🔴"
+            healthy_emoji = "✅" if s.get("is_healthy") else "⚠️"
+            st.markdown(f"**{mode_emoji} {s['label']}** — {s.get('mode','?')}")
+            st.markdown(
+                f"- Can trade: **{s.get('can_trade')}**  \n"
+                f"- Kill switch: {s.get('kill_switch')}  \n"
+                f"- Daily loss: **${s.get('daily_loss',0):.0f}** / "
+                f"${s.get('daily_loss_limit',0):.0f}  \n"
+                f"- Streak: {s.get('consec_losses',0)} / {s.get('consec_max',0)}  \n"
+                f"- Orders today: {s.get('orders_today',0)}  \n"
+                f"- Qualifying signals: {s.get('qual_signals_today',0)}  \n"
+                f"- Last settled: `{s.get('last_settled','—')[:19]}`  \n"
+                f"- {healthy_emoji} {s.get('warnings','—')}"
+            )
+            if s.get("blockers", "—") != "—":
+                st.error(f"Blockers: {s['blockers']}")
+
+# ── Engine Health strip (P2 #4) ────────────────────────────────────────────
+
+WS_METRICS_PATH = REPO_ROOT / "data" / "ws_metrics.json"
+if WS_METRICS_PATH.exists():
+    with st.expander("Engine health (WS feeds, dispatch latency)"):
+        try:
+            metrics = json.loads(WS_METRICS_PATH.read_text())
+            ec1, ec2, ec3, ec4 = st.columns(4)
+            for col, key, label in [
+                (ec1, "bybit_spot", "Bybit Spot"),
+                (ec2, "bybit_linear", "Bybit Linear"),
+                (ec3, "polymarket", "Polymarket"),
+            ]:
+                feed = metrics.get(key, {}) or {}
+                status = feed.get("status", "unknown")
+                emoji = "🟢" if status == "connected" else "🔴"
+                col.markdown(
+                    f"**{emoji} {label}**  \n"
+                    f"status: {status}  \n"
+                    f"reconnects 24h: {feed.get('reconnects_24h', 0)}  \n"
+                    f"last: `{(feed.get('last_event') or '—')[:19]}`"
+                )
+            with ec4:
+                disp = metrics.get("dispatch_latency_ms", {}) or {}
+                ob = metrics.get("orderbook_age_ms", {}) or {}
+                st.markdown(
+                    f"**⏱ Latency**  \n"
+                    f"dispatch p50/p95: {disp.get('p50',0)}/{disp.get('p95',0)}ms  \n"
+                    f"orderbook p50/p95: {ob.get('p50',0)}/{ob.get('p95',0)}ms  \n"
+                    f"cycles: {metrics.get('cycles', 0)}  \n"
+                    f"fallback fires 24h: {metrics.get('fallback_fires_24h', 0)}"
+                )
+            st.caption(
+                f"Source: `data/ws_metrics.json` (engine_start: "
+                f"{metrics.get('engine_start','?')}). Local file — pull for fresh."
+            )
+        except Exception as e:
+            st.warning(f"ws_metrics.json parse error: {e}")
+else:
+    st.caption("ℹ️ `data/ws_metrics.json` not found locally — git pull to fetch.")
+
+st.divider()
+
 # ── Tabs ───────────────────────────────────────────────────────────────────
 
-tab_pnl, tab_wr, tab_heat, tab_fill, tab_raw = st.tabs([
-    "P&L Overlay", "Rolling WR", "Regime Heatmap", "Fill Diagnostic", "Raw Query",
+tab_pnl, tab_wr, tab_heat, tab_agents, tab_fill, tab_raw = st.tabs([
+    "P&L Overlay", "Rolling WR", "Regime Heatmap",
+    "Agents", "Fill Diagnostic", "Raw Query",
 ])
 
 # ── Tab 1: P&L Overlay ─────────────────────────────────────────────────────
@@ -312,6 +428,23 @@ with tab_pnl:
         })
     if gap_rows:
         st.dataframe(pd.DataFrame(gap_rows), use_container_width=True)
+
+    # Daily P&L bars (P3 #5)
+    st.markdown("**Daily P&L (counterfactual + actual)**")
+    daily = (
+        all_df.assign(
+            counter=all_df["counterfactual_pnl"], actual=all_df["actual_pnl"],
+        )
+        .groupby("date")[["counter", "actual"]].sum().reset_index()
+        .melt(id_vars="date", var_name="kind", value_name="pnl")
+    )
+    if not daily.empty:
+        bar = px.bar(
+            daily, x="date", y="pnl", color="kind", barmode="group",
+            color_discrete_map={"counter": "#1f77b4", "actual": "#ff7f0e"},
+        )
+        bar.update_layout(height=300, xaxis_title="", yaxis_title="$ per day")
+        st.plotly_chart(bar, use_container_width=True)
 
 # ── Tab 2: Rolling WR ──────────────────────────────────────────────────────
 
@@ -389,6 +522,79 @@ with tab_heat:
 
         st.markdown("**Counterfactual $ per cell**")
         st.dataframe(counter_pivot.round(0).fillna(0), use_container_width=True)
+
+# ── Tab: Agents (P1 #2 + P2 conviction histogram) ─────────────────────────
+
+with tab_agents:
+    st.subheader("Per-agent scorecard")
+    st.caption(
+        "Reuses `pnl_legacy.compute_pnl` + `compute_ev_breakeven` — same "
+        "P&L contract the retired dashboards used."
+    )
+
+    # Build resolved-row dicts in the shape pnl_legacy expects
+    resolved = []
+    for r in all_df.itertuples():
+        resolved.append({
+            "agent": r.agent,
+            "estimate": r.estimate,
+            "outcome": int(r.outcome),
+            "price_yes": r.price_yes,
+            "market_id": r.market_id,
+            "predicted_at": r.predicted_at,
+            "conviction_score": r.conviction_score,
+        })
+
+    # Per-pipeline asset routing — use first pipeline's asset (simple)
+    asset = PIPELINES[enabled_pipelines[0]]["asset"]
+    try:
+        agent_pnl = compute_pnl(resolved, asset=asset)
+    except Exception as e:
+        st.error(f"compute_pnl failed: {e}")
+        agent_pnl = {}
+
+    if agent_pnl:
+        rows = []
+        for agent, d in agent_pnl.items():
+            rows.append({
+                "agent": agent,
+                "n_bets": d.get("num_bets", 0),
+                "wins": d.get("num_wins", 0),
+                "wr_%": round(
+                    (d.get("num_wins", 0) / d.get("num_bets", 1) * 100)
+                    if d.get("num_bets", 0) else 0, 1),
+                "pnl_$": round(d.get("total_pnl", 0), 2),
+                "wagered_$": round(d.get("total_wagered", 0), 2),
+                "roi_%": round(d.get("roi", 0), 2),
+                "avg_win": round(d.get("avg_win", 0), 2),
+                "avg_loss": round(d.get("avg_loss", 0), 2),
+                "max_dd": round(d.get("max_drawdown", 0), 2),
+                "skipped": d.get("skipped", 0),
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+        ev = compute_ev_breakeven(agent_pnl)
+        ec1, ec2, ec3, ec4 = st.columns(4)
+        ec1.metric("Total bets", ev["total_bets"])
+        ec2.metric("Current WR", f"{ev['current_wr']*100:.1f}%")
+        ec3.metric("Breakeven WR", f"{ev['breakeven_wr']*100:.1f}%")
+        ec4.metric("Margin", f"{ev['margin']*100:+.1f}%",
+                   delta=f"EV ${ev['ev']:.2f}/bet")
+    else:
+        st.info("No bet rows fed bet sizes (check conviction filter / asset routing).")
+
+    st.divider()
+    st.subheader("Conviction tier histogram")
+    if "conviction_score" in all_df.columns and not all_df.empty:
+        conv = (
+            all_df.groupby(["pipeline", "conviction_score"])
+            .size().reset_index(name="n")
+        )
+        cf = px.bar(
+            conv, x="conviction_score", y="n", color="pipeline", barmode="group",
+        )
+        cf.update_layout(height=300, xaxis_title="conviction", yaxis_title="count")
+        st.plotly_chart(cf, use_container_width=True)
 
 # ── Tab 4: Fill Diagnostic ─────────────────────────────────────────────────
 
@@ -483,3 +689,32 @@ with tab_raw:
                 st.caption(f"{len(df)} rows")
             except Exception as e:
                 st.error(f"Query error: {e}")
+
+# ── Bottom: Integrity log strip (P3 #6) ────────────────────────────────────
+
+st.divider()
+st.subheader("Recent integrity warnings (24h)")
+st.caption("Source: `pipeline_integrity.get_recent_integrity` per pipeline DB.")
+
+integrity_rows = []
+for label in enabled_pipelines:
+    spec = PIPELINES[label]
+    if not Path(spec["db"]).exists():
+        continue
+    try:
+        db = sqlite3.connect(spec["db"])
+        for row in get_recent_integrity(db, hours=24):
+            row["pipeline_label"] = label
+            integrity_rows.append(row)
+        db.close()
+    except Exception as e:
+        st.warning(f"{label}: integrity read failed: {e}")
+
+if integrity_rows:
+    idf = pd.DataFrame(integrity_rows)
+    cols = ["timestamp", "pipeline_label", "check_name", "status", "detail"]
+    cols = [c for c in cols if c in idf.columns]
+    st.dataframe(idf[cols].sort_values("timestamp", ascending=False),
+                 use_container_width=True)
+else:
+    st.success("No WARN/FAIL integrity entries in the last 24h.")
