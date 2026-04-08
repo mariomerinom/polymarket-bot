@@ -336,6 +336,74 @@ def analyze_filter_breakdown(predictions, resolved):
     return dict(skip_reasons)
 
 
+def analyze_regime_gate(predictions, resolved):
+    """Summarize the BTC daily-regime gate (`src/regime_gate.py`).
+
+    Reads `reasoning_data.regime_gate` and `pre_gate_conviction` written
+    by `predict.store_prediction` and reports:
+      - how many would-be conv>=3 cycles were downgraded by the gate
+      - the gate state at evaluation time (asof_date, r_z, threshold)
+      - counterfactual: of the gated bets that have since resolved,
+        how many would have been correct as live bets
+
+    Returns None if the gate field isn't populated yet (predictions
+    written before commit e5e323c9 don't have it).
+    """
+    resolved_by_id = {p["id"]: p for p in resolved if p.get("id")}
+    gated = []
+    kept = []
+    last_state = None
+    for p in predictions:
+        reasoning = p.get("reasoning")
+        if not reasoning:
+            continue
+        try:
+            data = json.loads(reasoning) if isinstance(reasoning, str) else reasoning
+        except (json.JSONDecodeError, TypeError):
+            continue
+        gate_state = data.get("regime_gate")
+        if gate_state is None:
+            continue
+        last_state = gate_state
+        pre_conv = data.get("pre_gate_conviction") or 0
+        if pre_conv < 3:
+            continue  # gate only matters for would-be live bets
+        if gate_state.get("gated"):
+            gated.append(p)
+        else:
+            kept.append(p)
+    if not gated and not kept:
+        return None
+
+    def _resolved_correct(group):
+        n_resolved = 0
+        n_correct = 0
+        for p in group:
+            r = resolved_by_id.get(p.get("id"))
+            if not r:
+                continue
+            outcome = r.get("outcome")
+            if outcome is None:
+                continue
+            n_resolved += 1
+            if is_correct(p["estimate"], outcome):
+                n_correct += 1
+        return n_resolved, n_correct
+
+    gr_n, gr_c = _resolved_correct(gated)
+    kp_n, kp_c = _resolved_correct(kept)
+
+    return {
+        "gated_count": len(gated),
+        "kept_count": len(kept),
+        "gated_resolved": gr_n,
+        "gated_correct": gr_c,
+        "kept_resolved": kp_n,
+        "kept_correct": kp_c,
+        "last_state": last_state,
+    }
+
+
 def analyze_liquidity(predictions):
     """Analyze CLOB liquidity data from prediction reasoning JSON.
 
@@ -1031,6 +1099,38 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 lines.append(f"| {reason} | {f['count']} | {cf_wr} |")
             lines.append("")
 
+        # Regime gate (BTC daily-regime, see src/regime_gate.py)
+        rg = data.get("regime_gate")
+        if rg:
+            ls = rg.get("last_state") or {}
+            reg = ls.get("regime") or {}
+            asof = reg.get("asof_date", "?")
+            r_z = reg.get("range_zscore")
+            r_z_str = f"{r_z:+.2f}" if isinstance(r_z, (int, float)) else "—"
+            v_z = reg.get("velocity_zscore")
+            v_z_str = f"{v_z:+.2f}" if isinstance(v_z, (int, float)) else "—"
+            thr = ls.get("r_z_gate", "?")
+            cur = "FIRING" if ls.get("gated") else "open"
+            lines.extend([
+                "### Regime Gate (BTC range_zscore)",
+                f"Last evaluation: **{cur}** "
+                f"(asof={asof} r_z={r_z_str} v_z={v_z_str} threshold={thr})",
+                "",
+                "| Slice | Conv≥3 cycles | Resolved | Correct | WR |",
+                "|---|--:|--:|--:|--:|",
+            ])
+            def _wr(c, n):
+                return f"{c/n*100:.1f}%" if n else "—"
+            lines.append(
+                f"| Kept (gate open) | {rg['kept_count']} | {rg['kept_resolved']} | "
+                f"{rg['kept_correct']} | {_wr(rg['kept_correct'], rg['kept_resolved'])} |"
+            )
+            lines.append(
+                f"| Skipped (gate firing) | {rg['gated_count']} | {rg['gated_resolved']} | "
+                f"{rg['gated_correct']} | {_wr(rg['gated_correct'], rg['gated_resolved'])} |"
+            )
+            lines.append("")
+
         # Direction analysis
         if data["directions"]:
             lines.extend([
@@ -1571,6 +1671,7 @@ def analyze_pipeline(db_path, date_str):
         conviction = analyze_conviction_tiers(resolved)
         liquidity = analyze_liquidity(predictions)
         filters = analyze_filter_breakdown(predictions, resolved)
+        regime_gate = analyze_regime_gate(predictions, resolved)
         rolling = rolling_trend(db, date_str, window=7)
         orders = analyze_orders(db_path, date_str)
         bybit_positions = analyze_bybit_positions(db_path, date_str) if is_bybit else None
@@ -1610,6 +1711,7 @@ def analyze_pipeline(db_path, date_str):
         "orders": orders,
         "alerts": alerts,
         "filters": filters,
+        "regime_gate": regime_gate,
         "shadow": shadow,
         "shadow_conviction": shadow_conviction,
         "integrity_issues": integrity_issues,

@@ -27,6 +27,7 @@ from asset_daily import compute_daily, fetch_bybit_day_5m, init_table, record
 ASSET_SYMBOLS = {
     "BTC": "BTCUSDT",
     "ETH": "ETHUSDT",
+    "SOL": "SOLUSDT",
 }
 
 
