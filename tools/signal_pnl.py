@@ -58,11 +58,20 @@ def hour_bucket(predicted_at: str) -> str:
 
 
 def fetch_predictions(db: sqlite3.Connection, days: int, min_conviction: int):
+    """Fetch resolved predictions + whether each one became an order.
+
+    Left-joins the orders table on prediction_id so we can distinguish
+    'bet placed' (any order row exists) from 'signal-only' (skipped by
+    should_trade / compute_order / book gates). This is the direct test
+    for anti-selection: if skipped predictions outperform placed ones,
+    our gates are choosing the wrong bets.
+    """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     sql = """
         SELECT p.id, p.market_id, p.agent, p.estimate, p.regime,
                p.conviction_score, p.predicted_at,
-               m.price_yes, m.price_no, m.outcome, m.resolved
+               m.price_yes, m.price_no, m.outcome, m.resolved,
+               (SELECT COUNT(*) FROM orders o WHERE o.prediction_id = p.id) AS placed
         FROM predictions p
         JOIN markets m ON p.market_id = m.id
         WHERE p.predicted_at >= ?
@@ -96,6 +105,8 @@ def analyze(rows, group_keys: list[str], bet: float):
                 key.append(r["agent"] or "—")
             elif gk == "conviction":
                 key.append(str(r["conviction_score"]))
+            elif gk == "placed":
+                key.append("placed" if (r["placed"] or 0) > 0 else "skipped")
             else:
                 key.append("?")
         buckets[tuple(key)].append((won, pnl))
@@ -144,7 +155,7 @@ def main():
     ap.add_argument("--bet", type=float, default=25.0,
                     help="hypothetical bet size in dollars")
     ap.add_argument("--group", default="regime,direction",
-                    help="comma-separated: regime,direction,hour,agent,conviction")
+                    help="comma-separated: regime,direction,hour,agent,conviction,placed")
     args = ap.parse_args()
 
     db = sqlite3.connect(args.db)
