@@ -800,10 +800,16 @@ class BotsyEngine:
     # ── Daily Report ────────────────────────────────────���──────────────
 
     async def daily_report_check(self):
-        """Run daily report at 12:00 UTC."""
+        """Run daily report shortly after UTC midnight (00:05 UTC).
+
+        Previously fired at 12:00 UTC, which delayed the prior-day summary
+        by 12 hours. The 5-minute buffer after midnight gives in-flight
+        cycles and the asset_daily rollover hook time to settle.
+        """
         while True:
             now = datetime.now(timezone.utc)
-            if now.hour == 12 and now.strftime("%Y-%m-%d") != self.last_report_date:
+            if (now.hour == 0 and now.minute >= 5
+                    and now.strftime("%Y-%m-%d") != self.last_report_date):
                 log("[Daily Report] Generating...")
                 self.last_report_date = now.strftime("%Y-%m-%d")
                 try:

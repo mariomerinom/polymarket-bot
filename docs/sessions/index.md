@@ -2,6 +2,7 @@
 
 Working session summaries — what was built, shipped, learned, and kicked forward.
 
+- [2026-04-07](2026-04-07.md) — Fill problem: Lever B (FOK→FAK + alpha cushion), fill_diagnostic wired, paper settlement fix, signal_pnl counterfactual tool, asset_daily regime metrics (5 commits)
 - [2026-04-06](2026-04-06.md) — Incident response + major hardening: FOK execution, pipeline isolation, runtime state contract, breaker deadlock fix, dashboard health surfacing (22 commits)
 - [2026-04-05](2026-04-05.md) — Massive build day: VPS websocket engine (38 commits), CLOB pricing fix, TDD refactoring Phase B complete, GitHub Actions retired
 - [2026-04-04](2026-04-04.md) — Activity digest (auto-digest)
