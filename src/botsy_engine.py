@@ -175,6 +175,7 @@ class BotsyEngine:
         tasks = [
             self._supervise(self.bybit_spot_feed, name="bybit_spot"),
             self._supervise(self.bybit_linear_feed, name="bybit_linear"),
+            self._supervise(self.bybit_microstructure_feed, name="bybit_capture"),
             self._supervise(self.polymarket_feed, name="polymarket"),
             self._supervise(self.git_commit_loop, name="git_commit"),
             self._supervise(self.daily_report_check, name="daily_report"),
@@ -370,6 +371,20 @@ class BotsyEngine:
                 self.metrics["bybit_linear"]["reconnects_24h"] += 1
                 log(f"[WS] Bybit linear disconnected: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
+
+    # ── Bybit microstructure tape capture ─────────────────────────────
+
+    async def bybit_microstructure_feed(self):
+        """Dedicated WS connection capturing publicTrade, orderbook.50,
+        liquidation, and tickers for BTCUSDT to gzipped JSONL on disk.
+
+        Runs on its own connection so a stall on the capture side cannot
+        starve the kline dispatch path that feeds live predictions. See
+        `src/bybit_ws_capture.py` for details."""
+        from bybit_ws_capture import BybitMicrostructureCapture
+        cap = BybitMicrostructureCapture(log_fn=log)
+        self._bybit_capture = cap
+        await cap.run()
 
     # ── Polymarket CLOB WS Feed ─────���──────────────────────────────────
 
