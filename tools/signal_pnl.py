@@ -15,6 +15,8 @@ Usage:
     python3 tools/signal_pnl.py --db data/predictions_eth.db --days 14
     python3 tools/signal_pnl.py --conviction 4 --bet 25
     python3 tools/signal_pnl.py --group regime,direction
+    python3 tools/signal_pnl.py --group day_type,direction        # needs asset_daily.db
+    python3 tools/signal_pnl.py --group vol_bucket,placed
 """
 from __future__ import annotations
 
@@ -57,7 +59,8 @@ def hour_bucket(predicted_at: str) -> str:
         return "??"
 
 
-def fetch_predictions(db: sqlite3.Connection, days: int, min_conviction: int):
+def fetch_predictions(db: sqlite3.Connection, days: int, min_conviction: int,
+                      asset: str | None = None):
     """Fetch resolved predictions + whether each one became an order.
 
     Left-joins the orders table on prediction_id so we can distinguish
@@ -65,13 +68,51 @@ def fetch_predictions(db: sqlite3.Connection, days: int, min_conviction: int):
     should_trade / compute_order / book gates). This is the direct test
     for anti-selection: if skipped predictions outperform placed ones,
     our gates are choosing the wrong bets.
+
+    If `asset` is provided AND the caller has ATTACHed an `ad` database
+    containing `asset_daily`, we left-join it on (asset, date) to surface
+    the day's trend_label + realized_vol for day-type grouping.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+    # Detect whether asset_daily was attached by the caller.
+    has_ad = False
+    if asset:
+        try:
+            row = db.execute(
+                "SELECT name FROM ad.sqlite_master WHERE type='table' AND name='asset_daily'"
+            ).fetchone()
+            has_ad = row is not None
+        except sqlite3.Error:
+            has_ad = False
+
+    if has_ad:
+        sql = """
+            SELECT p.id, p.market_id, p.agent, p.estimate, p.regime,
+                   p.conviction_score, p.predicted_at,
+                   m.price_yes, m.price_no, m.outcome, m.resolved,
+                   (SELECT COUNT(*) FROM orders o WHERE o.prediction_id = p.id) AS placed,
+                   ad.trend_label AS day_trend_label,
+                   ad.realized_vol AS day_realized_vol
+            FROM predictions p
+            JOIN markets m ON p.market_id = m.id
+            LEFT JOIN ad.asset_daily ad
+                ON ad.asset = ?
+               AND ad.date  = substr(p.predicted_at, 1, 10)
+            WHERE p.predicted_at >= ?
+              AND p.conviction_score >= ?
+              AND m.resolved = 1
+              AND m.outcome IS NOT NULL
+        """
+        return db.execute(sql, (asset, cutoff, min_conviction)).fetchall()
+
     sql = """
         SELECT p.id, p.market_id, p.agent, p.estimate, p.regime,
                p.conviction_score, p.predicted_at,
                m.price_yes, m.price_no, m.outcome, m.resolved,
-               (SELECT COUNT(*) FROM orders o WHERE o.prediction_id = p.id) AS placed
+               (SELECT COUNT(*) FROM orders o WHERE o.prediction_id = p.id) AS placed,
+               NULL AS day_trend_label,
+               NULL AS day_realized_vol
         FROM predictions p
         JOIN markets m ON p.market_id = m.id
         WHERE p.predicted_at >= ?
@@ -82,9 +123,34 @@ def fetch_predictions(db: sqlite3.Connection, days: int, min_conviction: int):
     return db.execute(sql, (cutoff, min_conviction)).fetchall()
 
 
+def _vol_terciles(rows) -> tuple[float, float]:
+    """Compute (low_hi, mid_hi) cutoffs for day_realized_vol terciles."""
+    vols = sorted(
+        float(r["day_realized_vol"])
+        for r in rows
+        if r["day_realized_vol"] is not None
+    )
+    if len(vols) < 3:
+        return (float("inf"), float("inf"))
+    n = len(vols)
+    return (vols[n // 3], vols[(2 * n) // 3])
+
+
+def _vol_bucket(v, low_hi, mid_hi) -> str:
+    if v is None:
+        return "—"
+    v = float(v)
+    if v <= low_hi:
+        return "vol_low"
+    if v <= mid_hi:
+        return "vol_mid"
+    return "vol_hi"
+
+
 def analyze(rows, group_keys: list[str], bet: float):
     """Return list of (group_tuple, n, wins, wr, pnl) sorted by pnl desc."""
     buckets: dict[tuple, list] = defaultdict(list)
+    vol_low_hi, vol_mid_hi = _vol_terciles(rows)
     for r in rows:
         direction = "UP" if r["estimate"] > 0.5 else "DOWN"
         pnl = hypothetical_pnl(
@@ -107,6 +173,10 @@ def analyze(rows, group_keys: list[str], bet: float):
                 key.append(str(r["conviction_score"]))
             elif gk == "placed":
                 key.append("placed" if (r["placed"] or 0) > 0 else "skipped")
+            elif gk == "day_type":
+                key.append(r["day_trend_label"] or "—")
+            elif gk == "vol_bucket":
+                key.append(_vol_bucket(r["day_realized_vol"], vol_low_hi, vol_mid_hi))
             else:
                 key.append("?")
         buckets[tuple(key)].append((won, pnl))
@@ -155,12 +225,36 @@ def main():
     ap.add_argument("--bet", type=float, default=25.0,
                     help="hypothetical bet size in dollars")
     ap.add_argument("--group", default="regime,direction",
-                    help="comma-separated: regime,direction,hour,agent,conviction,placed")
+                    help="comma-separated: regime,direction,hour,agent,conviction,"
+                         "placed,day_type,vol_bucket")
+    ap.add_argument("--asset-daily-db", default="data/asset_daily.db",
+                    help="path to asset_daily.db (attached for day_type/vol_bucket)")
+    ap.add_argument("--asset", default=None,
+                    help="asset key for asset_daily join (BTC/ETH). "
+                         "Inferred from --db if omitted.")
     args = ap.parse_args()
 
     db = sqlite3.connect(args.db)
     db.row_factory = sqlite3.Row
-    rows = fetch_predictions(db, args.days, args.conviction)
+
+    # Infer asset from db filename if not explicit.
+    asset = args.asset
+    if asset is None:
+        name = args.db.lower()
+        if "eth" in name:
+            asset = "ETH"
+        else:
+            asset = "BTC"
+
+    # Attach asset_daily if it exists (enables day_type / vol_bucket grouping).
+    ad_path = args.asset_daily_db
+    if ad_path and Path(ad_path).exists():
+        try:
+            db.execute("ATTACH DATABASE ? AS ad", (ad_path,))
+        except sqlite3.Error as e:
+            print(f"warning: could not attach {ad_path}: {e}")
+
+    rows = fetch_predictions(db, args.days, args.conviction, asset=asset)
     print(f"signal_pnl: db={args.db} days={args.days} "
           f"min_conviction={args.conviction} bet=${args.bet}")
     print(f"resolved predictions matching: {len(rows)}\n")

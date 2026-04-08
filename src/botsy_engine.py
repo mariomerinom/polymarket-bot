@@ -146,6 +146,10 @@ class BotsyEngine:
         self._latencies: list = []  # recent dispatch latencies in ms
         self._orderbook_ages: list = []  # recent orderbook ages in ms
 
+        # Daily regime metrics: track last recorded UTC date per asset so we
+        # only fire the rollover fetch once per asset per day. See asset_daily.py.
+        self._asset_daily_last_date: dict = {}  # asset → "YYYY-MM-DD"
+
     async def run(self):
         """Main entry point. Connect all WS feeds and run event loop."""
         log("=== Botsy Engine starting ===")
@@ -288,6 +292,17 @@ class BotsyEngine:
                                     await self.dispatch(
                                         "bybit_spot", symbol, interval, candle_ts
                                     )
+                                    # Daily regime metrics rollover (once/day per asset)
+                                    if interval == "5":
+                                        asset = None
+                                        if symbol == "BTCUSDT":
+                                            asset = "BTC"
+                                        elif symbol == "ETHUSDT":
+                                            asset = "ETH"
+                                        if asset:
+                                            self._maybe_run_daily_rollover(
+                                                asset, symbol, candle_ts
+                                            )
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
 
@@ -654,6 +669,73 @@ class BotsyEngine:
                 await asyncio.to_thread(self._git_commit_push)
             except Exception as e:
                 log(f"WARNING: git commit loop error: {e}")
+
+    def _maybe_run_daily_rollover(self, asset: str, symbol: str, candle_ts_ms: int):
+        """Fire asset_daily computation when UTC date rolls over for `asset`.
+
+        Called from the bybit_spot dispatch path on every confirmed 5m candle.
+        Idempotent per (asset, date) via _asset_daily_last_date guard. The
+        actual REST fetch + DB write runs in a thread so we don't block the
+        WS event loop.
+
+        `candle_ts_ms` is the candle CLOSE time, so today's in-progress day is
+        `today`. We want to compute metrics for the PRIOR day the first time
+        we see a candle whose close is on a new UTC date.
+        """
+        current_date = datetime.fromtimestamp(
+            candle_ts_ms / 1000, tz=timezone.utc
+        ).strftime("%Y-%m-%d")
+
+        last = self._asset_daily_last_date.get(asset)
+        if last is None:
+            # First candle for this asset this run: seed without triggering
+            # a fetch (backfill tool handles history).
+            self._asset_daily_last_date[asset] = current_date
+            return
+        if last == current_date:
+            return  # same UTC day, nothing to do
+
+        # Rollover detected: last → current_date. Compute for `last` (the
+        # day that just ended) in a background thread.
+        self._asset_daily_last_date[asset] = current_date
+        log(f"[DAILY] {asset} UTC rollover {last} → {current_date}; "
+            f"computing asset_daily for {last}")
+        asyncio.create_task(
+            asyncio.to_thread(self._compute_and_record_daily, asset, symbol, last)
+        )
+
+    def _compute_and_record_daily(self, asset: str, symbol: str, date: str):
+        """Thread-safe: fetch prior day's 5m bars from Bybit and record metrics."""
+        try:
+            import sqlite3
+            from asset_daily import (
+                compute_daily, fetch_bybit_day_5m, init_table, record,
+            )
+            df = fetch_bybit_day_5m(symbol, date, category="linear")
+            if len(df) < 10:
+                log(f"[DAILY] {asset} {date}: only {len(df)} bars, skipping")
+                return
+            # Prior close for true_range_pct — fetch from DB if present.
+            db_path = DATA_DIR / "asset_daily.db"
+            db = sqlite3.connect(str(db_path))
+            init_table(db)
+            prior = db.execute(
+                "SELECT close FROM asset_daily WHERE asset=? "
+                "AND date < ? ORDER BY date DESC LIMIT 1",
+                (asset, date),
+            ).fetchone()
+            prior_close = float(prior[0]) if prior else None
+            metrics = compute_daily(df, prior_close=prior_close)
+            record(db, asset=asset, date=date, metrics=metrics)
+            db.close()
+            log(
+                f"[DAILY] {asset} {date} recorded: "
+                f"body={metrics['body_pct']:+.4f} "
+                f"rvol={metrics['realized_vol']:.4f} "
+                f"label={metrics['trend_label']}"
+            )
+        except Exception as e:
+            log(f"[DAILY] {asset} {date} failed: {e}")
 
     def _git_commit_push(self):
         """Synchronous git add + commit + push.
