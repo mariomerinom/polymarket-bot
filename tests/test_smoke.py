@@ -25,13 +25,11 @@ def test_btc_data_imports():
     assert callable(compute_rolling_bias)
 
 
-def test_dashboard_imports():
-    """Can we import dashboard.py without errors?"""
-    from dashboard import compute_pnl, compute_ensemble_pnl, get_status, get_db
+def test_pnl_legacy_imports():
+    """Can we import pnl_legacy.py without errors?"""
+    from pnl_legacy import compute_pnl, compute_ensemble_pnl
     assert callable(compute_pnl)
     assert callable(compute_ensemble_pnl)
-    assert callable(get_status)
-    assert callable(get_db)
 
 
 def test_fetch_markets_imports():
@@ -82,7 +80,7 @@ def test_regime_returns_valid_structure():
 
 def test_dashboard_pnl_on_empty_data():
     """compute_pnl handles empty input gracefully."""
-    from dashboard import compute_pnl, compute_ensemble_pnl
+    from pnl_legacy import compute_pnl, compute_ensemble_pnl
     result = compute_pnl([])
     assert result == {}
     ens = compute_ensemble_pnl([])

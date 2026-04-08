@@ -49,15 +49,6 @@ def test_run_predictions_accepts_db_path():
     assert "db_path" in sig.parameters
 
 
-def test_build_html_accepts_db_path():
-    """build_html accepts db_path and subtitle parameters."""
-    from dashboard import build_html
-    import inspect
-    sig = inspect.signature(build_html)
-    assert "db_path" in sig.parameters
-    assert "subtitle" in sig.parameters
-
-
 def test_15m_conv_cap_demotes_above_3():
     """Decision #20: 15m pipeline caps conviction at 3 post-prediction."""
     import sqlite3

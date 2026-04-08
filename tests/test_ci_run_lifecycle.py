@@ -87,11 +87,9 @@ class TestCiRunLifecycle:
         """Full cycle: fetch → resolve → predict → trade → score → dashboard. No crash."""
         from ci_run import main
 
-        mock_dashboard = MagicMock()
         with ExitStack() as stack:
             _apply_patches(stack)
-            with patch("ci_run._generate_dashboard", mock_dashboard):
-                main(candle_data=_fake_candle_data())
+            main(candle_data=_fake_candle_data())
 
     def test_no_active_markets_exits_clean(self):
         """Empty market list + no unpredicted markets → clean exit."""
@@ -161,18 +159,6 @@ class TestCiRunLifecycle:
                       if c == call(limit=DEFAULT_CANDLE_LIMIT)]
         assert len(main_calls) == 0, \
             f"candle_fetch_fn called with limit={DEFAULT_CANDLE_LIMIT} despite candle_data being provided"
-
-    def test_dashboard_generated(self):
-        """Dashboard generation is called after scoring."""
-        from ci_run import main
-
-        mock_dashboard = MagicMock()
-        with ExitStack() as stack:
-            _apply_patches(stack)
-            with patch("ci_run._generate_dashboard", mock_dashboard):
-                main(candle_data=_fake_candle_data())
-
-        mock_dashboard.assert_called_once()
 
     def test_market_fetch_exception_handled(self):
         """Exception in market_fetch_fn → caught gracefully, pipeline continues."""

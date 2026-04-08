@@ -30,7 +30,6 @@ def run_polymarket_pipeline(
     predict_kwargs=None,    # extra kwargs: loose_mode, db_path
     post_predict_hook=None, # e.g. 15m DOWN+NEUTRAL demotion
     shadow_pipeline_tag=None,
-    dashboard_fn=None,      # generate() or None
     price_fmt=",.0f",       # ",.0f" for BTC, ",.2f" for ETH
     asset_label="BTC",      # for log messages
     candle_data=None,       # engine-provided candle data
@@ -77,8 +76,6 @@ def run_polymarket_pipeline(
     if not markets and not has_unpredicted_market(db):
         print(f"No active {asset_label} markets. Exiting early.")
         db.close()
-        if dashboard_fn:
-            dashboard_fn()
         return
 
     # 4. Predict
@@ -170,13 +167,6 @@ def run_polymarket_pipeline(
         print(f"  [INTEGRITY] check failed: {e}")
 
     db.close()
-
-    # 10. Dashboard
-    print(f"[{label} 5/5] Generating dashboard...")
-    if dashboard_fn:
-        dashboard_fn()
-    else:
-        print("  Dashboard served dynamically — skipping static HTML generation")
 
     print(f"\n{label} CI run complete.")
 

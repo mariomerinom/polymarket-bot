@@ -295,7 +295,6 @@ class TestUnifiedPipeline:
         mock_fetch = MagicMock(return_value=[{"id": "mkt1", "question": "Test"}])
         mock_candle = MagicMock(return_value={"current_price": 85000, "candles": [], "1h_change_pct": 0, "trend": "up"})
         mock_predict = MagicMock()
-        mock_dashboard = MagicMock()
 
         with patch("polymarket_pipeline.load_pipeline_config", return_value={"mode": "paper", "bet_size": None, "notes": ""}), \
              patch("polymarket_pipeline.is_pipeline_live", return_value=False), \
@@ -315,13 +314,11 @@ class TestUnifiedPipeline:
                 market_fetch_fn=mock_fetch,
                 candle_fetch_fn=mock_candle,
                 predict_fn=mock_predict,
-                dashboard_fn=mock_dashboard,
             )
 
         mock_init.assert_called_once()
         mock_fetch.assert_called_once()
         mock_et.assert_called_once()
-        mock_dashboard.assert_called_once()
 
     def test_unified_pipeline_passes_pipeline_name_to_execute_trades(self):
         """execute_trades receives pipeline_name= argument."""

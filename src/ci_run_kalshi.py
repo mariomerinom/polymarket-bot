@@ -114,7 +114,6 @@ def main(candle_data=None, indicators=None):
     if not markets and not has_unpredicted_market(db):
         print("No active Kalshi markets. Exiting early.")
         db.close()
-        _generate_dashboard()
         return
 
     # 3. Predict using momentum rule (15m candles)
@@ -171,10 +170,6 @@ def main(candle_data=None, indicators=None):
         print(f"  [INTEGRITY] check failed: {e}")
 
     db.close()
-
-    # 5. Generate dashboard
-    print("[5/5] Generating Kalshi dashboard...")
-    _generate_dashboard()
 
     print("\nKalshi CI run complete.")
 
@@ -285,11 +280,6 @@ def _run_predictions(cycle, kalshi_data, market_limit=5, min_streak=2,
         print(f"    -> {direction} @ {est:.0%} (conv={conv}, paper)")
 
     db.close()
-
-
-def _generate_dashboard():
-    """No-op — dashboards served dynamically by dashboard_server.py."""
-    print("  Dashboard served dynamically — skipping static HTML generation")
 
 
 if __name__ == "__main__":

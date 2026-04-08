@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from dashboard import compute_pnl, compute_ensemble_pnl, compute_ev_breakeven, build_distribution_svg
+from pnl_legacy import compute_pnl, compute_ensemble_pnl, compute_ev_breakeven
 
 
 def _make_resolved(agent, estimate, price_yes, outcome, conviction=3):
@@ -218,17 +218,4 @@ def test_ev_breakeven_all_wins():
     assert ev["ev"] > 0
 
 
-def test_distribution_svg_renders():
-    """Distribution SVG renders without error with sufficient data."""
-    rows = [
-        _make_resolved("momentum_rule", 0.62, 0.20, 1, conviction=3),
-        _make_resolved("momentum_rule", 0.62, 0.80, 1, conviction=3),
-        _make_resolved("momentum_rule", 0.62, 0.50, 0, conviction=3),
-        _make_resolved("momentum_rule", 0.62, 0.50, 0, conviction=3),
-    ]
-    for i, r in enumerate(rows):
-        r["market_id"] = f"m{i}"
-    pnl = compute_pnl(rows)
-    svg = build_distribution_svg(pnl)
-    assert "<svg" in svg
-    assert "Losses cluster" in svg
+# test_distribution_svg_renders removed — dashboard rendering retired 2026-04-08

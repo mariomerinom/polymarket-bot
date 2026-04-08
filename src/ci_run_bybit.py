@@ -148,7 +148,6 @@ def main(candle_data=None, indicators=None):
     if not bybit_data:
         print("  WARNING: No BTC data available — skipping cycle")
         db.close()
-        _generate_dashboard()
         return
 
     candles = bybit_data["candles"]
@@ -275,16 +274,7 @@ def main(candle_data=None, indicators=None):
 
     db.close()
 
-    # [7/7] Generate dashboard
-    print("[7/7] Generating Bybit dashboard...")
-    _generate_dashboard()
-
     print("\nBybit CI run complete.")
-
-
-def _generate_dashboard():
-    """No-op — dashboards served dynamically by dashboard_server.py."""
-    print("  Dashboard served dynamically — skipping static HTML generation")
 
 
 if __name__ == "__main__":

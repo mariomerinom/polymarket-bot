@@ -47,7 +47,7 @@ def test_winning_bets_always_profit():
     """A correct prediction at any market price must produce positive P&L.
     Incident 2: Conviction was inverted — 26% accuracy on bets, 69% on skips.
     """
-    from dashboard import compute_pnl
+    from pnl_legacy import compute_pnl
 
     # Test across different market prices
     for price_yes in [0.20, 0.35, 0.50, 0.65, 0.80]:
@@ -82,7 +82,7 @@ def test_losing_bets_always_lose_exactly_bet_size():
     """A wrong prediction must lose exactly the bet size.
     Incident 2: P&L asymmetry confused the accounting.
     """
-    from dashboard import compute_pnl
+    from pnl_legacy import compute_pnl
 
     for price_yes in [0.20, 0.50, 0.80]:
         rows = [{

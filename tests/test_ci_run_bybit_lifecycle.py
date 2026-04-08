@@ -133,7 +133,6 @@ def _apply_patches(stack, overrides=None):
             "total_pnl": 0, "mode": "PAPER",
         }),
         "ci_run_bybit.calculate_brier_scores": MagicMock(return_value=None),
-        "ci_run_bybit._generate_dashboard": MagicMock(),
     }
     if overrides:
         defaults.update(overrides)

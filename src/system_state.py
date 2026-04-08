@@ -2,12 +2,13 @@
 system_state.py — The ONE authoritative runtime state for a pipeline.
 
 This module is the single source of truth for every "runtime fact" that
-used to be re-derived independently across trade.py, dashboard_v2/data.py,
-daily_report.py, and pipeline_integrity.py.
+used to be re-derived independently across trade.py, daily_report.py,
+and pipeline_integrity.py.
 
-Incident that motivated this module (2026-04-06):
+Historical incident (2026-04-06, dashboard era — dashboards retired
+2026-04-08):
     - trade.py::_check_consecutive_losses  → 5 (blocked trading)
-    - dashboard_v2::get_breaker_status     → 0 (showed green)
+    - the (now-retired) dashboard breaker check → 0 (showed green)
     - Both queried the same DB. Both were "correct" by their own logic.
     - BTC 5m was locked out for 30+ hours while the dashboard lied.
 

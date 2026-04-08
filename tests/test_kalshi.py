@@ -154,19 +154,4 @@ class TestKalshiScore:
             kalshi_markets.DB_PATH_KALSHI = original
 
 
-class TestKalshiNavBar:
-    """Tests for dashboard nav bar integration."""
-
-    def test_kalshi_in_default_nav(self):
-        """Dashboard default nav_links includes Kalshi."""
-        from dashboard import build_html
-        # build_html with a non-existent DB will still generate nav bar
-        import kalshi_markets
-        db = kalshi_markets.init_db_kalshi()
-        db.close()
-        html = build_html(
-            db_path=kalshi_markets.DB_PATH_KALSHI,
-            subtitle="Kalshi BTC signal transfer (paper)"
-        )
-        assert "kalshi.html" in html
-        assert "Kalshi" in html
+# TestKalshiNavBar removed — dashboard retired 2026-04-08

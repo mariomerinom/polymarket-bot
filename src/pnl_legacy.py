@@ -1,10 +1,22 @@
-"""Backward-compatible exports for test suite.
+"""
+pnl_legacy.py — Per-agent and ensemble P&L computation utilities.
 
-These functions match the old dashboard.py signatures exactly.
-They exist solely to keep tests/test_pnl.py passing.
+These functions previously lived under `dashboard_v2/compat.py` as a
+backward-compat layer for tests. The dashboard package was retired
+2026-04-08 (replaced by `tools/diag.py` Streamlit app), but the P&L
+math remained valuable as a stable reference implementation for
+test_pnl, test_smoke, test_regression. Moved here verbatim so the test
+suite keeps verifying the same P&L contract without depending on dead
+dashboard code.
+
+This module is read-only. It does not query DBs, render anything, or
+import from the trade path. It just turns resolved-prediction rows into
+agent and ensemble P&L dicts using the conviction-tier bet sizing from
+config.py.
 """
 
 from collections import defaultdict
+
 from config import (
     PAPER_BTC_CONVICTION_BETS, PAPER_ETH_CONVICTION_BETS,
     LIVE_BTC_CONVICTION_BETS, LIVE_ETH_CONVICTION_BETS,
@@ -26,7 +38,7 @@ def is_correct(estimate, outcome):
 
 
 def compute_pnl(resolved, unit_bet=100, conviction_bets=None, asset="BTC"):
-    """Per-agent P&L simulation matching the old signature."""
+    """Per-agent P&L simulation."""
     agents = defaultdict(lambda: {
         "total_pnl": 0.0, "total_wagered": 0.0, "num_bets": 0, "skipped": 0,
         "pnl_series": [], "gross_wins": 0.0, "gross_losses": 0.0,
@@ -94,7 +106,7 @@ def compute_pnl(resolved, unit_bet=100, conviction_bets=None, asset="BTC"):
 
 
 def compute_ensemble_pnl(resolved, unit_bet=100, conviction_bets=None, asset="BTC"):
-    """Ensemble P&L matching the old signature."""
+    """Ensemble P&L using weighted-average estimate across agents."""
     WEIGHTS = {
         "momentum_rule": 1.0, "contrarian_rule": 1.0,
         "contrarian": CONVICTION_WEIGHT_CONTRARIAN,
@@ -167,7 +179,7 @@ def compute_ensemble_pnl(resolved, unit_bet=100, conviction_bets=None, asset="BT
 
 
 def compute_ev_breakeven(agent_pnl):
-    """EV and breakeven WR from agent P&L dict, matching old signature."""
+    """EV and breakeven WR aggregated across agents."""
     total_bets = 0
     total_wins = 0
     total_pnl = 0
@@ -209,23 +221,3 @@ def compute_ev_breakeven(agent_pnl):
         "total_bets": total_bets, "current_wr": current_wr,
         "breakeven_wr": breakeven_wr, "ev": ev, "margin": margin, "roi": roi,
     }
-
-
-def build_distribution_svg(agent_pnl):
-    """Minimal SVG placeholder for backward compat."""
-    all_profits = []
-    for agent, data in agent_pnl.items():
-        for br in data.get("bet_results", []):
-            all_profits.append(br["profit"])
-
-    if not all_profits:
-        return '<p>No data.</p>'
-
-    wins = [p for p in all_profits if p > 0]
-    losses = [p for p in all_profits if p <= 0]
-
-    W, H = 400, 150
-    svg = f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:{W}px">'
-    svg += f'<text x="10" y="20" fill="#8b949e" font-size="11">Losses cluster at -$bet_size | Wins vary by entry price</text>'
-    svg += '</svg>'
-    return svg

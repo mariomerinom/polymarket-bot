@@ -20,7 +20,6 @@ ALLOWED_FILES = {
     "anomaly.py",               # anomaly detection has its own window logic
     "trade.py",                 # back-compat shim + execution path
     "pipeline_integrity.py",    # wraps the contract
-    "dashboard_v2/data.py",     # wraps the contract; legacy bybit path allowed
 }
 
 # Patterns that signal "I'm computing runtime state from raw DB queries".

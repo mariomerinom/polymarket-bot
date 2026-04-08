@@ -53,7 +53,7 @@ def run_integrity_checks(
     """
     ensure_integrity_table(db)
 
-    # Infer cycle if not provided (BTC 5m hook via generate_dashboard.py)
+    # Infer cycle if not provided
     if cycle is None:
         try:
             row = db.execute("SELECT MAX(cycle) FROM predictions").fetchone()
