@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS asset_daily (
     body_pct REAL,
     velocity REAL,
     trend_label TEXT,
+    velocity_zscore REAL,
+    range_zscore REAL,
     intraday_drift REAL,
     -- liquidity / volume
     volume_total REAL,
@@ -65,9 +67,68 @@ CREATE TABLE IF NOT EXISTS asset_daily (
 
 
 def init_table(db) -> None:
-    """Create asset_daily table if missing. Idempotent."""
+    """Create asset_daily table if missing. Idempotent.
+
+    Also migrates in the rank-based regime columns (`velocity_zscore`,
+    `range_zscore`) for DBs created before those columns existed. The
+    rank columns are the future of the regime gate (see option #4 in
+    the trend repackaging plan); categorical `trend_label` is retained
+    for dashboards only.
+    """
     db.execute(SCHEMA_SQL)
+    existing = {
+        row[1] for row in db.execute("PRAGMA table_info(asset_daily)").fetchall()
+    }
+    for col in ("velocity_zscore", "range_zscore"):
+        if col not in existing:
+            db.execute(f"ALTER TABLE asset_daily ADD COLUMN {col} REAL")
     db.commit()
+
+
+def recompute_zscores(db, asset: str, window: int = 30) -> int:
+    """Fill `velocity_zscore` and `range_zscore` for every row of `asset`
+    using a trailing `window`-day mean/std (exclusive of the current row
+    so each row is ranked against its own history, not itself).
+
+    Returns the number of rows updated. Rows with < 5 trailing samples
+    are left NULL (insufficient history for a meaningful rank).
+
+    This is the rank-based replacement for categorical `trend_label`.
+    Downstream signals should gate on `abs(velocity_zscore) >= k` rather
+    than on string labels.
+    """
+    init_table(db)
+    rows = db.execute(
+        "SELECT date, velocity, range_pct FROM asset_daily "
+        "WHERE asset=? ORDER BY date ASC",
+        (asset,),
+    ).fetchall()
+    updates = []
+    for i, (date, vel, rng) in enumerate(rows):
+        lo = max(0, i - window)
+        hist = rows[lo:i]
+        if len(hist) < 5:
+            updates.append((None, None, asset, date))
+            continue
+        v_hist = [h[1] for h in hist if h[1] is not None]
+        r_hist = [h[2] for h in hist if h[2] is not None]
+        if len(v_hist) < 5 or len(r_hist) < 5:
+            updates.append((None, None, asset, date))
+            continue
+        v_mu = sum(v_hist) / len(v_hist)
+        v_sd = (sum((x - v_mu) ** 2 for x in v_hist) / (len(v_hist) - 1)) ** 0.5
+        r_mu = sum(r_hist) / len(r_hist)
+        r_sd = (sum((x - r_mu) ** 2 for x in r_hist) / (len(r_hist) - 1)) ** 0.5
+        v_z = ((vel or 0.0) - v_mu) / v_sd if v_sd > 0 else 0.0
+        r_z = ((rng or 0.0) - r_mu) / r_sd if r_sd > 0 else 0.0
+        updates.append((v_z, r_z, asset, date))
+    db.executemany(
+        "UPDATE asset_daily SET velocity_zscore=?, range_zscore=? "
+        "WHERE asset=? AND date=?",
+        updates,
+    )
+    db.commit()
+    return len(updates)
 
 
 # ── Core computation ────────────────────────────────────────────────────────
