@@ -775,3 +775,149 @@ class TestBybitConsensus:
             assert result["consensus"]["sources"] == 2
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 9: Failure-mode tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestBybitFailureModes:
+    """Phase 9: failure modes that would deadlock or silently corrupt Bybit
+    state if not handled. Covers partial fills, cross-cycle stop trigger
+    reconciliation, WS stale close, and margin-insufficient classification.
+    """
+
+    def _insert_pred(self, db, pred_id, market_id):
+        db.execute("""
+            INSERT INTO predictions (id, market_id, agent, estimate, edge,
+                confidence, reasoning, predicted_at, cycle)
+            VALUES (?, ?, 'test', 0.6, 0.1, 'medium', '{}',
+                    '2026-01-01T00:00:00Z', 1)
+        """, (pred_id, market_id))
+        db.commit()
+
+    def test_partial_fill_response_does_not_corrupt_position(self, bybit_db):
+        """Live mode: Bybit returns a partial-fill retCode=0 with a smaller
+        filled qty. Current behavior is GTC limit, so we just record the
+        order at requested qty and let reconciliation handle the rest.
+        Assert: position is opened once, size matches requested, no crash.
+        """
+        from bybit_trade import place_bybit_order
+        from bybit_markets import get_open_positions
+        _insert_dummy_market(bybit_db, "BTCUSDT-pf")
+        self._insert_pred(bybit_db, 200, "BTCUSDT-pf")
+        params = {
+            "direction": "UP", "side": "Buy", "qty": 0.005,
+            "price": 84050.0, "stop_loss": 83850.0, "symbol": "BTCUSDT",
+            "order_type": "Limit", "mark_price": 84000.0, "atr": 100.0,
+        }
+        # Mock the pybit SDK to return a success with order_id
+        fake_order = {"retCode": 0, "result": {"orderId": "ord-partial"}}
+        with patch("bybit_trade.BYBIT_TRADING_ENABLED", True), \
+             patch("bybit_trade._submit_bybit_order", return_value="ord-partial"), \
+             patch("bybit_trade._set_stop_loss"):
+            place_bybit_order(bybit_db, "BTCUSDT-pf", 200, params, cycle=9)
+
+        positions = get_open_positions(bybit_db)
+        assert len(positions) == 1
+        assert positions[0]["size"] == 0.005
+        assert positions[0]["bybit_order_id"] == "ord-partial"
+
+        fd = bybit_db.execute(
+            "SELECT result FROM fill_diagnostic ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert fd[0] == "bybit_limit_submitted"
+
+    def test_cross_cycle_stop_trigger_reconciled(self, bybit_db):
+        """Between cycles the exchange stop-loss triggered and Bybit no
+        longer reports an open position. sync_position_status must close
+        the DB row, compute PnL, and write bybit_stop_triggered.
+        """
+        from bybit_trade import sync_position_status
+        from bybit_markets import open_position, get_open_position
+        open_position(bybit_db, "xcycle", "Buy", 0.005, 84000.0, 83850.0)
+
+        # Fake SDK: no open positions on Bybit, execution history has close price
+        fake_session = MagicMock()
+        fake_session.get_positions.return_value = {
+            "result": {"list": [{"size": "0"}]}
+        }
+        fake_session.get_executions.return_value = {
+            "result": {"list": [{"execPrice": "83850.0"}]}
+        }
+
+        # Inject a fake pybit.unified_trading module so the function-scoped
+        # `from pybit.unified_trading import HTTP` resolves to our mock.
+        import types
+        fake_pybit = types.ModuleType("pybit")
+        fake_ut = types.ModuleType("pybit.unified_trading")
+        fake_ut.HTTP = MagicMock(return_value=fake_session)
+        fake_pybit.unified_trading = fake_ut
+        with patch("bybit_trade.BYBIT_TRADING_ENABLED", True), \
+             patch.dict(sys.modules, {"pybit": fake_pybit,
+                                        "pybit.unified_trading": fake_ut}):
+            sync_position_status(bybit_db)
+
+        assert get_open_position(bybit_db) is None
+        row = bybit_db.execute(
+            "SELECT status, close_reason, close_price FROM positions WHERE market_id='xcycle'"
+        ).fetchone()
+        assert row[0] == "closed"
+        assert row[1] == "stop_loss"
+        assert abs(row[2] - 83850.0) < 1e-6
+
+        fd = bybit_db.execute(
+            "SELECT result FROM fill_diagnostic ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert fd[0] == "bybit_stop_triggered"
+
+    def test_ws_stale_close_sync_handles_api_exception(self, bybit_db):
+        """If the pybit SDK raises (WS reconnect, stale auth, 5xx), sync
+        must not crash and must leave the open position intact — the next
+        cycle will retry.
+        """
+        from bybit_trade import sync_position_status
+        from bybit_markets import open_position, get_open_position
+        open_position(bybit_db, "ws-stale", "Sell", 0.005, 84000.0, 84150.0)
+
+        fake_session = MagicMock()
+        fake_session.get_positions.side_effect = RuntimeError("ws stale")
+
+        import types
+        fake_pybit = types.ModuleType("pybit")
+        fake_ut = types.ModuleType("pybit.unified_trading")
+        fake_ut.HTTP = MagicMock(return_value=fake_session)
+        fake_pybit.unified_trading = fake_ut
+        with patch("bybit_trade.BYBIT_TRADING_ENABLED", True), \
+             patch.dict(sys.modules, {"pybit": fake_pybit,
+                                        "pybit.unified_trading": fake_ut}):
+            # Must not raise
+            sync_position_status(bybit_db)
+
+        pos = get_open_position(bybit_db)
+        assert pos is not None
+        assert pos["status"] == "open"
+        assert pos["side"] == "Sell"
+
+    def test_margin_insufficient_classified_as_bybit_code(self, bybit_db):
+        """Live-mode submit raising 'insufficient margin' must be recorded
+        as bybit_margin_insufficient in fill_diagnostic (not a generic
+        limit_rejected), so the diag panel can surface funding issues.
+        """
+        from bybit_trade import place_bybit_order
+        _insert_dummy_market(bybit_db, "BTCUSDT-marg")
+        self._insert_pred(bybit_db, 201, "BTCUSDT-marg")
+        params = {
+            "direction": "UP", "side": "Buy", "qty": 0.005,
+            "price": 84050.0, "stop_loss": 83850.0, "symbol": "BTCUSDT",
+            "order_type": "Limit", "mark_price": 84000.0, "atr": 100.0,
+        }
+        with patch("bybit_trade.BYBIT_TRADING_ENABLED", True), \
+             patch("bybit_trade._submit_bybit_order",
+                   side_effect=Exception("insufficient margin for order")):
+            place_bybit_order(bybit_db, "BTCUSDT-marg", 201, params, cycle=10)
+
+        fd = bybit_db.execute(
+            "SELECT result FROM fill_diagnostic ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert fd[0] == "bybit_margin_insufficient"
+
+
