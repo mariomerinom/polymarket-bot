@@ -523,6 +523,72 @@ class TestPaperOrderPlacement:
         assert get_open_position(bybit_db) is None
 
 
+class TestBybitFillDiagnostic:
+    """Phase 1: every terminal bybit_trade event writes a fill_diagnostic row."""
+
+    def test_paper_order_writes_paper_would_fire(self, bybit_db):
+        from bybit_trade import place_bybit_order
+        _insert_dummy_market(bybit_db, "BTCUSDT-fd1")
+        bybit_db.execute("""
+            INSERT INTO predictions (id, market_id, agent, estimate, edge,
+                confidence, reasoning, predicted_at, cycle)
+            VALUES (10, 'BTCUSDT-fd1', 'test', 0.6, 0.1, 'medium', '{}',
+                    '2026-01-01T00:00:00Z', 1)
+        """)
+        bybit_db.commit()
+        params = {
+            "direction": "UP", "side": "Buy", "qty": 0.005,
+            "price": 84050.0, "stop_loss": 83850.0, "symbol": "BTCUSDT",
+            "order_type": "Limit", "mark_price": 84000.0, "atr": 100.0,
+        }
+        with patch("bybit_trade.BYBIT_TRADING_ENABLED", False):
+            place_bybit_order(bybit_db, "BTCUSDT-fd1", 10, params, cycle=7)
+        row = bybit_db.execute(
+            "SELECT pipeline, result, cycle FROM fill_diagnostic ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "bybit"
+        assert row[1] == "paper_would_fire"
+        assert row[2] == 7
+
+    def test_close_position_writes_exit_code(self, bybit_db):
+        from bybit_trade import close_bybit_position
+        from bybit_markets import open_position, get_open_position
+        open_position(bybit_db, "test-fd", "Buy", 0.005, 84000.0, 83850.0)
+        pos = get_open_position(bybit_db)
+        with patch("bybit_trade.BYBIT_TRADING_ENABLED", False):
+            close_bybit_position(bybit_db, pos, "streak_break", 84200.0)
+        row = bybit_db.execute(
+            "SELECT pipeline, result FROM fill_diagnostic ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert row[0] == "bybit"
+        assert row[1] == "bybit_exit_streak_break"
+
+    def test_live_margin_error_classified(self, bybit_db):
+        from bybit_trade import place_bybit_order
+        _insert_dummy_market(bybit_db, "BTCUSDT-fd2")
+        bybit_db.execute("""
+            INSERT INTO predictions (id, market_id, agent, estimate, edge,
+                confidence, reasoning, predicted_at, cycle)
+            VALUES (11, 'BTCUSDT-fd2', 'test', 0.6, 0.1, 'medium', '{}',
+                    '2026-01-01T00:00:00Z', 1)
+        """)
+        bybit_db.commit()
+        params = {
+            "direction": "UP", "side": "Buy", "qty": 0.005,
+            "price": 84050.0, "stop_loss": 83850.0, "symbol": "BTCUSDT",
+            "order_type": "Limit", "mark_price": 84000.0, "atr": 100.0,
+        }
+        with patch("bybit_trade.BYBIT_TRADING_ENABLED", True), \
+             patch("bybit_trade._submit_bybit_order",
+                   side_effect=Exception("margin insufficient for order")):
+            place_bybit_order(bybit_db, "BTCUSDT-fd2", 11, params, cycle=8)
+        row = bybit_db.execute(
+            "SELECT result FROM fill_diagnostic ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert row[0] == "bybit_margin_insufficient"
+
+
 class TestTradingSummary:
     def test_empty_summary(self, bybit_db):
         from bybit_trade import get_bybit_trading_summary

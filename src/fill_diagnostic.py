@@ -55,6 +55,23 @@ RESULT_CODES = frozenset({
     "missing_token",
     # Legacy GTC path still in use for paper pipelines w/o WS bid/ask
     "gtc_submitted",
+    # ── Bybit (perp) terminal events ─────────────────────────────────────
+    # Live limit order accepted by Bybit (confirms submission, not fill)
+    "bybit_limit_submitted",
+    # Live limit order rejected by Bybit API (retCode != 0, non-margin)
+    "bybit_limit_rejected",
+    # Server-side stop-loss fired (detected via REST reconcile)
+    "bybit_stop_triggered",
+    # Position closed by REST reconcile without stop — e.g. manual/web close
+    "bybit_reconciled_closed",
+    # Margin / funds insufficient at order time
+    "bybit_margin_insufficient",
+    # WS feed stale; forced-closed local position based on last known mark
+    "bybit_ws_stale_close",
+    # Local exit: signal reversed mid-hold
+    "bybit_exit_streak_break",
+    # Local exit: max hold cycles reached
+    "bybit_exit_time_ceiling",
 })
 
 

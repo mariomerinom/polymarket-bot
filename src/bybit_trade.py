@@ -37,6 +37,18 @@ BYBIT_TRADING_ENABLED = _env("BYBIT_TRADING_ENABLED", "false").lower() == "true"
 BYBIT_BASE_URL = _env("BYBIT_BASE_URL", "https://api.bybit.com")
 
 
+def _fd_record(db, **kwargs):
+    """Fire-and-forget fill_diagnostic.record for Bybit terminal events.
+
+    Never raises — diagnostic failures must not block trading.
+    """
+    try:
+        from fill_diagnostic import record
+        record(db, pipeline="bybit", **kwargs)
+    except Exception as e:
+        print(f"    [bybit] fill_diagnostic record failed: {e}")
+
+
 # ── Risk gates ───────────────────────────────────────────────────────────────
 
 def should_trade_bybit(prediction_row, db):
@@ -207,13 +219,36 @@ def place_bybit_order(db, market_id, prediction_id, order_params, cycle):
             # Set server-side stop-loss
             _set_stop_loss(order_params["symbol"], order_params["side"],
                            order_params["stop_loss"])
+            _fd_record(
+                db, result="bybit_limit_submitted", cycle=cycle,
+                requested_size=order_params["qty"],
+                requested_limit=order_params["price"],
+                order_type=order_params.get("order_type"),
+            )
         except Exception as e:
             print(f"    [bybit] Order failed: {e}")
             order_record["status"] = "failed"
             order_record["reason"] = str(e)
+            msg = str(e).lower()
+            if "margin" in msg or "insufficient" in msg or "funds" in msg:
+                code = "bybit_margin_insufficient"
+            else:
+                code = "bybit_limit_rejected"
+            _fd_record(
+                db, result=code, cycle=cycle,
+                requested_size=order_params["qty"],
+                requested_limit=order_params["price"],
+                order_type=order_params.get("order_type"),
+            )
     else:
         order_record["status"] = "paper"
         order_record["price_filled"] = order_params["mark_price"]
+        _fd_record(
+            db, result="paper_would_fire", cycle=cycle,
+            requested_size=order_params["qty"],
+            requested_limit=order_params["price"],
+            order_type=order_params.get("order_type"),
+        )
 
     # Store order
     db.execute("""
@@ -359,6 +394,10 @@ def sync_position_status(db):
             pnl = _compute_pnl(pos["side"], pos["size"], pos["entry_price"], close_price)
             close_position_db(db, pos["id"], close_price, pnl, "stop_loss")
             print(f"    [bybit] Stop-loss triggered: PnL=${pnl:.2f}")
+            _fd_record(
+                db, result="bybit_stop_triggered",
+                filled_size=pos["size"], filled_avg_price=close_price,
+            )
 
     except Exception as e:
         print(f"    [bybit] Position sync error: {e}")
@@ -406,6 +445,16 @@ def close_bybit_position(db, position, reason, mark_price):
 
     print(f"    [bybit] Closed {position['side']} @ ${close_price:,.2f} "
           f"(reason={reason}, PnL=${pnl:.2f})")
+
+    code_map = {
+        "streak_break": "bybit_exit_streak_break",
+        "time_ceiling": "bybit_exit_time_ceiling",
+        "stop_loss": "bybit_stop_triggered",
+    }
+    _fd_record(
+        db, result=code_map.get(reason, "bybit_reconciled_closed"),
+        filled_size=position["size"], filled_avg_price=close_price,
+    )
 
     return {"pnl": pnl, "reason": reason, "close_price": close_price}
 
