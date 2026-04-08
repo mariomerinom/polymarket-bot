@@ -106,6 +106,26 @@ def load_predictions(db_path: str, days: int, min_conviction: int,
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     db = sqlite3.connect(db_path)
     db.row_factory = sqlite3.Row
+
+    # Detect optional tables — paper-only pipelines (kalshi, btc_15m)
+    # may not have an orders table at all.
+    tables = {
+        r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    has_orders = "orders" in tables
+    placed_expr = (
+        "(SELECT COUNT(*) FROM orders o WHERE o.prediction_id = p.id)"
+        if has_orders else "0"
+    )
+    actual_pnl_expr = (
+        "(SELECT COALESCE(SUM(pnl),0) FROM orders o "
+        "WHERE o.prediction_id = p.id "
+        "AND o.status IN ('settled','paper_settled'))"
+        if has_orders else "0"
+    )
+
     has_ad = False
     if asset and Path(ASSET_DAILY_DB).exists():
         try:
@@ -115,14 +135,12 @@ def load_predictions(db_path: str, days: int, min_conviction: int,
             has_ad = False
 
     if has_ad:
-        sql = """
+        sql = f"""
             SELECT p.id, p.market_id, p.agent, p.estimate, p.regime,
                    p.conviction_score, p.predicted_at,
                    m.price_yes, m.price_no, m.outcome, m.resolved,
-                   (SELECT COUNT(*) FROM orders o WHERE o.prediction_id = p.id) AS placed,
-                   (SELECT COALESCE(SUM(pnl),0) FROM orders o
-                       WHERE o.prediction_id = p.id
-                         AND o.status IN ('settled','paper_settled')) AS actual_pnl,
+                   {placed_expr} AS placed,
+                   {actual_pnl_expr} AS actual_pnl,
                    ad.trend_label AS day_trend_label,
                    ad.realized_vol AS day_realized_vol
             FROM predictions p
@@ -137,14 +155,12 @@ def load_predictions(db_path: str, days: int, min_conviction: int,
         """
         rows = db.execute(sql, (asset, cutoff, min_conviction)).fetchall()
     else:
-        sql = """
+        sql = f"""
             SELECT p.id, p.market_id, p.agent, p.estimate, p.regime,
                    p.conviction_score, p.predicted_at,
                    m.price_yes, m.price_no, m.outcome, m.resolved,
-                   (SELECT COUNT(*) FROM orders o WHERE o.prediction_id = p.id) AS placed,
-                   (SELECT COALESCE(SUM(pnl),0) FROM orders o
-                       WHERE o.prediction_id = p.id
-                         AND o.status IN ('settled','paper_settled')) AS actual_pnl,
+                   {placed_expr} AS placed,
+                   {actual_pnl_expr} AS actual_pnl,
                    NULL AS day_trend_label,
                    NULL AS day_realized_vol
             FROM predictions p
