@@ -48,10 +48,11 @@ import json  # noqa: E402
 # ── Pipeline registry ──────────────────────────────────────────────────────
 
 PIPELINES = {
-    "BTC 5m":  {"db": "data/predictions.db",       "asset": "BTC", "name": "btc_5m"},
-    "BTC 15m": {"db": "data/predictions_15m.db",   "asset": "BTC", "name": "btc_15m"},
-    "ETH 5m":  {"db": "data/predictions_eth.db",   "asset": "ETH", "name": "eth_5m"},
-    "Bybit BTC": {"db": "data/predictions_bybit.db", "asset": "BTC", "name": "bybit_btc"},
+    "BTC 5m":     {"db": "data/predictions.db",        "asset": "BTC", "name": "btc_5m"},
+    "BTC 15m":    {"db": "data/predictions_15m.db",    "asset": "BTC", "name": "btc_15m"},
+    "ETH 5m":     {"db": "data/predictions_eth.db",    "asset": "ETH", "name": "eth_5m"},
+    "Kalshi BTC": {"db": "data/predictions_kalshi.db", "asset": "BTC", "name": "kalshi"},
+    "Bybit BTC":  {"db": "data/predictions_bybit.db",  "asset": "BTC", "name": "bybit"},
 }
 
 ASSET_DAILY_DB = "data/asset_daily.db"
@@ -83,7 +84,7 @@ with st.sidebar:
     enabled_pipelines = st.multiselect(
         "Pipelines",
         options=list(PIPELINES.keys()),
-        default=["BTC 5m", "ETH 5m"],
+        default=list(PIPELINES.keys()),
     )
 
     bet_size = st.number_input("Bet size $ (counterfactual)", value=25.0, step=5.0)
