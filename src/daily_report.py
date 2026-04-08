@@ -573,6 +573,91 @@ def analyze_orders(db_path, date_str):
         return None
 
 
+def analyze_bybit_positions(db_path, date_str):
+    """Analyze Bybit positions opened or closed on a given date.
+
+    Bybit trades live in the `positions` table, not `orders`, so the
+    standard analyze_orders returns None. This function provides the
+    equivalent for the Bybit pipeline: lifecycle, close reasons,
+    funding cost, pnl.
+    """
+    try:
+        db = sqlite3.connect(str(db_path))
+        db.row_factory = sqlite3.Row
+
+        table_check = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='positions'"
+        ).fetchone()
+        if not table_check:
+            db.close()
+            return None
+
+        # Positions touched today (opened or closed). funding_cost column
+        # may not exist on older DBs — guard via PRAGMA check.
+        cols = {r[1] for r in db.execute("PRAGMA table_info(positions)").fetchall()}
+        fc_expr = "COALESCE(funding_cost, 0)" if "funding_cost" in cols else "0"
+        rows = db.execute(f"""
+            SELECT side, size, entry_price, status, stop_loss, close_price,
+                   pnl, close_reason, cycles_held, opened_at, closed_at,
+                   {fc_expr} AS funding_cost
+            FROM positions
+            WHERE date(opened_at) = ? OR date(closed_at) = ?
+        """, (date_str, date_str)).fetchall()
+        db.close()
+
+        if not rows:
+            return None
+
+        rows = [dict(r) for r in rows]
+        opened = [r for r in rows if (r["opened_at"] or "")[:10] == date_str]
+        closed = [r for r in rows if (r["closed_at"] or "")[:10] == date_str]
+        settled = [r for r in closed if r["pnl"] is not None]
+        total_pnl = sum(r["pnl"] for r in settled)
+        total_funding = sum(r["funding_cost"] or 0 for r in settled)
+        wins = sum(1 for r in settled if r["pnl"] > 0)
+        losses = sum(1 for r in settled if r["pnl"] < 0)
+
+        # Close-reason breakdown
+        reasons: dict[str, dict] = {}
+        for r in settled:
+            k = r.get("close_reason") or "unknown"
+            b = reasons.setdefault(k, {"n": 0, "pnl": 0.0, "wins": 0})
+            b["n"] += 1
+            b["pnl"] += r["pnl"] or 0
+            if (r["pnl"] or 0) > 0:
+                b["wins"] += 1
+
+        # Side breakdown
+        by_side: dict[str, dict] = {}
+        for r in settled:
+            k = r["side"]
+            b = by_side.setdefault(k, {"n": 0, "pnl": 0.0, "wins": 0})
+            b["n"] += 1
+            b["pnl"] += r["pnl"] or 0
+            if (r["pnl"] or 0) > 0:
+                b["wins"] += 1
+
+        avg_cycles_held = (
+            sum(r["cycles_held"] or 0 for r in settled) / len(settled)
+            if settled else 0
+        )
+
+        return {
+            "opened": len(opened),
+            "closed": len(closed),
+            "settled_count": len(settled),
+            "wins": wins,
+            "losses": losses,
+            "total_pnl": round(total_pnl, 2),
+            "total_funding": round(total_funding, 4),
+            "avg_cycles_held": round(avg_cycles_held, 1),
+            "reasons": reasons,
+            "by_side": by_side,
+        }
+    except Exception:
+        return None
+
+
 def generate_alerts(summary, rolling, orders=None, integrity_issues=None):
     """Flag concerning patterns."""
     alerts = []
@@ -1085,6 +1170,50 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 "",
             ])
 
+        # Bybit position lifecycle (Phase 8)
+        bp = data.get("bybit_positions")
+        if bp and (bp["opened"] + bp["closed"]) > 0:
+            record = (
+                f"{bp['wins']}W / {bp['losses']}L"
+                if (bp["wins"] + bp["losses"]) > 0 else "—"
+            )
+            lines.extend([
+                "### Position Lifecycle (Bybit)",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Opened today | {bp['opened']} |",
+                f"| Closed today | {bp['closed']} |",
+                f"| Settled P&L | ${bp['total_pnl']:+.2f} |",
+                f"| Funding cost paid | ${bp['total_funding']:+.4f} |",
+                f"| Record | {record} |",
+                f"| Avg cycles held | {bp['avg_cycles_held']} |",
+                "",
+            ])
+            if bp["reasons"]:
+                lines.extend([
+                    "**Close reasons:**",
+                    "| Reason | N | Wins | P&L |",
+                    "|--------|--:|-----:|----:|",
+                ])
+                for k, v in sorted(bp["reasons"].items(),
+                                    key=lambda x: -x[1]["n"]):
+                    lines.append(
+                        f"| {k} | {v['n']} | {v['wins']} | ${v['pnl']:+.2f} |"
+                    )
+                lines.append("")
+            if bp["by_side"]:
+                lines.extend([
+                    "**By side:**",
+                    "| Side | N | Wins | P&L |",
+                    "|------|--:|-----:|----:|",
+                ])
+                for k, v in sorted(bp["by_side"].items()):
+                    lines.append(
+                        f"| {k} | {v['n']} | {v['wins']} | ${v['pnl']:+.2f} |"
+                    )
+                lines.append("")
+
             # Direction breakdown
             if orders["by_direction"]:
                 lines.extend([
@@ -1444,6 +1573,7 @@ def analyze_pipeline(db_path, date_str):
         filters = analyze_filter_breakdown(predictions, resolved)
         rolling = rolling_trend(db, date_str, window=7)
         orders = analyze_orders(db_path, date_str)
+        bybit_positions = analyze_bybit_positions(db_path, date_str) if is_bybit else None
         shadow = analyze_shadow_indicators(predictions, resolved)
         shadow_conviction = analyze_shadow_conviction(resolved)
     finally:
@@ -1483,6 +1613,7 @@ def analyze_pipeline(db_path, date_str):
         "shadow": shadow,
         "shadow_conviction": shadow_conviction,
         "integrity_issues": integrity_issues,
+        "bybit_positions": bybit_positions,
     }
 
 
