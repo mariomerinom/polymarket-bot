@@ -1,3 +1,5 @@
+> **NOTE (2026-04-08):** GH Pages dashboards retired. Canonical view is local Streamlit (`streamlit run tools/diag.py`). Dashboard mentions below are historical.
+
 # Testing & Pipeline Integrity
 
 **Purpose:** Prevent production incidents. Nine incidents since March 15, 2026 cost $1,000+ in losses and 48+ hours of downtime. Every test exists because something broke. The integrity system exists because tests alone weren't enough.

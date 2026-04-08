@@ -65,15 +65,20 @@ All pipelines run on a DigitalOcean VPS (`botsy_engine.py`) via a single async e
 
 ### Pipeline Table
 
-| Pipeline | Entry Point | DB | Dashboard | Signal | Status |
-|----------|-------------|----|-----------|--------|--------|
-| BTC 5m | `ci_run.py` → `polymarket_pipeline` | `predictions.db` | `docs/index.html` | Momentum | **Production** |
-| BTC 15m | `ci_run_15m.py` → `polymarket_pipeline` | `predictions_15m.db` | `docs/15m.html` | Momentum | Paper |
-| ETH 5m | `ci_run_eth.py` → `polymarket_pipeline` | `predictions_eth.db` | `docs/eth.html` | Momentum | Paper |
-| Kalshi BTC | `ci_run_kalshi.py` (standalone) | `predictions_kalshi.db` | `docs/kalshi.html` | Momentum | Paper (Phase 0) |
-| Bybit BTC | `ci_run_bybit.py` (standalone) | `predictions_bybit.db` | `docs/bybit.html` | Momentum | Paper |
+| Pipeline | Entry Point | DB | Signal | Status |
+|----------|-------------|----|--------|--------|
+| BTC 5m | `ci_run.py` → `polymarket_pipeline` | `predictions.db` | Momentum | **Production** |
+| BTC 15m | `ci_run_15m.py` → `polymarket_pipeline` | `predictions_15m.db` | Momentum | Paper |
+| ETH 5m | `ci_run_eth.py` → `polymarket_pipeline` | `predictions_eth.db` | Momentum | Paper |
+| Kalshi BTC | `ci_run_kalshi.py` (standalone) | `predictions_kalshi.db` | Momentum | Paper (Phase 0) |
+| Bybit BTC | `ci_run_bybit.py` (standalone) | `predictions_bybit.db` | Momentum | Paper |
 
-All dashboards are cross-linked via a nav bar on GitHub Pages.
+### Diagnostic Tooling
+
+GH Pages dashboards retired 2026-04-08. The canonical view is the local Streamlit app:
+`source venv/bin/activate && streamlit run tools/diag.py`. Reads live DBs after `git pull`.
+Five tabs: P&L Overlay (counterfactual vs actual), Rolling WR, Regime Heatmap
+(`day_type × direction`, `vol_bucket × direction`), Fill Diagnostic, Raw Query.
 
 ### Unified Pipeline (`src/polymarket_pipeline.py`)
 

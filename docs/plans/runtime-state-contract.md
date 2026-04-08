@@ -1,3 +1,5 @@
+> **NOTE (2026-04-08):** GH Pages dashboards retired. Canonical view is local Streamlit (`streamlit run tools/diag.py`). Dashboard mentions below are historical.
+
 # Plan: Runtime State Contract
 
 ## Context

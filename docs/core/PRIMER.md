@@ -1,3 +1,5 @@
+> **NOTE (2026-04-08):** GH Pages dashboards retired. Canonical view is local Streamlit (`streamlit run tools/diag.py`). Dashboard mentions below are historical.
+
 # Polymarket Bot — System Primer
 
 A bot that bets on 5-minute "Bitcoin/Ethereum Up or Down" markets on Polymarket, trades BTCUSDT perpetual futures on Bybit, and is expanding to Kalshi. Pure math from candlestick data — no LLMs at runtime, $0/day operating cost.

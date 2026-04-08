@@ -1,3 +1,5 @@
+> **NOTE (2026-04-08):** GH Pages dashboards retired. Canonical view is local Streamlit (`streamlit run tools/diag.py`). Dashboard mentions below are historical.
+
 # Kalshi Integration — Parallel Venue & Cross-Market Arbitrage
 
 > **Status**: ACTIVE — Phase 0 infrastructure complete, mock mode analysis done (see `docs/analysis/kalshi_pipeline_review.md`). Needs real API credentials to proceed.
