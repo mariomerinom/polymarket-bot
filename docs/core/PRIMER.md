@@ -4,7 +4,7 @@
 
 A bot that bets on 5-minute "Bitcoin/Ethereum Up or Down" markets on Polymarket, trades BTCUSDT perpetual futures on Bybit, and is expanding to Kalshi. Pure math from candlestick data — no LLMs at runtime, $0/day operating cost.
 
-**Live trading since 2026-03-31.** Flat $25 per bet (Polymarket) / 0.005 BTC per position (Bybit).
+**All pipelines paper trading as of 2026-04-09.** Live trading paused due to adverse selection (fill problem). Signal quality strong across all pipelines.
 
 ---
 
@@ -12,13 +12,13 @@ A bot that bets on 5-minute "Bitcoin/Ethereum Up or Down" markets on Polymarket,
 
 | Pipeline | Schedule | Signal | Status | Database |
 |----------|----------|--------|--------|----------|
-| **BTC 5m** | Every 5 min | Momentum | **LIVE** ($25/bet) | `predictions.db` |
+| **BTC 5m** | Every 5 min | Momentum | Paper (reverted from live 2026-04-09) | `predictions.db` |
 | **BTC 15m** | Every 15 min | Momentum (5m signal) | Paper | `predictions_15m.db` |
-| **ETH 5m** | Every 5 min | Momentum | Paper | `predictions_eth.db` |
-| **Bybit BTCUSDT** | Every 5 min | Momentum | Paper (0.005 BTC) | `predictions_bybit.db` |
-| **Kalshi BTC** | Every 15 min | Momentum | Phase 0 (mock) | `predictions_kalshi.db` |
+| **ETH 5m** | Every 5 min | Momentum | Paper (Phase 2 conditional GO) | `predictions_eth.db` |
+| **Bybit BTCUSDT** | Every 5 min | Momentum | Paper (rehabilitated 2026-04-09) | `predictions_bybit.db` |
+| **Kalshi BTC** | Every 15 min | Momentum | Paper (resolution fixed 2026-04-09) | `predictions_kalshi.db` |
 
-Each pipeline is **fully isolated** — separate DB, workflow, dashboard, and CI job. If one crashes, the others are unaffected. All dashboards are cross-linked at [GitHub Pages](https://mariomerinom.github.io/polymarket-bot/).
+Each pipeline is **fully isolated** — separate DB, separate scoring, separate trade execution. All run on VPS via `botsy_engine.py` (systemd). Diagnostic view: `streamlit run tools/diag.py`.
 
 ---
 
@@ -84,9 +84,12 @@ Three gates can skip a prediction. Each gate has an **extreme estimate override*
 
 | Gate | Condition | Normal Action | Extreme Override |
 |------|-----------|--------------|-----------------|
+| **HIGH_VOL Non-Trending** | HIGH_VOL + not TRENDING regime | Demote (conv=2) | — |
 | **Dead Hour** | Current UTC hour has < 50% WR on 30+ historical bets | Skip (conv=0) | Shadow (conv=2) |
 | **Price Gate** | Market price > 85% or < 15% | Skip (conv=0) | Shadow (conv=2) |
 | **MR Regime** | Autocorrelation below threshold | Skip (conv=0) | Shadow (conv=2) |
+
+**HIGH_VOL gate (2026-04-09):** Momentum streaks in high-volatility non-trending markets are noise that reverses. 54.8% WR on 126 BTC bets, 40.7% on 27 ETH bets. Excluded from 15m pipeline (64.3% WR there).
 
 Dead hours are **data-driven** — computed from the last 90 days of resolved predictions, with a fallback to {3, 16, 21} UTC when the DB has insufficient data.
 
@@ -108,7 +111,10 @@ Two independent boosts can increase conviction by +1 each (capped at 5):
 
 All tiers bet the same $25 in production (Phase 1 flat grind). Tiers exist to track whether higher conviction predicts better outcomes.
 
-**Key filter:** DOWN + NEUTRAL regime is demoted to conv=2. It has 52% WR — coin-flip territory. UP + NEUTRAL stays at conv >= 3 (82% WR on 90 bets).
+**Key filters:**
+- **HIGH_VOL non-trending** → conv=2 (54.8% WR on 126 bets — below breakeven after fees)
+- **DOWN + NEUTRAL** (non-HIGH_VOL) → conv=2 (52% WR — coin-flip territory)
+- UP + NEUTRAL stays at conv >= 3 (82% WR on 90 bets)
 
 ### Stage 6: Trade Execution
 

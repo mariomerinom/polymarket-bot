@@ -4,7 +4,7 @@
 
 **Purpose:** Prevent production incidents. Nine incidents since March 15, 2026 cost $1,000+ in losses and 48+ hours of downtime. Every test exists because something broke. The integrity system exists because tests alone weren't enough.
 
-**Current count: 440 tests** (as of 2026-04-05). Runtime: ~80 seconds.
+**Current count: 576 tests** (as of 2026-04-09). Runtime: ~85 seconds. 20 pre-existing failures (numpy import, engine dispatch).
 
 **Defense layers:** Tests gate CI (pre-deploy). Integrity checks run post-cycle (runtime). Together they cover what neither can alone.
 

@@ -1,6 +1,6 @@
 # Multi-Asset Expansion Plan
 
-Last updated: 2026-04-01
+Last updated: 2026-04-09
 
 ---
 
@@ -26,9 +26,11 @@ Kalshi also offers similar 5m/15m crypto markets. Combined daily volume across p
 
 | Pipeline | Signal | Status | Notes |
 |----------|--------|--------|-------|
-| BTC 5m | Momentum | **Production** ($25/bet) | 227+ bets, 67% WR. Live since 2026-03-31. |
-| BTC 15m | Momentum | Paper | 12 bets, 67% WR. `loose_mode=True`. |
-| ETH 5m | Momentum | Paper (conv=2) | Flipped from contrarian 2026-04-01. Collecting data. |
+| BTC 5m | Momentum | Paper (reverted from live) | 484 bets, 63.4% WR. HIGH_VOL gate added 2026-04-09. |
+| BTC 15m | Momentum | Paper | 106 bets, 59.4% WR. `loose_mode=True`. |
+| ETH 5m | Momentum | Paper (Phase 2 conditional GO) | 267 bets, 57.7% WR. HIGH_VOL gate added 2026-04-09. |
+| Bybit BTC | Momentum | Paper (rehabilitated 2026-04-09) | 319 bets at 50.5% pre-fix. Conviction filters + dead hours added. |
+| Kalshi BTC | Momentum | Paper (resolution fixed 2026-04-09) | Mock hash resolver replaced with real candle-based resolution. |
 
 ### ETH Lessons Learned
 

@@ -2,8 +2,8 @@
 
 # Kalshi Integration — Parallel Venue & Cross-Market Arbitrage
 
-> **Status**: ACTIVE — Phase 0 infrastructure complete, mock mode analysis done (see `docs/analysis/kalshi_pipeline_review.md`). Needs real API credentials to proceed.
-> **Date**: March 31, 2026 (plan) / April 2, 2026 (Phase 0 built) / April 6, 2026 (Phase 0 analysis)
+> **Status**: ACTIVE — Phase 0 running with real candle-based resolution (mock hash resolver replaced 2026-04-09). Collecting fresh data. Needs real API credentials for live resolution.
+> **Date**: March 31, 2026 (plan) / April 2, 2026 (Phase 0 built) / April 6, 2026 (Phase 0 analysis) / April 9, 2026 (mock resolution fixed)
 > **Goal**: Add Kalshi as a parallel BTC trading venue and cross-market arbitrage counterparty against Polymarket.
 
 ---
