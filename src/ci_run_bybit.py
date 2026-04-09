@@ -37,8 +37,9 @@ from score import calculate_brier_scores, print_scorecard
 from config import BYBIT_MIN_CONVICTION, MAX_CONVICTION
 from pipeline_utils import get_next_cycle
 
-# Dead hours gate — EMPTY until calibrated from Bybit trading data.
-DEAD_HOURS_UTC = set()
+# Dead hours gate — calibrated from 319 resolved bets (2026-04-09 analysis).
+# These hours had ≤42% WR on 81 bets total.
+DEAD_HOURS_UTC = {1, 3, 8, 12, 16, 17, 20, 22}
 
 
 def store_prediction_bybit(db, market_id, signal, regime, cycle,
@@ -52,12 +53,17 @@ def store_prediction_bybit(db, market_id, signal, regime, cycle,
     edge = abs(estimate - 0.5)
     confidence = signal.get("confidence", "low")
 
-    # Conviction: use signal's should_trade + shadow scorer
+    # Conviction: matches BTC 5m filtering logic
     if signal["should_trade"]:
-        conviction = 3  # Default tradeable conviction
-        streak = abs(signal.get("streak", 0))
-        if streak >= 5:
+        direction = signal.get("direction", "")
+        regime_label = regime.get("label", "")
+        # DOWN+NEUTRAL demotion (port from predict.py:400)
+        if direction == "DOWN" and "NEUTRAL" in regime_label and "HIGH_VOL" not in regime_label:
+            conviction = 2  # Logged, not traded
+        elif abs(signal.get("streak", 0)) >= 5:
             conviction = 4
+        else:
+            conviction = 3
     else:
         conviction = 0
 
@@ -191,6 +197,15 @@ def main(candle_data=None, indicators=None):
         store_prediction_bybit(db, market_id, skip_signal, regime, cycle,
                                mark_price=current_price, consensus=consensus)
         print(f"  -> SKIP (dead hour: UTC {current_hour_utc})")
+
+    elif "HIGH_VOL" in regime["label"] and "TRENDING" not in regime["label"]:
+        skip_signal = {
+            "estimate": 0.5, "should_trade": False, "confidence": "skip",
+            "reason": "regime_gate_high_vol_non_trending",
+        }
+        store_prediction_bybit(db, market_id, skip_signal, regime, cycle,
+                               mark_price=current_price, consensus=consensus)
+        print(f"  -> SKIP (HIGH_VOL non-trending)")
 
     elif regime["is_mean_reverting"]:
         skip_signal = {

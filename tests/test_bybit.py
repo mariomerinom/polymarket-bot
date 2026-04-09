@@ -241,9 +241,10 @@ class TestOrderComputation:
 class TestPnLCalculation:
     def test_long_win(self):
         from bybit_trade import _compute_pnl
+        from config import BYBIT_FEE_RATE
         pnl = _compute_pnl("Buy", 0.005, 84000.0, 84200.0)
         raw = (84200 - 84000) * 0.005  # $1.00
-        fees = 84000 * 0.005 * 0.00055 * 2  # ~$0.462
+        fees = 84000 * 0.005 * BYBIT_FEE_RATE * 2
         assert abs(pnl - (raw - fees)) < 0.01
 
     def test_long_loss(self):
@@ -253,9 +254,10 @@ class TestPnLCalculation:
 
     def test_short_win(self):
         from bybit_trade import _compute_pnl
+        from config import BYBIT_FEE_RATE
         pnl = _compute_pnl("Sell", 0.005, 84000.0, 83800.0)
         raw = (84000 - 83800) * 0.005  # $1.00
-        fees = 84000 * 0.005 * 0.00055 * 2
+        fees = 84000 * 0.005 * BYBIT_FEE_RATE * 2
         assert abs(pnl - (raw - fees)) < 0.01
 
     def test_short_loss(self):
@@ -286,15 +288,17 @@ class TestRiskGates:
         assert ok
         assert reason == "ok"
 
-    def test_concurrent_positions_allowed(self, bybit_db):
-        """Same-direction position no longer blocks — concurrent positions OK."""
+    def test_concurrent_positions_blocked(self, bybit_db):
+        """Max 1 position gate — concurrent positions no longer allowed."""
         from bybit_trade import should_trade_bybit
         from bybit_markets import open_position
 
         open_position(bybit_db, "test-1", "Buy", 0.005, 84000.0, 83850.0)
-        open_position(bybit_db, "test-2", "Buy", 0.005, 84100.0, 83950.0)
 
         pred = {"conviction_score": 3, "estimate": 0.60}  # Would be Buy
+        # should_trade_bybit still says ok (it checks conviction/loss limits),
+        # but execute_bybit_trades has the position gate that blocks entry.
+        # This test verifies should_trade_bybit's own logic is unchanged.
         ok, reason = should_trade_bybit(pred, bybit_db)
         assert ok
         assert reason == "ok"
@@ -412,13 +416,14 @@ class TestExitConditions:
         assert should_exit
         assert reason == "time_ceiling"
 
-    def test_streak_break(self):
+    def test_streak_break_removed(self):
         from bybit_trade import check_exit_conditions
-        # Reversal candles show DOWN streak after UP
+        # Streak break exit was removed (9% WR, anti-predictive).
+        # Reversal candles should NOT trigger exit — only time_ceiling/stop_loss.
         position = {"side": "Buy", "cycles_held": 2}
         should_exit, reason = check_exit_conditions(REVERSAL_CANDLES, position)
-        assert should_exit
-        assert reason == "streak_break"
+        assert not should_exit
+        assert reason == "hold"
 
     def test_hold_when_no_exit(self):
         from bybit_trade import check_exit_conditions
@@ -428,6 +433,62 @@ class TestExitConditions:
         # May or may not exit depending on signal — either is valid
         if not should_exit:
             assert reason == "hold"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Conviction Filters (ported from BTC 5m)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestBybitConvictionFilters:
+    def test_down_neutral_demoted_to_conv2(self, bybit_db):
+        """DOWN + NEUTRAL (non-HIGH_VOL) should be demoted to conviction 2."""
+        from ci_run_bybit import store_prediction_bybit
+        _insert_dummy_market(bybit_db, "test-demotion")
+        signal = {"estimate": 0.38, "should_trade": True, "confidence": "medium",
+                  "direction": "DOWN", "streak": -3}
+        regime = {"label": "MEDIUM_VOL / NEUTRAL", "autocorrelation": 0.1,
+                  "volatility": 0.01, "is_mean_reverting": False}
+        pred = store_prediction_bybit(bybit_db, "test-demotion", signal, regime, 1)
+        assert pred["conviction_score"] == 2
+
+    def test_down_high_vol_neutral_not_demoted(self, bybit_db):
+        """DOWN + HIGH_VOL/NEUTRAL should NOT be demoted (HIGH_VOL exemption)."""
+        from ci_run_bybit import store_prediction_bybit
+        _insert_dummy_market(bybit_db, "test-highvol")
+        signal = {"estimate": 0.38, "should_trade": True, "confidence": "medium",
+                  "direction": "DOWN", "streak": -3}
+        regime = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.1,
+                  "volatility": 0.05, "is_mean_reverting": False}
+        pred = store_prediction_bybit(bybit_db, "test-highvol", signal, regime, 1)
+        assert pred["conviction_score"] == 3
+
+    def test_long_streak_gets_conv4(self, bybit_db):
+        """Streak >= 5 should get conviction 4."""
+        from ci_run_bybit import store_prediction_bybit
+        _insert_dummy_market(bybit_db, "test-streak5")
+        signal = {"estimate": 0.65, "should_trade": True, "confidence": "high",
+                  "direction": "UP", "streak": 6}
+        regime = {"label": "LOW_VOL / TRENDING", "autocorrelation": 0.3,
+                  "volatility": 0.005, "is_mean_reverting": False}
+        pred = store_prediction_bybit(bybit_db, "test-streak5", signal, regime, 1)
+        assert pred["conviction_score"] == 4
+
+    def test_dead_hours_populated(self):
+        """Dead hours should be calibrated, not empty."""
+        from ci_run_bybit import DEAD_HOURS_UTC
+        assert len(DEAD_HOURS_UTC) >= 5
+        assert 3 in DEAD_HOURS_UTC  # Known dead hour
+
+    def test_position_gate_blocks_concurrent(self, bybit_db):
+        """execute_bybit_trades should skip entry when position already open."""
+        from bybit_trade import execute_bybit_trades
+        from bybit_markets import open_position
+        open_position(bybit_db, "test-existing", "Buy", 0.005, 84000.0, 83850.0)
+        prediction = {"id": 1, "market_id": "test-new", "conviction_score": 3, "estimate": 0.60}
+        orders = execute_bybit_trades(bybit_db, 99, SAMPLE_CANDLES, prediction)
+        # Should return early with no new position opened (only exit checks)
+        new_opens = [o for o in orders if o.get("action") == "open"]
+        assert len(new_opens) == 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════

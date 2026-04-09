@@ -334,12 +334,8 @@ def check_exit_conditions(candles, position):
     if position["cycles_held"] >= BYBIT_MAX_HOLD_CYCLES:
         return True, "time_ceiling"
 
-    # Streak break: momentum signal reversed
-    signal = momentum_signal(candles, min_streak=3)
-    if signal["should_trade"]:
-        signal_side = "Buy" if signal["direction"] == "UP" else "Sell"
-        if signal_side != position["side"]:
-            return True, "streak_break"
+    # streak_break removed: 9% WR (1/11) — anti-predictive.
+    # Positions close on time_ceiling or stop_loss only.
 
     return False, "hold"
 
@@ -542,7 +538,12 @@ def execute_bybit_trades(db, cycle, candles, prediction=None, funding_rate=0.0):
                                               funding_rate=funding_rate)
                 orders.append({"action": "close", **result})
 
-    # 3. Enter new position if qualifying signal (no single-position gate)
+    # 3. Enter new position if qualifying signal (max 1 concurrent position)
+    from bybit_markets import get_open_position
+    if get_open_position(db):
+        print(f"    [bybit] Position already open — skipping new entry")
+        return orders
+
     if prediction and mark_price:
         can_trade, reason = should_trade_bybit(prediction, db)
 

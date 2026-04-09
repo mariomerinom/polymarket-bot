@@ -40,8 +40,8 @@ def auto_resolve_bybit(db):
         end_date = row[1]
 
         outcome = _resolve_from_candle(market_id, end_date)
-        if outcome is None:
-            outcome = _mock_resolve(market_id, end_date)
+        # Mock resolution removed — 7% of resolutions were hash-based random,
+        # contaminating WR data. Leave unresolved until candle data is available.
 
         if outcome is not None:
             mark_resolved(db, market_id, outcome)

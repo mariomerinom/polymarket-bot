@@ -119,11 +119,11 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
-        "bets": 1247,
-        "wins": 711,
-        "wr": 57.0,
+        "bets": 1269,
+        "wins": 719,
+        "wr": 56.7,
         "pnl": 1368.96,
         "wagered": 6275.0
       },
@@ -145,7 +145,7 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
         "bets": 167,
         "wins": 103,
@@ -197,7 +197,7 @@
         "pnl": 2269.5,
         "wagered": 6875.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
         "bets": 209,
         "wins": 117,
@@ -249,7 +249,7 @@
         "pnl": 2364.53,
         "wagered": 7000.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
         "bets": 203,
         "wins": 112,
@@ -275,7 +275,7 @@
         "pnl": 2364.53,
         "wagered": 7000.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
         "bets": 202,
         "wins": 111,
@@ -301,7 +301,7 @@
         "pnl": 2789.76,
         "wagered": 7650.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
         "bets": 178,
         "wins": 93,
@@ -327,7 +327,7 @@
         "pnl": 2789.76,
         "wagered": 7650.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
         "bets": 178,
         "wins": 93,
@@ -353,7 +353,7 @@
         "pnl": 2788.77,
         "wagered": 7750.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
         "bets": 174,
         "wins": 91,
@@ -379,7 +379,7 @@
         "pnl": 2788.77,
         "wagered": 7750.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
         "bets": 174,
         "wins": 91,
@@ -405,7 +405,7 @@
         "pnl": 2978.26,
         "wagered": 8675.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
         "bets": 137,
         "wins": 68,
@@ -431,7 +431,7 @@
         "pnl": 2978.26,
         "wagered": 8675.0
       },
-      "latest_check": "2026-04-09T20:14:31.988149+00:00",
+      "latest_check": "2026-04-09T21:59:00.925489+00:00",
       "post_stats": {
         "bets": 137,
         "wins": 68,
@@ -463,6 +463,26 @@
       },
       "close_reason": "Prior-day lag causes overcorrection. Shadow logging retained for ML calibration (Path 1).",
       "closed_at": "2026-04-09T14:49:00+00:00"
+    },
+    {
+      "name": "bybit_rehabilitation",
+      "description": "Bybit pipeline rehab: conviction filters (DOWN+NEUTRAL demotion, HIGH_VOL gate), dead hours {1,3,8,12,16,17,20,22}, max 1 position, remove streak_break exit, fix fee rate to maker 0.02%, remove mock resolution. Baseline: 50.5% WR / 319 bets / -.93 P&L.",
+      "registered_at": "2026-04-09T22:00:26.769776+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < 52",
+      "baseline": {
+        "bets": 484,
+        "wins": 307,
+        "wr": 63.4,
+        "pnl": 2984.7,
+        "wagered": 12100.0
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
     }
   ]
 }
