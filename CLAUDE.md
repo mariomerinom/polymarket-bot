@@ -67,7 +67,7 @@ All pipelines run on a DigitalOcean VPS (`botsy_engine.py`) via a single async e
 
 | Pipeline | Entry Point | DB | Signal | Status |
 |----------|-------------|----|--------|--------|
-| BTC 5m | `ci_run.py` → `polymarket_pipeline` | `predictions.db` | Momentum | **Production** |
+| BTC 5m | `ci_run.py` → `polymarket_pipeline` | `predictions.db` | Momentum | Paper (reverted from live 2026-04-09) |
 | BTC 15m | `ci_run_15m.py` → `polymarket_pipeline` | `predictions_15m.db` | Momentum | Paper |
 | ETH 5m | `ci_run_eth.py` → `polymarket_pipeline` | `predictions_eth.db` | Momentum | Paper |
 | Kalshi BTC | `ci_run_kalshi.py` (standalone) | `predictions_kalshi.db` | Momentum | Paper (Phase 0) |

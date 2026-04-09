@@ -108,15 +108,16 @@ All criteria met. Proceeding to Part 6.
 
 ---
 
-## Part 6: Live Trading — Medium Grind (ACTIVE)
+## Part 6: Live Trading — Medium Grind (PAUSED → paper)
 
 > Part 5 gate PASSED (227 bets, 67.4% WR). Live trading started 2026-03-31.
+> **Reverted to paper 2026-04-09.** Signal quality is strong (63.4% WR on 484 bets) but adverse selection destroys edge: winning orders expire before filling, losing orders fill immediately. Execution fix needed before re-enabling live mode.
 
 ### Sizing philosophy: grind, not gamble
 
 | Phase | Bet size | Trigger to advance | Trigger to stop |
 |-------|----------|--------------------|-----------------|
-| **Medium grind (CURRENT)** | $25 flat | Bankroll +$500 from grind profits | WR < 52% over 50 bets, or -$300 daily loss |
+| **Medium grind** | $25 flat | Bankroll +$500 from grind profits | WR < 52% over 50 bets, or -$300 daily loss |
 | **Full grind** | $50 flat | Bankroll +$1,500 cumulative | WR < 52% over 50 bets, or -$500 daily loss |
 | **Kelly on house money** | Kelly fractional, CLOB-capped | Bankroll +$3,000 cumulative | Drawdown > 30% of peak bankroll |
 
@@ -129,10 +130,8 @@ All criteria met. Proceeding to Part 6.
 - [x] Kill switch — `KILL_SWITCH=true` env var or `data/KILL_SWITCH` file
 - [x] Thin book guard — caps bets at 90% of CLOB max@2% slippage
 
-### Status
-- Live trading enabled in CI 2026-03-31
-- SDK bug fixed 2026-04-01 (`order_type` parameter removed in py-clob-client v0.34.6)
-- Monitoring for first successful fills and paper-to-live degradation (Decision #17)
+### Blocker: Adverse Selection (Fill Problem)
+Winners expire before filling; losers fill immediately. Multiple fix specs in `docs/specs/stochastic/`. Key approaches: dynamic price cap, stochastic entry timing, IOC orders.
 
 ---
 
@@ -140,44 +139,45 @@ All criteria met. Proceeding to Part 6.
 
 Move from GitHub Actions to a dedicated VPS in a non-US region. GitHub Actions runners are US-based and get 403 geoblocked by Polymarket's CLOB API — all live orders fail.
 
-- **Droplet:** $6/mo, Amsterdam/Frankfurt/Singapore (non-US IP)
-- **What moves:** All pipelines, trading, scoring, dashboards, daily report
-- **What stays on GitHub:** Code hosting, Pages (serves dashboards from pushed HTML)
-- **GitHub Actions:** Disabled. Re-enable via `workflow_dispatch` as fallback.
-- **Setup guide:** `scripts/setup-digitalocean.md`
-- **Loop script:** `scripts/vps-loop.sh` — runs all 5 pipelines in one process
-- **Phase 1 complete (2026-04-05):** Bybit + Kalshi migrated to VPS. All 5 pipelines consolidated. Cycle timing diagnostic active (`DIAG|cycle_seconds`).
+- **Droplet:** $6/mo, Amsterdam (non-US IP)
+- **Engine:** `src/botsy_engine.py` — single async process, systemd-managed (`botsy.service`)
+- **What runs on VPS:** All 5 pipelines, trading, scoring, git auto-commit every ~5min
+- **What stays on GitHub:** Code hosting only (GH Pages dashboards retired 2026-04-08)
+- **GitHub Actions:** Fully retired — no `.github/workflows/` directory exists
+- **Diagnostic:** Local Streamlit app (`tools/diag.py`) for P&L, rolling WR, regime heatmaps
+- **All 5 pipelines consolidated (2026-04-05).** Dispatched by Bybit WS candle-close events via `ROUTING` table.
 
 ---
 
 ## Part 8: Multi-Asset Expansion (ACTIVE)
 
-### ETH 5m Momentum (ACTIVE — paper trading)
-- Originally deployed as contrarian (validated at 54.4% WR on 1,601 historical markets via pattern mining)
-- Live contrarian hit **33.3% WR on 54 resolved predictions** — catastrophic
-- Momentum counterfactual on same 54 bets: **66.7%** — exact complement
-- **Flipped to momentum 2026-04-01.** Same V3→V4 pattern as BTC.
-- Parallel pipeline: `predict_eth.py`, `ci_run_eth.py` → `polymarket_pipeline.py` (unified lifecycle on VPS)
-- Separate DB (`predictions_eth.db`), separate dashboard (`docs/eth.html`)
-- Phase 1 validated 2026-04-02: 36 resolved at 66.7% WR. Medium confidence (streak 3-4) promoted to conv=3.
-- **Went live 2026-04-04** ($25 flat bets). **Reverted to paper 2026-04-05** — same adverse selection as BTC (winners expire, losers fill). See Decision #24/#25.
-- Signal remains strong (62.1% WR paper). Blocked on execution fix, not signal quality.
-- Phase 2 (ETH adaptation layer): regime recalibration, cross-asset features, ETH-specific conviction. See `docs/pipelines/eth_pipeline_acceptance_criteria.md`.
+### ETH 5m Momentum (ACTIVE — paper, Phase 2 conditional GO)
+- Flipped from contrarian to momentum 2026-04-01 (contrarian: 33.3% WR, momentum counterfactual: 66.7%)
+- **267 resolved bets at 57.7% WR** — clears 55% threshold and 200-bet minimum
+- HIGH_VOL non-trending gate added 2026-04-09 (40.7% WR on 27 bets in that regime)
+- Phase 2 priority: volatility regime recalibration (BTC thresholds misclassify ETH as HIGH_VOL)
+- See `docs/pipelines/eth_pipeline_acceptance_criteria.md`
 
 ### BTC 15m (ACTIVE — paper trading)
 - Momentum signal with relaxed params (`min_streak=2`, `loose_mode=True`)
-- 12 resolved bets at 67% WR — small sample, still collecting.
+- 106 resolved bets at 59.4% WR
+- HIGH_VOL gate excluded (64.3% WR on 56 bets — different dynamics at 15m)
+
+### Bybit BTC Perpetual (ACTIVE — paper trading)
+- Same momentum signal as BTC 5m, applied to Bybit BTCUSDT perpetual futures
+- **Rehabilitated 2026-04-09** (was 50.5% WR on 319 bets): conviction filters, dead hours, position management fixes, mock resolution removed. Issue #70.
+- Expected post-fix WR: ~54.8% (without HIGH_VOL bets)
+- Entry: `src/ci_run_bybit.py`, trade: `src/bybit_trade.py`, score: `src/bybit_score.py`
+
+### Kalshi BTC (ACTIVE — Phase 0, resolution fixed)
+- Momentum signal on Kalshi BTC strike-price markets
+- **Mock resolution replaced with real candle-based resolution 2026-04-09** (was producing random 50/50 outcomes)
+- Previous 3,871 hash-resolved predictions invalidated; fresh data accumulating
+- Gate: 200+ resolved predictions. WR > 55% → Phase 0.5. WR < 50% → signal is venue-specific.
+- See [docs/plans/KALSHI_INTEGRATION_PLAN.md](../plans/KALSHI_INTEGRATION_PLAN.md)
 
 ### SOL (DEFERRED)
 - Phase 2 showed contrarian_exhaust_s3 at 53.8% on 186 bets — weaker signal, smaller sample.
-- Not prioritized until ETH paper trading validates.
+- Not prioritized until ETH and Bybit validate.
 
 See [docs/plans/multi-asset-plan.md](../plans/multi-asset-plan.md) for the original expansion plan.
-
-### Kalshi BTC (ACTIVE — Phase 0)
-- Phase 0 infrastructure completed 2026-04-02. Pipeline running in mock mode (no API credentials yet).
-- Momentum signal (same as BTC production) on 15-min Kalshi markets. Paper trading only (conviction=2).
-- Collecting predictions toward 200+ resolved gate.
-- Gate: WR > 55% → Phase 0.5 (paper trading with fill simulation). WR < 50% → signal is venue-specific, skip to Phase 1 (paired data).
-
-See [docs/plans/KALSHI_INTEGRATION_PLAN.md](../plans/KALSHI_INTEGRATION_PLAN.md) for full phased roadmap (Phase 0–5) and risk framework.
