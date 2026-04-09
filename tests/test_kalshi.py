@@ -153,5 +153,113 @@ class TestKalshiScore:
         finally:
             kalshi_markets.DB_PATH_KALSHI = original
 
+    def test_parse_strike_from_market_id(self):
+        """Strike price is correctly parsed from Kalshi market ID format."""
+        from kalshi_score import parse_strike_from_market_id
+
+        assert parse_strike_from_market_id("BTCUSD-2604021350-84000") == 84000.0
+        assert parse_strike_from_market_id("BTCUSD-2604100015-85500") == 85500.0
+        assert parse_strike_from_market_id("BTCUSD-2604021435-85000") == 85000.0
+        # Invalid formats return None
+        assert parse_strike_from_market_id("invalid-id") is None
+        assert parse_strike_from_market_id("test-1") is None
+
+    def test_resolve_from_candle_above_strike(self):
+        """Market resolves to 1 (yes) when BTC price >= strike."""
+        from kalshi_score import _resolve_from_candle
+        from datetime import datetime, timezone, timedelta
+
+        # Expiry 5 minutes ago — within the candle window
+        expiry = datetime.now(timezone.utc) - timedelta(minutes=5)
+        expiry_hhmm = expiry.strftime("%H:%M")
+        prev_hhmm = (expiry - timedelta(minutes=5)).strftime("%H:%M")
+        next_hhmm = (expiry + timedelta(minutes=5)).strftime("%H:%M")
+
+        fake_candles = {
+            "candles": [
+                {"time": prev_hhmm, "open": 84500, "close": 85000, "high": 85100, "low": 84400},
+                {"time": expiry_hhmm, "open": 85000, "close": 85200, "high": 85300, "low": 84900},
+                {"time": next_hhmm, "open": 85200, "close": 85100, "high": 85400, "low": 85000},
+            ],
+            "current_price": 85100,
+            "_window_seconds": 3600,
+        }
+
+        # Strike 84000, BTC at 85200 at expiry -> above strike -> outcome 1
+        result = _resolve_from_candle(
+            "BTCUSD-2604021350-84000",
+            expiry.isoformat(),
+            candle_data=fake_candles,
+        )
+        assert result == 1
+
+    def test_resolve_from_candle_below_strike(self):
+        """Market resolves to 0 (no) when BTC price < strike."""
+        from kalshi_score import _resolve_from_candle
+        from datetime import datetime, timezone, timedelta
+
+        expiry = datetime.now(timezone.utc) - timedelta(minutes=5)
+        expiry_hhmm = expiry.strftime("%H:%M")
+        prev_hhmm = (expiry - timedelta(minutes=5)).strftime("%H:%M")
+        next_hhmm = (expiry + timedelta(minutes=5)).strftime("%H:%M")
+
+        fake_candles = {
+            "candles": [
+                {"time": prev_hhmm, "open": 84500, "close": 84800, "high": 84900, "low": 84400},
+                {"time": expiry_hhmm, "open": 84800, "close": 84900, "high": 85000, "low": 84700},
+                {"time": next_hhmm, "open": 84900, "close": 84700, "high": 85000, "low": 84600},
+            ],
+            "current_price": 84700,
+            "_window_seconds": 3600,
+        }
+
+        # Strike 85500, BTC at 84900 at expiry -> below strike -> outcome 0
+        result = _resolve_from_candle(
+            "BTCUSD-2604021350-85500",
+            expiry.isoformat(),
+            candle_data=fake_candles,
+        )
+        assert result == 0
+
+    def test_resolve_from_candle_no_data_returns_none(self):
+        """Returns None when candle data is unavailable (no hash fallback)."""
+        from kalshi_score import _resolve_from_candle
+
+        result = _resolve_from_candle(
+            "BTCUSD-2604021350-84000",
+            "2026-04-02T13:50:00+00:00",
+            candle_data=None,
+        )
+        assert result is None
+
+    def test_resolve_old_market_returns_none(self):
+        """Markets older than the candle window are not resolved (prevents wrong-day matching)."""
+        from kalshi_score import _resolve_from_candle
+        from datetime import datetime, timezone, timedelta
+
+        # Expiry 2 hours ago — outside 90-minute window
+        old_expiry = datetime.now(timezone.utc) - timedelta(hours=2)
+
+        fake_candles = {
+            "candles": [
+                {"time": "13:45", "open": 84500, "close": 85000, "high": 85100, "low": 84400},
+            ],
+            "current_price": 85000,
+            "_window_seconds": 3600,  # 1 hour window
+        }
+
+        result = _resolve_from_candle(
+            "BTCUSD-2604021350-84000",
+            old_expiry.isoformat(),
+            candle_data=fake_candles,
+        )
+        assert result is None, "Old markets must not resolve against current candle data"
+
+    def test_no_hash_based_resolution(self):
+        """Verify _mock_resolve (hash-based) no longer exists in kalshi_score."""
+        import kalshi_score
+        assert not hasattr(kalshi_score, "_mock_resolve"), \
+            "Hash-based _mock_resolve must be removed — it produces random noise"
+
 
 # TestKalshiNavBar removed — dashboard retired 2026-04-08
