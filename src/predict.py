@@ -255,11 +255,12 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
     else:
         conviction = 0
 
-    # ── Daily-regime gate (BTC 5m only) ────────────────────────────────
-    # Skip bets when prior-day BTC range_zscore >= 0.5. The 484-bet OOS
-    # join showed a perfectly monotonic 4-bucket WR decay by r_z, with
-    # the wide-range bucket dropping from 65% baseline to 39%. The gate
-    # is fail-open: missing asset_daily data does NOT block live bets.
+    # ── Daily-regime gate (SHADOW ONLY) ──────────────────────────────
+    # Rolled back 2026-04-09: prior-day lag caused overcorrection on
+    # calm days following violent ones. Gate blocked 54.5% WR bets on
+    # a MEDIUM_VOL/NEUTRAL day because it was reading 2-day-old data.
+    # Kept as shadow logging for counterfactual tracking — conviction
+    # is NOT modified. Will revisit with ML calibration model (Path 1).
     pre_gate_conviction = conviction
     gate_state = None
     if conviction >= 3:
@@ -270,8 +271,7 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
             except Exception:
                 _asof = None
             gate_state = evaluate_btc_gate(asof=_asof)
-            if gate_state.get("gated"):
-                conviction = 2  # downgrade to shadow / no bet
+            # Shadow only — do NOT demote conviction
         except Exception as _e:
             gate_state = {"gated": False, "reason": f"gate_error_{_e}"}
 
