@@ -10,6 +10,7 @@ V4: No LLM agents. Pure computation from BTC candle data.
 """
 
 import json
+import math
 import sqlite3
 import logging
 import time
@@ -219,9 +220,171 @@ def _get_clob_tokens_safe(market_id):
     return None
 
 
+def _build_judge_features(signal, regime, indicators, liquidity, consensus,
+                          gate_state, mkt_price, estimate, edge, conviction,
+                          predicted_at, candles=None) -> dict:
+    """Assemble feature dict for Judge evaluation.
+
+    All data sources are already available at prediction time.
+    Missing features default to NaN (XGBoost handles natively).
+    """
+    NaN = float("nan")
+    f = {}
+
+    # Pipeline metadata (BTC 5m hardcoded — Judge is BTC 5m only)
+    f["pipeline_id"] = 0
+    f["venue_polymarket"] = 1
+    f["venue_kalshi"] = 0
+    f["venue_bybit"] = 0
+    f["asset_btc"] = 1
+    f["asset_eth"] = 0
+    f["timeframe"] = 5
+
+    # Core prediction
+    f["estimate"] = estimate
+    f["edge"] = edge
+    f["conviction_score"] = conviction
+    f["mkt_price"] = mkt_price if mkt_price is not None else NaN
+
+    # Signal
+    f["direction_up"] = 1 if signal.get("direction") == "UP" else 0
+    f["streak"] = signal.get("streak", 0)
+    f["signal_estimate"] = signal.get("estimate", 0.5)
+    f["should_trade"] = 1 if signal.get("should_trade") else 0
+    f["conviction_tier"] = conviction
+    f["would_have_bet"] = 1 if (signal.get("should_trade") and
+                                signal.get("confidence") in ("medium", "high")) else 0
+
+    # Regime
+    if regime:
+        f["autocorrelation"] = regime.get("autocorrelation", NaN)
+        f["volatility"] = regime.get("volatility", NaN)
+        f["is_mean_reverting"] = int(regime.get("is_mean_reverting", 0))
+        label = regime.get("label", "")
+        f["regime_high_vol"] = 1 if "HIGH_VOL" in label else 0
+        f["regime_medium_vol"] = 1 if "MEDIUM_VOL" in label else 0
+        f["regime_low_vol"] = 1 if "LOW_VOL" in label else 0
+        f["regime_trending"] = 1 if "TRENDING" in label else 0
+        f["regime_mean_rev"] = 1 if "MEAN_REVERTING" in label else 0
+        f["regime_neutral"] = 1 if ("NEUTRAL" in label and "MEAN_REVERTING" not in label) else 0
+    else:
+        for k in ["autocorrelation", "volatility"]:
+            f[k] = NaN
+        f["is_mean_reverting"] = 0
+        for k in ["regime_high_vol", "regime_medium_vol", "regime_low_vol",
+                   "regime_trending", "regime_mean_rev", "regime_neutral"]:
+            f[k] = 0
+
+    # Temporal
+    try:
+        dt = datetime.fromisoformat(predicted_at) if predicted_at else datetime.now(timezone.utc)
+    except Exception:
+        dt = datetime.now(timezone.utc)
+    hour_frac = dt.hour + dt.minute / 60.0
+    f["hour_sin"] = math.sin(2 * math.pi * hour_frac / 24)
+    f["hour_cos"] = math.cos(2 * math.pi * hour_frac / 24)
+    dow = dt.weekday()
+    f["dow_sin"] = math.sin(2 * math.pi * dow / 7)
+    f["dow_cos"] = math.cos(2 * math.pi * dow / 7)
+
+    # TA indicators from TAEngine (indicators dict from botsy_engine)
+    ta_keys = ["rsi_14", "rsi_7", "vwap", "obv", "obv_slope", "rvol",
+               "z_score", "ema_9", "ema_21", "ema_ratio", "bb_upper",
+               "bb_lower", "bb_mid", "bb_bandwidth", "stoch_k", "stoch_d",
+               "shadow_rsi_14", "vwap_zscore", "vwap_deviation"]
+    if indicators:
+        for key in ta_keys:
+            f[key] = indicators.get(key, NaN)
+    else:
+        for key in ta_keys:
+            f[key] = NaN
+
+    # TA from pure_ta (top SHAP features — computed from raw candles)
+    ta_pure_keys = ["rsi_14", "rsi_7", "bb_bandwidth", "bb_pctb", "z_score",
+                    "rvol", "obv_slope", "ema_ratio", "stoch_k", "stoch_d"]
+    if candles and len(candles) >= 21:
+        try:
+            from pure_ta import compute_ta
+            closes = [c["close"] for c in candles[-30:]]
+            highs = [c["high"] for c in candles[-30:]]
+            lows = [c["low"] for c in candles[-30:]]
+            volumes = [c["volume"] for c in candles[-30:]]
+            ta = compute_ta(closes, highs, lows, volumes)
+            if ta:
+                for k in ta_pure_keys:
+                    f[f"ta_{k}"] = ta.get(k, NaN)
+            else:
+                for k in ta_pure_keys:
+                    f[f"ta_{k}"] = NaN
+        except Exception:
+            for k in ta_pure_keys:
+                f[f"ta_{k}"] = NaN
+    else:
+        for k in ta_pure_keys:
+            f[f"ta_{k}"] = NaN
+
+    # Strength (shadow conviction scorer)
+    if candles and strength_signal is not None:
+        try:
+            streak_val = signal.get("streak", 0)
+            ss = strength_signal(candles[-30:], streak_val, "btc_5m")
+            if ss:
+                f["strength"] = ss.get("strength", NaN)
+                f["length_strength"] = ss.get("length_strength", NaN)
+                f["magnitude_strength"] = ss.get("magnitude_strength", NaN)
+            else:
+                f["strength"] = NaN
+                f["length_strength"] = NaN
+                f["magnitude_strength"] = NaN
+        except Exception:
+            f["strength"] = NaN
+            f["length_strength"] = NaN
+            f["magnitude_strength"] = NaN
+    else:
+        f["strength"] = NaN
+        f["length_strength"] = NaN
+        f["magnitude_strength"] = NaN
+
+    # Liquidity
+    if liquidity:
+        f["spread"] = liquidity.get("spread", NaN)
+        f["spread_pct"] = liquidity.get("spread_pct", NaN)
+        f["max_bet_2pct"] = liquidity.get("max_bet_2pct", NaN)
+        f["max_bet_5pct"] = liquidity.get("max_bet_5pct", NaN)
+    else:
+        for k in ["spread", "spread_pct", "max_bet_2pct", "max_bet_5pct"]:
+            f[k] = NaN
+
+    # Regime gate
+    if gate_state and isinstance(gate_state, dict):
+        f["daily_range_zscore"] = gate_state.get("daily_range_zscore", NaN)
+        f["daily_velocity_zscore"] = gate_state.get("daily_velocity_zscore", NaN)
+        f["gate_gated"] = 1 if gate_state.get("gated") else 0
+    else:
+        f["daily_range_zscore"] = NaN
+        f["daily_velocity_zscore"] = NaN
+        f["gate_gated"] = 0
+
+    # Consensus
+    if consensus:
+        f["consensus_score"] = consensus.get("score", NaN)
+        f["consensus_agree"] = 1 if consensus.get("agree") else 0
+    else:
+        f["consensus_score"] = NaN
+        f["consensus_agree"] = 0
+
+    # Venue-specific (NaN for Polymarket — model handles natively)
+    for k in ["kalshi_spread", "kalshi_bid", "kalshi_ask", "kalshi_volume",
+              "kalshi_oi", "funding_rate", "mark_price"]:
+        f.setdefault(k, NaN)
+
+    return f
+
+
 def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
                      mkt_price=None, loose_mode=False, sibling_context=None,
-                     consensus=None, liquidity=None, indicators=None):
+                     consensus=None, liquidity=None, indicators=None,
+                     candles=None):
     """Store a prediction in the database."""
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
@@ -255,15 +418,13 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
     else:
         conviction = 0
 
-    # ── Daily-regime gate (SHADOW ONLY) ──────────────────────────────
-    # Rolled back 2026-04-09: prior-day lag caused overcorrection on
-    # calm days following violent ones. Gate blocked 54.5% WR bets on
-    # a MEDIUM_VOL/NEUTRAL day because it was reading 2-day-old data.
-    # Kept as shadow logging for counterfactual tracking — conviction
-    # is NOT modified. Will revisit with ML calibration model (Path 1).
+    # ── ML Judge + Daily-regime gate (SHADOW ONLY) ─────────────────
     pre_gate_conviction = conviction
+    judge_state = None
     gate_state = None
+
     if conviction >= 3:
+        # Daily regime gate (shadow — kept for counterfactual tracking)
         try:
             from regime_gate import evaluate_btc_gate
             try:
@@ -275,6 +436,23 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         except Exception as _e:
             gate_state = {"gated": False, "reason": f"gate_error_{_e}"}
 
+        # ML Judge evaluation (shadow — conviction is NOT modified)
+        try:
+            from judge import get_judge
+            judge = get_judge()
+            if judge:
+                features = _build_judge_features(
+                    signal, regime, indicators, liquidity, consensus,
+                    gate_state, mkt_price, estimate, edge, conviction,
+                    predicted_at, candles,
+                )
+                judge_state = judge.evaluate(features)
+                # SHADOW ONLY — do NOT modify conviction
+                # Promote to live veto after 200+ forward predictions validate
+                # Future: if not judge_state["should_bet"]: conviction = 2
+        except Exception as _e:
+            judge_state = {"error": str(_e)}
+
     reasoning_data = {
         "signal": signal,
         "regime": regime,
@@ -282,6 +460,7 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         "conviction_tier": conviction,
         "pre_gate_conviction": pre_gate_conviction,
         "regime_gate": gate_state,
+        "judge": judge_state,
         "mkt_price": mkt_price,
     }
     if sibling_context:
@@ -552,7 +731,7 @@ def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
                     except Exception as e:
                         logger.debug(f"[CLOB] skipped: {e}")
 
-                store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price, loose_mode=loose_mode, sibling_context=sibling_context, consensus=consensus, liquidity=liquidity, indicators=indicators)
+                store_prediction(db, market["id"], signal, regime, cycle, mkt_price=mkt_price, loose_mode=loose_mode, sibling_context=sibling_context, consensus=consensus, liquidity=liquidity, indicators=indicators, candles=candles)
                 direction = "DOWN" if signal["estimate"] < 0.5 else "UP"
                 logger.info(f"  -> {direction} @ {signal['estimate']:.2f} ({signal['confidence']}, est={signal['estimate']:.4f})")
                 # Query back conviction for DIAG (store_prediction computes it internally)
