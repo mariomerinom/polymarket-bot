@@ -66,7 +66,8 @@ def get_daily_predictions(db, date_str):
     """Get all predictions made on a specific date (resolved or not)."""
     try:
         rows = db.execute("""
-            SELECT p.agent, p.estimate, p.confidence, p.predicted_at, p.market_id,
+            SELECT p.rowid as id, p.agent, p.estimate, p.confidence,
+                   p.predicted_at, p.market_id,
                    p.conviction_score, p.regime, p.reasoning,
                    m.outcome, m.price_yes, m.resolved
             FROM predictions p
@@ -77,7 +78,8 @@ def get_daily_predictions(db, date_str):
     except sqlite3.OperationalError:
         # Fallback without regime column
         rows = db.execute("""
-            SELECT p.agent, p.estimate, p.confidence, p.predicted_at, p.market_id,
+            SELECT p.rowid as id, p.agent, p.estimate, p.confidence,
+                   p.predicted_at, p.market_id,
                    p.conviction_score, NULL as regime, p.reasoning,
                    m.outcome, m.price_yes, m.resolved
             FROM predictions p
