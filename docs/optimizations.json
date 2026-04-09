@@ -119,10 +119,10 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
-        "bets": 1269,
-        "wins": 719,
+        "bets": 1276,
+        "wins": 723,
         "wr": 56.7,
         "pnl": 1368.96,
         "wagered": 6275.0
@@ -145,7 +145,7 @@
         "pnl": 7645.47,
         "wagered": 25650.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
         "bets": 167,
         "wins": 103,
@@ -197,7 +197,7 @@
         "pnl": 2269.5,
         "wagered": 6875.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
         "bets": 209,
         "wins": 117,
@@ -249,7 +249,7 @@
         "pnl": 2364.53,
         "wagered": 7000.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
         "bets": 203,
         "wins": 112,
@@ -275,7 +275,7 @@
         "pnl": 2364.53,
         "wagered": 7000.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
         "bets": 202,
         "wins": 111,
@@ -301,7 +301,7 @@
         "pnl": 2789.76,
         "wagered": 7650.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
         "bets": 178,
         "wins": 93,
@@ -327,7 +327,7 @@
         "pnl": 2789.76,
         "wagered": 7650.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
         "bets": 178,
         "wins": 93,
@@ -353,7 +353,7 @@
         "pnl": 2788.77,
         "wagered": 7750.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
         "bets": 174,
         "wins": 91,
@@ -379,7 +379,7 @@
         "pnl": 2788.77,
         "wagered": 7750.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
         "bets": 174,
         "wins": 91,
@@ -405,7 +405,7 @@
         "pnl": 2978.26,
         "wagered": 8675.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
         "bets": 137,
         "wins": 68,
@@ -431,7 +431,7 @@
         "pnl": 2978.26,
         "wagered": 8675.0
       },
-      "latest_check": "2026-04-09T21:59:00.925489+00:00",
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
       "post_stats": {
         "bets": 137,
         "wins": 68,
@@ -472,6 +472,32 @@
       "status": "active",
       "min_sample": 50,
       "revert_condition": "post_wr < 52",
+      "baseline": {
+        "bets": 484,
+        "wins": 307,
+        "wr": 63.4,
+        "pnl": 2984.7,
+        "wagered": 12100.0
+      },
+      "latest_check": "2026-04-09T22:44:17.244735+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "highvol_non_trending_gate",
+      "description": "Demote HIGH_VOL non-trending regime to conv=2 on BTC 5m and ETH 5m. 54.8% WR on 126 BTC bets, 40.7% on 27 ETH bets. Does NOT apply to 15m (64.3% WR).",
+      "registered_at": "2026-04-09T22:44:33.591580+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < 60",
       "baseline": {
         "bets": 484,
         "wins": 307,

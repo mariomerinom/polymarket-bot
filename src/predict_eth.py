@@ -115,7 +115,12 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
     # ETH conviction scoring — calibrated from 36 momentum_eth predictions
     # medium (streak 3-4): 74.2% WR on 31 bets → fire
     # high (streak >= 5): 20% WR on 5 bets → keep paper until more data
-    if signal["should_trade"] and confidence == "medium":
+    regime_label = regime.get("label", "") if regime else ""
+
+    if signal["should_trade"] and "HIGH_VOL" in regime_label and "TRENDING" not in regime_label:
+        # HIGH_VOL non-trending gate: 40.7% WR on 27 ETH bets — net loser.
+        conviction = 2
+    elif signal["should_trade"] and confidence == "medium":
         conviction = 3  # $25 flat bet
     elif signal["should_trade"] and confidence == "high":
         conviction = 2  # Paper only — long streaks reverse on ETH

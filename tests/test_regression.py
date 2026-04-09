@@ -118,8 +118,8 @@ def test_tiered_conviction_ride_up_sweet_spot():
         )""")
         db.commit()
 
-        regime_neutral = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.0,
-                          "volatility": 0.1, "is_mean_reverting": False}
+        regime_neutral = {"label": "MEDIUM_VOL / NEUTRAL", "autocorrelation": 0.0,
+                          "volatility": 0.08, "is_mean_reverting": False}
         regime_trending = {"label": "HIGH_VOL / TRENDING", "autocorrelation": 0.2,
                            "volatility": 0.15, "is_mean_reverting": False}
 
@@ -453,6 +453,94 @@ def test_down_neutral_demoted_even_in_loose_mode():
     assert rows[1] == ("m2", 4), f"UP+NEUTRAL should stay conv=4, got {rows[1]}"
     assert rows[2] == ("m3", 3), f"DOWN+TRENDING should stay conv=3, got {rows[2]}"
     assert rows[3] == ("m4", 3), f"DOWN+HIGH_VOL/NEUTRAL should stay conv=3, got {rows[3]}"
+
+
+def test_highvol_non_trending_gate_btc_5m():
+    """HIGH_VOL non-trending regime demoted to conv=2 on BTC 5m.
+    54.8% WR on 126 bets — below breakeven after fees.
+    Does NOT apply to 15m (loose_mode) where HIGH_VOL performs at 64.3%.
+    """
+    from predict import store_prediction
+    import sqlite3
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE predictions (
+        market_id TEXT, agent TEXT, estimate REAL, edge REAL,
+        confidence TEXT, reasoning TEXT, predicted_at TEXT,
+        cycle INTEGER, conviction_score INTEGER, regime TEXT
+    )""")
+
+    regime_hv_neutral = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.0,
+                         "volatility": 0.15, "is_mean_reverting": False}
+    regime_hv_mr = {"label": "HIGH_VOL / MEAN_REVERTING", "autocorrelation": -0.2,
+                    "volatility": 0.15, "is_mean_reverting": True}
+    regime_hv_trending = {"label": "HIGH_VOL / TRENDING", "autocorrelation": 0.2,
+                          "volatility": 0.15, "is_mean_reverting": False}
+    regime_med_neutral = {"label": "MEDIUM_VOL / NEUTRAL", "autocorrelation": 0.0,
+                          "volatility": 0.08, "is_mean_reverting": False}
+
+    signal = {"estimate": 0.62, "should_trade": True,
+              "confidence": "medium", "direction": "UP"}
+
+    # HIGH_VOL / NEUTRAL → conv=2 (gated)
+    store_prediction(db, "m1", signal, regime_hv_neutral, 1, mkt_price=0.45)
+    # HIGH_VOL / MEAN_REVERTING → conv=2 (gated — HIGH_VOL, not TRENDING)
+    store_prediction(db, "m2", signal, regime_hv_mr, 1, mkt_price=0.45)
+    # HIGH_VOL / TRENDING → conv=4 (NOT gated, sweet spot)
+    store_prediction(db, "m3", signal, regime_hv_trending, 1, mkt_price=0.45)
+    # MEDIUM_VOL / NEUTRAL → conv=4 (NOT gated, sweet spot)
+    store_prediction(db, "m4", signal, regime_med_neutral, 1, mkt_price=0.45)
+    # HIGH_VOL / NEUTRAL with loose_mode=True → NOT gated (15m exemption)
+    store_prediction(db, "m5", signal, regime_hv_neutral, 1, mkt_price=0.45, loose_mode=True)
+
+    rows = db.execute(
+        "SELECT market_id, conviction_score FROM predictions ORDER BY market_id"
+    ).fetchall()
+    db.close()
+
+    assert rows[0] == ("m1", 2), f"HV/NEUTRAL should be conv=2, got {rows[0]}"
+    assert rows[1] == ("m2", 2), f"HV/MEAN_REVERTING should be conv=2, got {rows[1]}"
+    assert rows[2] == ("m3", 4), f"HV/TRENDING in sweet spot should be conv=4, got {rows[2]}"
+    assert rows[3] == ("m4", 4), f"MED/NEUTRAL in sweet spot should be conv=4, got {rows[3]}"
+    assert rows[4][1] >= 3, f"HV/NEUTRAL with loose_mode should NOT be gated, got {rows[4]}"
+
+
+def test_highvol_non_trending_gate_eth():
+    """HIGH_VOL non-trending regime demoted to conv=2 on ETH 5m.
+    40.7% WR on 27 ETH bets — net loser.
+    """
+    from predict_eth import store_prediction_eth
+    import sqlite3
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE predictions (
+        id INTEGER PRIMARY KEY, market_id TEXT, agent TEXT,
+        estimate REAL, edge REAL, confidence TEXT, reasoning TEXT,
+        predicted_at TEXT, cycle INTEGER, conviction_score INTEGER, regime TEXT
+    )""")
+
+    signal = {"estimate": 0.62, "should_trade": True, "direction": "UP",
+              "confidence": "medium", "streak": 3, "reason": "ride_streak_UP"}
+
+    regime_hv = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.05,
+                 "volatility": 0.25, "is_mean_reverting": False}
+    regime_med = {"label": "MEDIUM_VOL / NEUTRAL", "autocorrelation": 0.05,
+                  "volatility": 0.12, "is_mean_reverting": False}
+    regime_hv_trend = {"label": "HIGH_VOL / TRENDING", "autocorrelation": 0.2,
+                       "volatility": 0.25, "is_mean_reverting": False}
+
+    store_prediction_eth(db, "e1", signal, regime_hv, cycle=1)
+    store_prediction_eth(db, "e2", signal, regime_med, cycle=1)
+    store_prediction_eth(db, "e3", signal, regime_hv_trend, cycle=1)
+
+    rows = db.execute(
+        "SELECT market_id, conviction_score FROM predictions ORDER BY market_id"
+    ).fetchall()
+    db.close()
+
+    assert rows[0] == ("e1", 2), f"ETH HV/NEUTRAL should be conv=2, got {rows[0]}"
+    assert rows[1] == ("e2", 3), f"ETH MED/NEUTRAL should be conv=3, got {rows[1]}"
+    assert rows[2] == ("e3", 3), f"ETH HV/TRENDING should be conv=3, got {rows[2]}"
 
 
 def test_mr_shadow_extreme_estimate():

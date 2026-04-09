@@ -145,8 +145,8 @@ class TestMomentumSignalEth:
         signal = {"estimate": 0.62, "should_trade": True, "direction": "UP",
                   "confidence": "medium", "streak": 3,
                   "reason": "ride_streak_UP"}
-        regime = {"label": "HIGH_VOL / NEUTRAL", "autocorrelation": 0.05,
-                  "volatility": 0.15, "is_mean_reverting": False}
+        regime = {"label": "MEDIUM_VOL / NEUTRAL", "autocorrelation": 0.05,
+                  "volatility": 0.12, "is_mean_reverting": False}
 
         store_prediction_eth(db, "test_market_3", signal, regime, cycle=1,
                              mkt_price=0.50)
