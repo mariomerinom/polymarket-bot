@@ -176,7 +176,8 @@ def main(candle_data=None, indicators=None):
     print(f"  Regime: {regime['label']} (autocorr: {regime['autocorrelation']:+.4f})")
 
     # Fetch funding rate for logging
-    funding_rate = fetch_bybit_funding_rate()
+    funding_rate_data = fetch_bybit_funding_rate()
+    funding_rate = funding_rate_data["rate"] if isinstance(funding_rate_data, dict) else 0.0
 
     # Gates
     prediction = None
@@ -211,7 +212,7 @@ def main(candle_data=None, indicators=None):
 
         prediction = store_prediction_bybit(
             db, market_id, signal, regime, cycle,
-            mark_price=current_price, funding_rate=funding_rate,
+            mark_price=current_price, funding_rate=funding_rate_data,
             consensus=consensus,
         )
 
