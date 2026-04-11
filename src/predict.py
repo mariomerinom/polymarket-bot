@@ -401,7 +401,7 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         # Skip for 15m (loose_mode) where HIGH_VOL actually performs better (64.3%).
         if not loose_mode and "HIGH_VOL" in regime_label and "TRENDING" not in regime_label:
             conviction = 2
-        elif not loose_mode and direction == "DOWN" and "NEUTRAL" in regime_label and "HIGH_VOL" not in regime_label:
+        elif not loose_mode and direction == "DOWN" and "NEUTRAL" in regime_label:
             conviction = 2
         elif direction == "UP" and mkt_price is not None and PRICE_SWEET_SPOT_LOW <= mkt_price <= PRICE_SWEET_SPOT_HIGH:
             conviction = 4

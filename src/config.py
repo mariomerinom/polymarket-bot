@@ -205,7 +205,8 @@ VWAP_EDGE_MULTIPLIER = 0.03     # edge = min(|z| × 0.03, max_edge)
 VWAP_MAX_EDGE = 0.14            # Cap consistent with BTC shadow config
 
 # ── Dead hours ───────────────────────────────────────────────────────────────
-FALLBACK_DEAD_HOURS = {3, 16, 21}   # UTC hours skipped when DB has insufficient data
+FALLBACK_DEAD_HOURS = {3, 21}        # UTC hours skipped when DB has insufficient data
+# Note: Hour 16 removed — was added by hour_16_dead_gate optimization (closed, no edge).
 DEAD_HOUR_LOOKBACK_DAYS = 90
 DEAD_HOUR_MIN_BETS = 30
 DEAD_HOUR_MAX_WR = 0.50
