@@ -88,8 +88,11 @@ def acquire_pid_lock(pid_file=None):
 ROUTING = {
     ("bybit_spot", "BTCUSDT", "5"):    ["btc_5m", "kalshi", "hl"],
     ("bybit_spot", "BTCUSDT", "15"):   ["btc_15m"],       # native 15m, replaces counter
-    ("bybit_spot", "ETHUSDT", "5"):    ["eth_5m"],
+    ("bybit_spot", "ETHUSDT", "5"):    ["eth_5m", "eth_bybit", "eth_hl"],
     ("bybit_linear", "BTCUSDT", "5"):  ["bybit"],
+    # Multi-pair perp feeds
+    ("bybit_spot", "SOLUSDT", "5"):    ["sol_bybit", "sol_hl"],
+    ("bybit_spot", "DOGEUSDT", "5"):   ["doge_bybit", "doge_hl"],
 }
 
 # Fallback timer: force-run if no WS event for this many seconds
@@ -251,6 +254,8 @@ class BotsyEngine:
                         "args": [
                             "kline.1.BTCUSDT", "kline.5.BTCUSDT", "kline.15.BTCUSDT",
                             "kline.1.ETHUSDT", "kline.5.ETHUSDT",
+                            "kline.1.SOLUSDT", "kline.5.SOLUSDT",
+                            "kline.1.DOGEUSDT", "kline.5.DOGEUSDT",
                         ],
                     }))
                     resp = await ws.recv()
@@ -645,17 +650,33 @@ class BotsyEngine:
             "bybit": "ci_run_bybit",
             "kalshi": "ci_run_kalshi",
             "hl": "ci_run_hl",
+            # Multi-pair perps: (module, function) tuples
+            "eth_bybit": ("ci_run_perp", "main_eth_bybit"),
+            "eth_hl": ("ci_run_perp", "main_eth_hl"),
+            "sol_bybit": ("ci_run_perp", "main_sol_bybit"),
+            "sol_hl": ("ci_run_perp", "main_sol_hl"),
+            "doge_bybit": ("ci_run_perp", "main_doge_bybit"),
+            "doge_hl": ("ci_run_perp", "main_doge_hl"),
         }
-        module_name = runners.get(name)
-        if not module_name:
+        runner = runners.get(name)
+        if not runner:
             log(f"[ENGINE] Unknown pipeline: {name}")
             return
 
         try:
             import importlib
-            mod = importlib.import_module(module_name)
-            await asyncio.to_thread(mod.main, candle_data=candle_data,
-                                    indicators=indicators)
+            if isinstance(runner, tuple):
+                # (module_name, function_name) — generic perp pipelines
+                module_name, func_name = runner
+                mod = importlib.import_module(module_name)
+                func = getattr(mod, func_name)
+                await asyncio.to_thread(func, candle_data=candle_data,
+                                        indicators=indicators)
+            else:
+                # String — legacy pipelines with main()
+                mod = importlib.import_module(runner)
+                await asyncio.to_thread(mod.main, candle_data=candle_data,
+                                        indicators=indicators)
             log(f"[{name}] OK")
         except Exception as e:
             log(f"[{name}] FAILED: {e}")
@@ -672,7 +693,9 @@ class BotsyEngine:
                     f"fallback firing all pipelines")
                 self.metrics["fallback_fires_24h"] += 1
                 self.last_event_time = time.time()
-                for name in ["btc_5m", "btc_15m", "eth_5m", "bybit", "kalshi", "hl"]:
+                for name in ["btc_5m", "btc_15m", "eth_5m", "bybit", "kalshi", "hl",
+                             "eth_bybit", "eth_hl", "sol_bybit", "sol_hl",
+                             "doge_bybit", "doge_hl"]:
                     await self.run_pipeline(name)
 
     # ── Git Commit Loop ─────────���──────────────────────────────────────

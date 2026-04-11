@@ -50,13 +50,19 @@ STALE_PREDICTION_SECONDS = 15 * 60
 def _kill_switch_file_path(pipeline_name: str) -> Path:
     """Location of the kill switch file for a given pipeline.
 
-    Monkeypatched in tests. Pipelines with dedicated kill switches (bybit)
+    Monkeypatched in tests. Pipelines with dedicated kill switches (bybit, hl)
     use a suffixed filename; everything else shares KILL_SWITCH.
+    Per-pair pipelines (eth_bybit, sol_hl, etc.) share exchange-level switch.
     """
     base = Path(__file__).parent.parent / "data"
     if pipeline_name.startswith("bybit"):
         return base / "KILL_SWITCH_BYBIT"
     if pipeline_name.startswith("hl"):
+        return base / "KILL_SWITCH_HL"
+    # Generic perp: {asset}_{exchange} — route to exchange kill switch
+    if "bybit" in pipeline_name:
+        return base / "KILL_SWITCH_BYBIT"
+    if "hl" in pipeline_name:
         return base / "KILL_SWITCH_HL"
     return base / "KILL_SWITCH"
 
@@ -65,6 +71,11 @@ def _kill_switch_env_var(pipeline_name: str) -> str:
     if pipeline_name.startswith("bybit"):
         return "KILL_SWITCH_BYBIT"
     if pipeline_name.startswith("hl"):
+        return "KILL_SWITCH_HL"
+    # Generic perp: {asset}_{exchange}
+    if "bybit" in pipeline_name:
+        return "KILL_SWITCH_BYBIT"
+    if "hl" in pipeline_name:
         return "KILL_SWITCH_HL"
     return "KILL_SWITCH"
 
@@ -138,9 +149,20 @@ def _today_prefix() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def _is_bybit(pipeline_name: str) -> bool:
-    """Bybit pipelines track state in `positions`, not `orders`."""
-    return pipeline_name.startswith("bybit")
+def _is_perp(pipeline_name: str) -> bool:
+    """Perp pipelines track state in `positions`, not `orders`.
+
+    Covers: bybit, hl, eth_bybit, eth_hl, sol_bybit, sol_hl, doge_bybit, doge_hl.
+    """
+    if pipeline_name.startswith("bybit") or pipeline_name.startswith("hl"):
+        return True
+    # Generic perp pipelines: {asset}_{exchange}
+    perp_exchanges = ("_bybit", "_hl")
+    return any(pipeline_name.endswith(suffix) for suffix in perp_exchanges)
+
+
+# Backward compat alias
+_is_bybit = _is_perp
 
 
 def _table_exists(db, name: str) -> bool:

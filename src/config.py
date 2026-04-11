@@ -134,6 +134,12 @@ AGENT_PIPELINE_MAP = {
     "bybit": "bybit",
     "kalshi": "kalshi",
     "hl": "hl_5m",
+    "eth_bybit": "eth_bybit_5m",
+    "eth_hl": "eth_hl_5m",
+    "sol_bybit": "sol_bybit_5m",
+    "sol_hl": "sol_hl_5m",
+    "doge_bybit": "doge_bybit_5m",
+    "doge_hl": "doge_hl_5m",
 }
 
 # ── Shadow conviction scorer configs ─────────────────────────────────────────
@@ -186,6 +192,55 @@ SHADOW_CONFIGS = {
         "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
     },
     "hl_5m": {
+        "min_streak": 3,
+        "baseline_streak": 8,
+        "magnitude_multiplier": 2.0,
+        "max_edge": 0.14,
+        "high_confidence_threshold": 0.80,
+        "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
+    },
+    # ── Multi-pair perp shadow configs ──────────────────────────────────
+    "eth_bybit_5m": {
+        "min_streak": 3,
+        "baseline_streak": 6,
+        "magnitude_multiplier": 2.0,
+        "max_edge": 0.10,
+        "high_confidence_threshold": 0.85,
+        "conv_thresholds": [0.03, 0.04, 0.05, 0.07],
+    },
+    "eth_hl_5m": {
+        "min_streak": 3,
+        "baseline_streak": 6,
+        "magnitude_multiplier": 2.0,
+        "max_edge": 0.10,
+        "high_confidence_threshold": 0.85,
+        "conv_thresholds": [0.03, 0.04, 0.05, 0.07],
+    },
+    "sol_bybit_5m": {
+        "min_streak": 3,
+        "baseline_streak": 8,
+        "magnitude_multiplier": 2.0,
+        "max_edge": 0.14,
+        "high_confidence_threshold": 0.80,
+        "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
+    },
+    "sol_hl_5m": {
+        "min_streak": 3,
+        "baseline_streak": 8,
+        "magnitude_multiplier": 2.0,
+        "max_edge": 0.14,
+        "high_confidence_threshold": 0.80,
+        "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
+    },
+    "doge_bybit_5m": {
+        "min_streak": 3,
+        "baseline_streak": 8,
+        "magnitude_multiplier": 2.0,
+        "max_edge": 0.14,
+        "high_confidence_threshold": 0.80,
+        "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
+    },
+    "doge_hl_5m": {
         "min_streak": 3,
         "baseline_streak": 8,
         "magnitude_multiplier": 2.0,
@@ -252,6 +307,16 @@ HL_STOP_ATR_MULT = float(_env("HL_STOP_ATR_MULT", "1.5"))
 HL_FEE_RATE = -0.0002     # -0.02% maker REBATE (negative = credit)
 HL_MIN_CONVICTION = int(_env("HL_MIN_CONVICTION", "3"))
 LIVE_HL_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 0.005, 4: 0.005, 5: 0.005}
+
+# ── Multi-pair perpetual futures ───────────────────────────────────────────
+# ETH perps (signal validated at ~60% WR, same momentum strategy)
+PERP_ETH_BET_SIZE = float(_env("PERP_ETH_BET_SIZE", "0.05"))  # ~$180 at $3600
+
+# SOL perps (new pair, paper validation needed)
+PERP_SOL_BET_SIZE = float(_env("PERP_SOL_BET_SIZE", "1.0"))  # ~$150 at $150
+
+# DOGE perps (retail momentum, paper validation needed)
+PERP_DOGE_BET_SIZE = float(_env("PERP_DOGE_BET_SIZE", "1000"))  # ~$170 at $0.17
 
 # API timeouts (seconds)
 API_TIMEOUT_EXCHANGE = 10       # Kraken, Coinbase candle fetches
