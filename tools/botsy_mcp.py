@@ -26,25 +26,67 @@ mcp = FastMCP("botsy")
 
 # ── Database paths ────────────────────────────────────────────────────────
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-
-PIPELINES = {
-    "btc_5m": DATA_DIR / "predictions.db",
-    "btc_15m": DATA_DIR / "predictions_15m.db",
-    "eth_5m": DATA_DIR / "predictions_eth.db",
-    "kalshi": DATA_DIR / "predictions_kalshi.db",
-    "bybit": DATA_DIR / "predictions_bybit.db",
-}
+ROOT_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = ROOT_DIR / "data"
+PIPELINES_JSON = ROOT_DIR / "config" / "pipelines.json"
 
 ASSET_DAILY_DB = DATA_DIR / "asset_daily.db"
+
+# Legacy name → DB path for pipelines that don't follow the convention
+_LEGACY_DB_NAMES = {
+    "btc_5m": "predictions.db",
+    "btc_15m": "predictions_15m.db",
+    "eth_5m": "predictions_eth.db",
+    "kalshi": "predictions_kalshi.db",
+    "bybit": "predictions_bybit.db",
+}
+
+
+def _pipeline_to_db_path(name: str) -> Path:
+    """Map a pipeline name to its DB file path.
+
+    Conventions:
+      - Legacy pipelines: _LEGACY_DB_NAMES lookup
+      - Perp pipelines ({asset}_{exchange}): predictions_{exchange}_{asset}.db
+        e.g. eth_bybit -> predictions_bybit_eth.db
+      - Simple pipelines: predictions_{name}.db
+        e.g. hl -> predictions_hl.db
+    """
+    if name in _LEGACY_DB_NAMES:
+        return DATA_DIR / _LEGACY_DB_NAMES[name]
+
+    # Perp pipeline pattern: {asset}_{exchange} -> predictions_{exchange}_{asset}.db
+    _EXCHANGES = {"bybit", "hl"}
+    parts = name.rsplit("_", 1)
+    if len(parts) == 2 and parts[1] in _EXCHANGES:
+        asset, exchange = parts
+        return DATA_DIR / f"predictions_{exchange}_{asset}.db"
+
+    return DATA_DIR / f"predictions_{name}.db"
+
+
+def _discover_pipelines() -> dict[str, Path]:
+    """Discover all pipelines from config/pipelines.json.
+
+    Returns only pipelines whose DB file exists on disk.
+    """
+    pipelines = {}
+    if PIPELINES_JSON.exists():
+        cfg = json.loads(PIPELINES_JSON.read_text())
+        for name in cfg.get("pipelines", {}):
+            path = _pipeline_to_db_path(name)
+            if path.exists():
+                pipelines[name] = path
+    return pipelines
 
 
 def _connect(pipeline: str) -> sqlite3.Connection:
     """Get a read-only connection to a pipeline DB."""
-    path = PIPELINES.get(pipeline)
-    if not path or not path.exists():
+    pipelines = _discover_pipelines()
+    path = pipelines.get(pipeline)
+    if not path:
         raise ValueError(f"Unknown or missing pipeline: {pipeline}. "
-                         f"Available: {', '.join(PIPELINES.keys())}")
+                         f"Available: {', '.join(sorted(pipelines.keys()))}")
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
@@ -65,7 +107,7 @@ def win_rate(
     """Get win rate, P&L, and bet count for a pipeline.
 
     Args:
-        pipeline: Pipeline name (btc_5m, btc_15m, eth_5m, kalshi, bybit)
+        pipeline: Pipeline name (auto-discovered from config/pipelines.json)
         days: Lookback period in days (default 7)
         min_conviction: Minimum conviction to count as a bet (default 3)
 
@@ -463,7 +505,7 @@ def pipeline_overview() -> str:
         JSON array with status for each pipeline
     """
     results = []
-    for name, path in PIPELINES.items():
+    for name, path in sorted(_discover_pipelines().items()):
         if not path.exists():
             results.append({"pipeline": name, "status": "missing"})
             continue
@@ -631,7 +673,7 @@ def query(
     Only SELECT queries are allowed.
 
     Args:
-        pipeline: Pipeline name (btc_5m, btc_15m, eth_5m, kalshi, bybit)
+        pipeline: Pipeline name (auto-discovered from config/pipelines.json)
                   or 'asset_daily' for the daily regime DB
         sql: SQL SELECT query to execute
 

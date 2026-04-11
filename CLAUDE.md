@@ -50,6 +50,13 @@ The [BOTSY Kanban](https://github.com/users/mariomerinom/projects/1) is the live
 2. Cross-check triggers against current DB stats
 3. Move triggered decisions to "Ready"
 
+## Data Access — Botsy MCP Is the Source of Truth
+
+- **Always use Botsy MCP tools for pipeline performance data.** Never write ad-hoc SQL against prediction DBs. The MCP encodes the correct joins, outcome encoding, and P&L formulas. Raw SQL gets schema differences wrong (Polymarket uses `Yes`/`No`, perps use `1`/`0`).
+- **Use `pipeline_overview` first** to see all pipelines before drilling into any one.
+- **If the MCP doesn't cover a pipeline, fix the MCP** — don't work around it with Bash/SQL. The MCP auto-discovers from `config/pipelines.json`, so adding a pipeline there is usually sufficient.
+- **Never cite performance numbers from memory or context.** Always query fresh. Stale numbers from earlier in a conversation are wrong — the bot generates new predictions every 5 minutes.
+
 ## Bot Design
 
 - **No agent bias.** The bot must not have built-in directional bias (UP or DOWN). All bias comes from human macro config, not prompts or code.
