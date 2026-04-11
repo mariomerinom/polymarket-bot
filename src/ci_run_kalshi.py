@@ -12,7 +12,7 @@ Kalshi BTC Signal Transfer Test (Phase 0):
   4. Score
   5. Generate static dashboard HTML
 
-PAPER TRADING ONLY — all predictions at conviction 2 (no money risked).
+Phase 1 — conviction scoring with regime gates (upgraded from Phase 0 on 2026-04-11).
 Uses Kraken/Coinbase 15m candles (BTC is BTC regardless of venue).
 """
 
@@ -43,8 +43,8 @@ def store_prediction_kalshi(db, market_id, signal, regime, cycle,
     """
     Store a Kalshi prediction in the database.
 
-    Phase 0: All predictions at conviction 2 (paper trading, no money risked).
-    This accumulates data to answer: does the momentum signal transfer to Kalshi?
+    Phase 1: Conviction scoring with regime gates and streak-based tiers.
+    Upgraded from Phase 0 (hardcoded conv=2) on 2026-04-11.
     """
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
@@ -53,9 +53,18 @@ def store_prediction_kalshi(db, market_id, signal, regime, cycle,
     edge = abs(estimate - 0.5)
     confidence = signal.get("confidence", "low")
 
-    # Phase 0: all paper. Conv 2 = logged but never traded.
+    # Phase 1: conviction scoring (upgraded from Phase 0 hardcoded conv=2).
+    # Matches BTC/Bybit filtering logic: streak-based, regime-gated.
     if signal["should_trade"]:
-        conviction = 2
+        direction = signal.get("direction", "")
+        regime_label = regime.get("label", "") if regime else ""
+        # DOWN+NEUTRAL demotion (same as Bybit pipeline)
+        if direction == "DOWN" and "NEUTRAL" in regime_label and "HIGH_VOL" not in regime_label:
+            conviction = 2  # Logged, not traded
+        elif abs(signal.get("streak", 0)) >= 5:
+            conviction = 4
+        else:
+            conviction = 3
     else:
         conviction = 0
 
@@ -82,6 +91,17 @@ def store_prediction_kalshi(db, market_id, signal, regime, cycle,
         reasoning, predicted_at, cycle, conviction, regime["label"],
     ))
     db.commit()
+
+    return {
+        "id": db.execute("SELECT last_insert_rowid()").fetchone()[0],
+        "market_id": market_id,
+        "agent": "momentum_kalshi",
+        "estimate": estimate,
+        "edge": edge,
+        "confidence": confidence,
+        "conviction_score": conviction,
+        "regime": regime["label"],
+    }
 
 
 def main(candle_data=None, indicators=None):
@@ -266,18 +286,30 @@ def _run_predictions(cycle, kalshi_data, market_limit=5, min_streak=2,
             print(f"    -> SKIP (mean-reverting regime)")
             continue
 
+        # HIGH_VOL non-trending gate (port from Bybit/BTC 5m pipelines)
+        if "HIGH_VOL" in regime["label"] and "TRENDING" not in regime["label"]:
+            skip_signal = {
+                "estimate": mkt_price,
+                "should_trade": False,
+                "confidence": "skip",
+                "reason": "regime_gate_high_vol_non_trending",
+            }
+            store_prediction_kalshi(db, market["id"], skip_signal, regime, cycle)
+            print(f"    -> SKIP (HIGH_VOL non-trending)")
+            continue
+
         # Fetch Kalshi orderbook for this market (analysis logging)
         kalshi_ob = fetch_kalshi_orderbook(market["id"])
 
         # Store prediction
-        store_prediction_kalshi(
+        prediction = store_prediction_kalshi(
             db, market["id"], signal, regime, cycle,
             mkt_price=mkt_price, kalshi_ob=kalshi_ob,
         )
         direction = signal.get("direction", "?")
         est = signal["estimate"]
-        conv = 2 if signal["should_trade"] else 0
-        print(f"    -> {direction} @ {est:.0%} (conv={conv}, paper)")
+        conv = prediction["conviction_score"]
+        print(f"    -> {direction} @ {est:.0%} (conv={conv})")
 
     db.close()
 

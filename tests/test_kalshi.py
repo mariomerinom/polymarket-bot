@@ -9,6 +9,8 @@ import os
 import sys
 import sqlite3
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
@@ -260,6 +262,100 @@ class TestKalshiScore:
         import kalshi_score
         assert not hasattr(kalshi_score, "_mock_resolve"), \
             "Hash-based _mock_resolve must be removed — it produces random noise"
+
+
+class TestKalshiConviction:
+    """Tests for Kalshi Phase 1 conviction scoring."""
+
+    def _make_signal(self, should_trade=True, direction="UP", streak=3,
+                     confidence="medium", estimate=0.6):
+        return {
+            "should_trade": should_trade,
+            "direction": direction,
+            "streak": streak,
+            "confidence": confidence,
+            "estimate": estimate,
+            "reason": "momentum" if should_trade else "no_streak",
+        }
+
+    def _make_regime(self, label="MEDIUM_VOL / TRENDING"):
+        return {
+            "label": label,
+            "volatility": "MEDIUM_VOL",
+            "autocorrelation": 0.3,
+            "is_mean_reverting": False,
+        }
+
+    def _store(self, db, signal, regime):
+        from ci_run_kalshi import store_prediction_kalshi
+        return store_prediction_kalshi(
+            db, "test-market-1", signal, regime, cycle=1,
+        )
+
+    @pytest.fixture
+    def kalshi_db(self, tmp_path):
+        import kalshi_markets
+        original = kalshi_markets.DB_PATH_KALSHI
+        kalshi_markets.DB_PATH_KALSHI = tmp_path / "test_kalshi.db"
+        try:
+            db = kalshi_markets.init_db_kalshi()
+            # Insert a market for FK constraint
+            db.execute("""
+                INSERT INTO markets (id, question, category, end_date, volume, price_yes)
+                VALUES ('test-market-1', 'test', 'crypto', '2099-01-01T00:00:00Z', 0, 0.5)
+            """)
+            db.commit()
+            yield db
+            db.close()
+        finally:
+            kalshi_markets.DB_PATH_KALSHI = original
+
+    def test_conviction_up_trending_conv3(self, kalshi_db):
+        """UP signal in TRENDING regime → conviction 3."""
+        signal = self._make_signal(direction="UP", streak=3)
+        regime = self._make_regime("MEDIUM_VOL / TRENDING")
+        result = self._store(kalshi_db, signal, regime)
+        assert result["conviction_score"] == 3
+
+    def test_conviction_down_neutral_demoted(self, kalshi_db):
+        """DOWN signal in NEUTRAL regime → conviction 2 (demotion)."""
+        signal = self._make_signal(direction="DOWN", streak=3)
+        regime = self._make_regime("MEDIUM_VOL / NEUTRAL")
+        result = self._store(kalshi_db, signal, regime)
+        assert result["conviction_score"] == 2
+
+    def test_conviction_long_streak_conv4(self, kalshi_db):
+        """Streak >= 5 → conviction 4."""
+        signal = self._make_signal(direction="UP", streak=5)
+        regime = self._make_regime("MEDIUM_VOL / TRENDING")
+        result = self._store(kalshi_db, signal, regime)
+        assert result["conviction_score"] == 4
+
+    def test_conviction_no_trade_conv0(self, kalshi_db):
+        """should_trade=False → conviction 0."""
+        signal = self._make_signal(should_trade=False, estimate=0.5)
+        regime = self._make_regime("MEDIUM_VOL / TRENDING")
+        result = self._store(kalshi_db, signal, regime)
+        assert result["conviction_score"] == 0
+
+    def test_conviction_high_vol_non_trending_skip(self, kalshi_db):
+        """HIGH_VOL non-trending signal should still get conv=2 via DOWN+NEUTRAL
+        or conv=3 but the regime gate in _run_predictions skips before store.
+        Direct store with HIGH_VOL/NEUTRAL + DOWN → conv=2 (demotion)."""
+        signal = self._make_signal(direction="DOWN", streak=3)
+        regime = self._make_regime("HIGH_VOL / NEUTRAL")
+        result = self._store(kalshi_db, signal, regime)
+        # DOWN+NEUTRAL demotion excludes HIGH_VOL, so this should be conv=3
+        # (the HIGH_VOL gate is in _run_predictions, not store_prediction)
+        assert result["conviction_score"] == 3
+
+    def test_conviction_down_neutral_excludes_high_vol(self, kalshi_db):
+        """DOWN+NEUTRAL demotion only fires when HIGH_VOL is NOT in the label."""
+        signal = self._make_signal(direction="DOWN", streak=3)
+        # Non-HIGH_VOL NEUTRAL → demotion
+        regime = self._make_regime("LOW_VOL / NEUTRAL")
+        result = self._store(kalshi_db, signal, regime)
+        assert result["conviction_score"] == 2
 
 
 # TestKalshiNavBar removed — dashboard retired 2026-04-08
