@@ -19,7 +19,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from botsy_engine import BotsyEngine, ROUTING
 
 
-# ── Fixtures ────────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+
+def _run(coro):
+    """Run an async coroutine in a fresh event loop (Python 3.10+ safe)."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def _make_engine():
@@ -55,24 +64,25 @@ class TestEngineDispatch:
     """Engine dispatch logic — behavioral contracts."""
 
     def test_routing_btc_5m(self):
-        """BTC 5m route dispatches to btc_5m and kalshi pipelines."""
+        """BTC 5m route dispatches to btc_5m, kalshi, and hl pipelines."""
         engine = _make_engine()
 
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=1700000000000)
         )
 
-        # Should have dispatched to btc_5m and kalshi
-        assert engine.run_pipeline.call_count == 2
+        # Should have dispatched to btc_5m, kalshi, and hl
+        assert engine.run_pipeline.call_count == 3
         pipeline_names = [c.args[0] for c in engine.run_pipeline.call_args_list]
         assert "btc_5m" in pipeline_names
         assert "kalshi" in pipeline_names
+        assert "hl" in pipeline_names
 
     def test_routing_unknown_key(self):
         """Unknown routing key → no dispatch, no crash."""
         engine = _make_engine()
 
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             engine.dispatch("unknown_source", "XYZUSDT", "5", candle_ts=1700000000000)
         )
 
@@ -83,38 +93,27 @@ class TestEngineDispatch:
         engine = _make_engine()
 
         ts = 1700000000000
-        loop = asyncio.get_event_loop()
 
-        # First dispatch
-        loop.run_until_complete(
-            engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=ts)
-        )
-        first_count = engine.run_pipeline.call_count
+        async def _run_both():
+            await engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=ts)
+            first_count = engine.run_pipeline.call_count
+            await engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=ts)
+            return first_count, engine.run_pipeline.call_count
 
-        # Second dispatch with same key — should be deduped
-        loop.run_until_complete(
-            engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=ts)
-        )
-        second_count = engine.run_pipeline.call_count
-
+        first_count, second_count = _run(_run_both())
         assert second_count == first_count, "Duplicate event should not trigger new dispatch"
 
     def test_dedup_allows_new_timestamp(self):
         """Different candle_ts for same symbol dispatches again."""
         engine = _make_engine()
 
-        loop = asyncio.get_event_loop()
+        async def _run_both():
+            await engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=1700000000000)
+            first_count = engine.run_pipeline.call_count
+            await engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=1700000300000)
+            return first_count, engine.run_pipeline.call_count
 
-        loop.run_until_complete(
-            engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=1700000000000)
-        )
-        first_count = engine.run_pipeline.call_count
-
-        loop.run_until_complete(
-            engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=1700000300000)
-        )
-        second_count = engine.run_pipeline.call_count
-
+        first_count, second_count = _run(_run_both())
         assert second_count > first_count, "New timestamp should trigger new dispatch"
 
     def test_dedup_pruning_keeps_entries(self):
@@ -128,8 +127,7 @@ class TestEngineDispatch:
         assert len(engine._dispatched) == 101
 
         # Trigger dispatch which will prune (set > 100)
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(
+        _run(
             engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=9999999999999)
         )
 
@@ -155,8 +153,7 @@ class TestEngineDispatch:
             engine.candle_buffer.on_kline_event("BTCUSDT", "5", kline)
 
         # Dispatch — run_pipeline should receive candle_data
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(
+        _run(
             engine.dispatch("bybit_spot", "BTCUSDT", "5", candle_ts=1700099999999)
         )
 

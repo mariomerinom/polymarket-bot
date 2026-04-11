@@ -5,6 +5,9 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest
+
+pytest.importorskip("numpy")
+
 from candle_buffer import CandleBuffer
 from ta_engine import TAEngine
 
