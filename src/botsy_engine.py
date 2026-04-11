@@ -220,6 +220,10 @@ class BotsyEngine:
             ("ETHUSDT", "5", "spot", "ETHUSDT"),
             ("BTCUSDT_linear", "1", "linear", "BTCUSDT"),
             ("BTCUSDT_linear", "5", "linear", "BTCUSDT"),
+            ("SOLUSDT", "1", "spot", "SOLUSDT"),
+            ("SOLUSDT", "5", "spot", "SOLUSDT"),
+            ("DOGEUSDT", "1", "spot", "DOGEUSDT"),
+            ("DOGEUSDT", "5", "spot", "DOGEUSDT"),
         ]
         for buf_symbol, tf, category, api_symbol in seeds:
             try:

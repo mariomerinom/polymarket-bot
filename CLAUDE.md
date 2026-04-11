@@ -73,6 +73,12 @@ All pipelines run on a DigitalOcean VPS (`botsy_engine.py`) via a single async e
 | Kalshi BTC | `ci_run_kalshi.py` (standalone) | `predictions_kalshi.db` | Momentum | Paper (Phase 1 — conviction scoring) |
 | Bybit BTC | `ci_run_bybit.py` (standalone) | `predictions_bybit.db` | Momentum | Paper |
 | Hyperliquid BTC | `ci_run_hl.py` (standalone) | `predictions_hl.db` | Momentum | Paper (piggybacks Bybit spot candles) |
+| ETH Bybit | `ci_run_perp.py` → `run_perp_pipeline` | `predictions_bybit_eth.db` | Momentum | Paper |
+| ETH Hyperliquid | `ci_run_perp.py` → `run_perp_pipeline` | `predictions_hl_eth.db` | Momentum | Paper |
+| SOL Bybit | `ci_run_perp.py` → `run_perp_pipeline` | `predictions_bybit_sol.db` | Momentum | Paper |
+| SOL Hyperliquid | `ci_run_perp.py` → `run_perp_pipeline` | `predictions_hl_sol.db` | Momentum | Paper |
+| DOGE Bybit | `ci_run_perp.py` → `run_perp_pipeline` | `predictions_bybit_doge.db` | Momentum | Paper |
+| DOGE Hyperliquid | `ci_run_perp.py` → `run_perp_pipeline` | `predictions_hl_doge.db` | Momentum | Paper |
 
 ### Diagnostic Tooling
 
