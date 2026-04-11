@@ -638,6 +638,16 @@ class BotsyEngine:
             await self.run_pipeline(pipeline, candle_data=candle_data,
                                     indicators=indicators)
 
+        # Run Strategy Lab (shadow strategies, never affects production)
+        try:
+            from strategy_lab import strategy_lab_run
+            await asyncio.to_thread(
+                strategy_lab_run, pipelines, symbol, interval,
+                candle_data, indicators,
+            )
+        except Exception as e:
+            log(f"[STRATEGY_LAB] {e}")
+
         # Track dispatch latency
         latency_ms = (time.time() - dispatch_start) * 1000
         self._latencies.append(latency_ms)

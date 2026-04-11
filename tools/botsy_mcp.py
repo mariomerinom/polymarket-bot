@@ -788,5 +788,87 @@ def streak_analysis(
         db.close()
 
 
+# ── Tool: Strategy Lab Performance ──────────────────────────────────────
+
+STRATEGY_LAB_DB = DATA_DIR / "strategy_lab.db"
+
+
+@mcp.tool()
+def lab_performance(
+    strategy: str = "",
+    pipeline: str = "",
+    days: int = 7,
+) -> str:
+    """Strategy Lab results: WR, P&L, bet count per strategy.
+
+    Args:
+        strategy: Filter by strategy name (empty = all strategies)
+        pipeline: Filter by pipeline name (empty = all pipelines)
+        days: Lookback period in days (default 7)
+
+    Returns:
+        JSON array with per-strategy stats: bets, wins, WR, P&L, days to gate
+    """
+    if not STRATEGY_LAB_DB.exists():
+        return json.dumps({"error": "strategy_lab.db not found — lab not running yet"})
+
+    db = sqlite3.connect(f"file:{STRATEGY_LAB_DB}?mode=ro", uri=True)
+    db.row_factory = sqlite3.Row
+    try:
+        where_clauses = ["outcome IS NOT NULL",
+                         f"predicted_at >= datetime('now', '-{days} days')"]
+        params = []
+        if strategy:
+            where_clauses.append("strategy = ?")
+            params.append(strategy)
+        if pipeline:
+            where_clauses.append("pipeline = ?")
+            params.append(pipeline)
+
+        where = " AND ".join(where_clauses)
+
+        rows = db.execute(f"""
+            SELECT strategy, pipeline,
+                   COUNT(*) as bets,
+                   SUM(CASE WHEN outcome = 1 THEN 1 ELSE 0 END) as wins,
+                   SUM(pnl) as total_pnl
+            FROM lab_predictions
+            WHERE {where}
+            GROUP BY strategy, pipeline
+            ORDER BY strategy, pipeline
+        """, params).fetchall()
+
+        # Also get total predictions (including unresolved) for gate progress
+        total_rows = db.execute(f"""
+            SELECT strategy, COUNT(*) as total
+            FROM lab_predictions
+            WHERE predicted_at >= datetime('now', '-30 days')
+            GROUP BY strategy
+        """).fetchall()
+        totals = {r["strategy"]: r["total"] for r in total_rows}
+
+        results = []
+        for r in rows:
+            bets = r["bets"]
+            wins = r["wins"]
+            wr = round(wins / bets * 100, 1) if bets > 0 else 0
+            total = totals.get(r["strategy"], bets)
+            results.append({
+                "strategy": r["strategy"],
+                "pipeline": r["pipeline"],
+                "bets": bets,
+                "wins": wins,
+                "losses": bets - wins,
+                "win_rate_pct": wr,
+                "pnl": round(r["total_pnl"] or 0, 2),
+                "total_predictions": total,
+                "gate_progress": f"{total}/200",
+            })
+
+        return json.dumps(results, indent=2)
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

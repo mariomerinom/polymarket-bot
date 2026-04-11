@@ -1,0 +1,23 @@
+{
+  "_comment": "Strategy Lab: shadow strategies for rapid testing. See docs/plans/groovy-squishing-scott.md",
+  "strategies": {
+    "vwap_meanrev": {
+      "module": "strategies.vwap_meanrev",
+      "function": "signal",
+      "enabled": true,
+      "assets": ["BTCUSDT", "ETHUSDT"],
+      "timeframes": ["5"],
+      "min_sample": 200,
+      "notes": "Trade mean-reverting regimes that momentum skips"
+    },
+    "vol_breakout": {
+      "module": "strategies.vol_breakout",
+      "function": "signal",
+      "enabled": true,
+      "assets": ["BTCUSDT", "ETHUSDT"],
+      "timeframes": ["5"],
+      "min_sample": 200,
+      "notes": "Bollinger compression -> expansion detection"
+    }
+  }
+}
