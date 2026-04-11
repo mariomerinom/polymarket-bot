@@ -17,6 +17,7 @@ SRC = Path(__file__).parent.parent / "src"
 ALLOWED_FILES = {
     "system_state.py",          # the contract itself
     "bybit_trade.py",           # legacy — tracked for migration
+    "hl_trade.py",              # Hyperliquid trade module — same pattern as bybit_trade
     "anomaly.py",               # anomaly detection has its own window logic
     "trade.py",                 # back-compat shim + execution path
     "pipeline_integrity.py",    # wraps the contract

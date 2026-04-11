@@ -22,7 +22,10 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-import numpy as np
+try:
+    import numpy as np
+except ModuleNotFoundError:  # pragma: no cover — optional dep for CLI analysis
+    np = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -141,7 +141,7 @@ class TestRealConfig:
         cfg_path = os.path.join(os.path.dirname(__file__), "..", "config", "pipelines.json")
         with open(cfg_path) as f:
             data = json.load(f)
-        expected = {"btc_5m", "btc_15m", "eth_5m", "kalshi", "bybit"}
+        expected = {"btc_5m", "btc_15m", "eth_5m", "kalshi", "bybit", "hl"}
         actual = set(data["pipelines"].keys())
         assert expected == actual, f"Missing pipelines: {expected - actual}"
 
