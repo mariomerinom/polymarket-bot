@@ -133,6 +133,7 @@ AGENT_PIPELINE_MAP = {
     "eth": "eth_5m",
     "bybit": "bybit",
     "kalshi": "kalshi",
+    "hl": "hl_5m",
 }
 
 # ── Shadow conviction scorer configs ─────────────────────────────────────────
@@ -177,6 +178,14 @@ SHADOW_CONFIGS = {
         "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
     },
     "bybit_5m": {
+        "min_streak": 3,
+        "baseline_streak": 8,
+        "magnitude_multiplier": 2.0,
+        "max_edge": 0.14,
+        "high_confidence_threshold": 0.80,
+        "conv_thresholds": [0.02, 0.05, 0.08, 0.12],
+    },
+    "hl_5m": {
         "min_streak": 3,
         "baseline_streak": 8,
         "magnitude_multiplier": 2.0,
@@ -231,6 +240,17 @@ BYBIT_FEE_RATE = 0.0002    # 0.02% maker (limit orders per bybit_trade.py)
 BYBIT_MIN_CONVICTION = int(_env("BYBIT_MIN_CONVICTION", "3"))
 API_TIMEOUT_BYBIT = 10
 LIVE_BYBIT_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 0.005, 4: 0.005, 5: 0.005}
+
+# ── Hyperliquid perpetual futures ──────────────────────────────────────────
+# Same position size as Bybit. Maker REBATE (negative fee = credit).
+# No KYC required — on-chain settlement on Arbitrum.
+HL_BET_SIZE = float(_env("HL_BET_SIZE", "0.005"))
+HL_DAILY_LOSS_LIMIT = float(_env("HL_DAILY_LOSS_LIMIT", "50"))
+HL_MAX_HOLD_CYCLES = int(_env("HL_MAX_HOLD_CYCLES", "6"))
+HL_STOP_ATR_MULT = float(_env("HL_STOP_ATR_MULT", "1.5"))
+HL_FEE_RATE = -0.0002     # -0.02% maker REBATE (negative = credit)
+HL_MIN_CONVICTION = int(_env("HL_MIN_CONVICTION", "3"))
+LIVE_HL_CONVICTION_BETS = {0: 0, 1: 0, 2: 0, 3: 0.005, 4: 0.005, 5: 0.005}
 
 # API timeouts (seconds)
 API_TIMEOUT_EXCHANGE = 10       # Kraken, Coinbase candle fetches

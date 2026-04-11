@@ -86,7 +86,7 @@ def acquire_pid_lock(pid_file=None):
 # Bybit WS v5 handles all candle triggers (241ms avg latency, validated 2026-04-05)
 # 1m events feed the buffer + TA engine but do NOT trigger pipelines.
 ROUTING = {
-    ("bybit_spot", "BTCUSDT", "5"):    ["btc_5m", "kalshi"],
+    ("bybit_spot", "BTCUSDT", "5"):    ["btc_5m", "kalshi", "hl"],
     ("bybit_spot", "BTCUSDT", "15"):   ["btc_15m"],       # native 15m, replaces counter
     ("bybit_spot", "ETHUSDT", "5"):    ["eth_5m"],
     ("bybit_linear", "BTCUSDT", "5"):  ["bybit"],
@@ -644,6 +644,7 @@ class BotsyEngine:
             "eth_5m": "ci_run_eth",
             "bybit": "ci_run_bybit",
             "kalshi": "ci_run_kalshi",
+            "hl": "ci_run_hl",
         }
         module_name = runners.get(name)
         if not module_name:
@@ -671,7 +672,7 @@ class BotsyEngine:
                     f"fallback firing all pipelines")
                 self.metrics["fallback_fires_24h"] += 1
                 self.last_event_time = time.time()
-                for name in ["btc_5m", "btc_15m", "eth_5m", "bybit", "kalshi"]:
+                for name in ["btc_5m", "btc_15m", "eth_5m", "bybit", "kalshi", "hl"]:
                     await self.run_pipeline(name)
 
     # ── Git Commit Loop ─────────���──────────────────────────────────────

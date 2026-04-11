@@ -56,11 +56,17 @@ def _kill_switch_file_path(pipeline_name: str) -> Path:
     base = Path(__file__).parent.parent / "data"
     if pipeline_name.startswith("bybit"):
         return base / "KILL_SWITCH_BYBIT"
+    if pipeline_name.startswith("hl"):
+        return base / "KILL_SWITCH_HL"
     return base / "KILL_SWITCH"
 
 
 def _kill_switch_env_var(pipeline_name: str) -> str:
-    return "KILL_SWITCH_BYBIT" if pipeline_name.startswith("bybit") else "KILL_SWITCH"
+    if pipeline_name.startswith("bybit"):
+        return "KILL_SWITCH_BYBIT"
+    if pipeline_name.startswith("hl"):
+        return "KILL_SWITCH_HL"
+    return "KILL_SWITCH"
 
 
 def _check_kill_switch(pipeline_name: str) -> bool:
