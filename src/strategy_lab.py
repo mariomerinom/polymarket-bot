@@ -55,7 +55,7 @@ def _init_db(db: sqlite3.Connection):
     """)
     db.execute("""
         CREATE INDEX IF NOT EXISTS idx_lab_pending
-        ON lab_predictions(outcome) WHERE outcome IS NULL
+        ON lab_predictions(outcome, symbol) WHERE outcome IS NULL
     """)
     db.commit()
 
@@ -86,15 +86,24 @@ def _write_prediction(db, strategy_name, pipeline, symbol, signal, regime_label,
 
 # ── Auto-Resolution ─────────────────────────────────────────────────────
 
-def _auto_resolve(db, next_candle, resolve_time):
+def _auto_resolve(db, next_candle, resolve_time, symbol=None):
     """Resolve pending predictions using the next candle's direction.
 
     next_candle: dict with 'open' and 'close' keys.
+    symbol: if provided, only resolve predictions for this symbol.
+            CRITICAL: must be provided to avoid resolving ETH predictions
+            with BTC candle data (or vice versa).
     Returns number of predictions resolved.
     """
-    pending = db.execute("""
-        SELECT id, direction FROM lab_predictions WHERE outcome IS NULL
-    """).fetchall()
+    if symbol:
+        pending = db.execute("""
+            SELECT id, direction FROM lab_predictions
+            WHERE outcome IS NULL AND symbol = ?
+        """, (symbol,)).fetchall()
+    else:
+        pending = db.execute("""
+            SELECT id, direction FROM lab_predictions WHERE outcome IS NULL
+        """).fetchall()
 
     if not pending:
         return 0
@@ -249,7 +258,7 @@ def strategy_lab_run(pipelines, symbol, interval, candle_data, indicators):
             # Auto-resolve pending predictions from previous cycle
             if candle_data and candle_data.get("candles"):
                 last_candle = candle_data["candles"][-1]
-                resolved = _auto_resolve(db, last_candle, datetime.now(timezone.utc))
+                resolved = _auto_resolve(db, last_candle, datetime.now(timezone.utc), symbol=symbol)
                 if resolved > 0:
                     print(f"  [STRATEGY_LAB] Resolved {resolved} prediction(s)")
 

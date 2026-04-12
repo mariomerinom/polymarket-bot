@@ -493,6 +493,36 @@ class TestAutoResolution:
         assert resolved == 0
         db.close()
 
+    def test_resolve_scoped_by_symbol(self):
+        """Only resolve predictions matching the current symbol."""
+        from strategy_lab import _init_db, _write_prediction, _auto_resolve
+        db = sqlite3.connect(":memory:")
+        _init_db(db)
+        # BTC prediction
+        sig_btc = StrategySignal(direction="UP", estimate=0.58, conviction=3,
+                                  reason="test", metadata={})
+        _write_prediction(db, "test", "btc_5m", "BTCUSDT", sig_btc,
+                          "", 80000.0,
+                          datetime(2026, 4, 11, 12, 0, tzinfo=timezone.utc))
+        # ETH prediction
+        sig_eth = StrategySignal(direction="DOWN", estimate=0.42, conviction=3,
+                                  reason="test", metadata={})
+        _write_prediction(db, "test", "eth_5m", "ETHUSDT", sig_eth,
+                          "", 2200.0,
+                          datetime(2026, 4, 11, 12, 0, tzinfo=timezone.utc))
+
+        # Resolve with BTC candle — only BTC should resolve
+        btc_candle = {"open": 80000, "close": 80100, "high": 80150, "low": 79950}
+        resolved = _auto_resolve(db, btc_candle,
+                                 datetime(2026, 4, 11, 12, 5, tzinfo=timezone.utc),
+                                 symbol="BTCUSDT")
+        assert resolved == 1
+        # ETH should still be pending
+        eth_pending = db.execute(
+            "SELECT outcome FROM lab_predictions WHERE symbol='ETHUSDT'").fetchone()
+        assert eth_pending[0] is None
+        db.close()
+
 
 class TestConfigLoading:
     def test_load_strategies_from_json(self, tmp_path):
