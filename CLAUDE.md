@@ -133,6 +133,11 @@ Production sizing is a grind, not a gamble. The current paper-trading tiers ($75
 - **Thin book constraint.** Kelly must be capped by book depth (CLOB data), not just by bankroll math. The bet size ceiling is whatever the book can absorb at ≤2% slippage.
 - **Paper tiers stay as-is.** The current tiered system continues in paper trading to collect data on whether tier differentiation actually predicts performance. But production does NOT inherit paper sizing.
 
+## Quick Reference
+
+- **Terminal cheatsheet:** `./tools/cheatsheet.sh skills` — lists all skills, hooks, MCP tools, architecture rules
+- **Engineering lessons:** `docs/ops/ENGINEERING_LESSONS.md` — 15 rules from production incidents
+
 ## Documentation Map
 
 ### Kanban Board
