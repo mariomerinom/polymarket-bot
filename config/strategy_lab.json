@@ -1,6 +1,24 @@
 {
-  "_comment": "Strategy Lab: shadow strategies for rapid testing. See docs/plans/groovy-squishing-scott.md",
+  "_comment": "Strategy Lab: always-fire strategies for parameter optimization. See docs/plans/groovy-squishing-scott.md",
   "strategies": {
+    "candle_snapshot": {
+      "module": "strategies.candle_snapshot",
+      "function": "signal",
+      "enabled": true,
+      "assets": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
+      "timeframes": ["5"],
+      "min_sample": 200,
+      "notes": "Wide-net data collector: logs ALL indicators for every candle. The raw dataset for parameter optimization."
+    },
+    "momentum_lab": {
+      "module": "strategies.momentum_lab",
+      "function": "signal",
+      "enabled": true,
+      "assets": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
+      "timeframes": ["5"],
+      "min_sample": 200,
+      "notes": "Production momentum replicated in lab with full indicator logging. Optimizes streak + indicator combos."
+    },
     "vwap_meanrev": {
       "module": "strategies.vwap_meanrev",
       "function": "signal",
@@ -8,7 +26,7 @@
       "assets": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
       "timeframes": ["5"],
       "min_sample": 200,
-      "notes": "Trade mean-reverting regimes that momentum skips"
+      "notes": "VWAP mean-reversion with full indicator logging. Always fires — optimize z-score thresholds post-hoc."
     },
     "vol_breakout": {
       "module": "strategies.vol_breakout",
@@ -17,7 +35,7 @@
       "assets": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
       "timeframes": ["5"],
       "min_sample": 200,
-      "notes": "Bollinger compression -> expansion detection"
+      "notes": "BB compression/expansion with full indicator logging. Always fires — optimize bandwidth/expansion thresholds post-hoc."
     }
   }
 }

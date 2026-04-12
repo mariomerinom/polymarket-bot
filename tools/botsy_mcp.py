@@ -870,5 +870,335 @@ def lab_performance(
         db.close()
 
 
+@mcp.tool()
+def lab_param_sweep(
+    strategy: str = "",
+    param: str = "",
+    buckets: int = 5,
+    min_samples: int = 10,
+    days: int = 7,
+) -> str:
+    """Parameter optimization: bucket WR by metadata parameter values.
+
+    Finds which parameter ranges have edge by grouping resolved predictions
+    by metadata values and computing WR per bucket.
+
+    Args:
+        strategy: Strategy to analyze (empty = all). Use 'candle_snapshot' for raw data.
+        param: Metadata parameter to bucket (e.g. 'rsi_14', 'zscore', 'bb_bandwidth',
+               'streak_length', 'rvol', 'z_score', 'expansion_ratio').
+               Empty = show available params and their value ranges.
+        buckets: Number of equal-width buckets for numeric params (default 5)
+        min_samples: Minimum samples per bucket to show (default 10)
+        days: Lookback period in days (default 7)
+
+    Returns:
+        JSON with per-bucket WR, count, and P&L. Sorted by WR descending.
+    """
+    if not STRATEGY_LAB_DB.exists():
+        return json.dumps({"error": "strategy_lab.db not found — lab not running yet"})
+
+    db = sqlite3.connect(f"file:{STRATEGY_LAB_DB}?mode=ro", uri=True)
+    db.row_factory = sqlite3.Row
+    try:
+        # Build base query
+        where = [f"predicted_at >= datetime('now', '-{days} days')",
+                 "outcome IS NOT NULL", "metadata IS NOT NULL"]
+        params_list = []
+        if strategy:
+            where.append("strategy = ?")
+            params_list.append(strategy)
+
+        where_sql = " AND ".join(where)
+
+        # If no param specified, list available params with value ranges
+        if not param:
+            rows = db.execute(f"""
+                SELECT metadata FROM lab_predictions
+                WHERE {where_sql}
+                LIMIT 100
+            """, params_list).fetchall()
+
+            if not rows:
+                return json.dumps({"error": "No resolved predictions with metadata yet",
+                                   "hint": "Strategies need time to fire and resolve. Check back in 10+ minutes."})
+
+            # Collect all keys and sample values
+            import collections
+            key_stats = collections.defaultdict(lambda: {"count": 0, "numeric": True, "min": float("inf"), "max": float("-inf"), "samples": []})
+            for r in rows:
+                try:
+                    meta = json.loads(r["metadata"])
+                    for k, v in meta.items():
+                        ks = key_stats[k]
+                        ks["count"] += 1
+                        if isinstance(v, (int, float)) and not isinstance(v, bool):
+                            ks["min"] = min(ks["min"], v)
+                            ks["max"] = max(ks["max"], v)
+                        else:
+                            ks["numeric"] = False
+                        if len(ks["samples"]) < 5:
+                            ks["samples"].append(v)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            available = []
+            for k, stats in sorted(key_stats.items()):
+                entry = {"param": k, "count": stats["count"]}
+                if stats["numeric"] and stats["min"] != float("inf"):
+                    entry["type"] = "numeric"
+                    entry["min"] = round(stats["min"], 4)
+                    entry["max"] = round(stats["max"], 4)
+                else:
+                    entry["type"] = "categorical"
+                    entry["samples"] = stats["samples"][:5]
+                available.append(entry)
+
+            return json.dumps({"available_params": available,
+                               "usage": "Call with param='rsi_14' to see WR bucketed by RSI"}, indent=2)
+
+        # Fetch all resolved predictions with metadata
+        rows = db.execute(f"""
+            SELECT direction, outcome, pnl, metadata, strategy
+            FROM lab_predictions
+            WHERE {where_sql}
+        """, params_list).fetchall()
+
+        if not rows:
+            return json.dumps({"error": f"No resolved predictions found for param '{param}'"})
+
+        # Extract param values
+        entries = []
+        for r in rows:
+            try:
+                meta = json.loads(r["metadata"])
+                val = meta.get(param)
+                if val is not None:
+                    entries.append({
+                        "val": val,
+                        "outcome": r["outcome"],
+                        "pnl": r["pnl"] or 0,
+                        "direction": r["direction"],
+                        "strategy": r["strategy"],
+                    })
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        if not entries:
+            return json.dumps({"error": f"Parameter '{param}' not found in metadata",
+                               "hint": "Use lab_param_sweep with no param to see available parameters"})
+
+        # Check if numeric or categorical
+        numeric_values = [e["val"] for e in entries if isinstance(e["val"], (int, float)) and not isinstance(e["val"], bool)]
+
+        if len(numeric_values) > len(entries) * 0.5:
+            # Numeric bucketing
+            min_val = min(numeric_values)
+            max_val = max(numeric_values)
+
+            if min_val == max_val:
+                bucket_width = 1
+            else:
+                bucket_width = (max_val - min_val) / buckets
+
+            results = []
+            for i in range(buckets):
+                lo = min_val + i * bucket_width
+                hi = lo + bucket_width if i < buckets - 1 else max_val + 0.001
+                bucket_entries = [e for e in entries
+                                  if isinstance(e["val"], (int, float))
+                                  and lo <= e["val"] < hi]
+                if len(bucket_entries) < min_samples:
+                    continue
+                wins = sum(1 for e in bucket_entries if e["outcome"] == 1)
+                total = len(bucket_entries)
+                pnl = sum(e["pnl"] for e in bucket_entries)
+                results.append({
+                    "bucket": f"{lo:.4g} – {hi:.4g}",
+                    "count": total,
+                    "wins": wins,
+                    "losses": total - wins,
+                    "win_rate_pct": round(wins / total * 100, 1),
+                    "pnl": round(pnl, 2),
+                })
+
+            results.sort(key=lambda x: x["win_rate_pct"], reverse=True)
+            return json.dumps({
+                "param": param,
+                "type": "numeric",
+                "total_samples": len(entries),
+                "buckets": results,
+                "insight": _param_insight(results, param),
+            }, indent=2)
+        else:
+            # Categorical bucketing
+            from collections import defaultdict
+            cat_groups = defaultdict(list)
+            for e in entries:
+                cat_groups[str(e["val"])].append(e)
+
+            results = []
+            for cat_val, group in sorted(cat_groups.items()):
+                if len(group) < min_samples:
+                    continue
+                wins = sum(1 for e in group if e["outcome"] == 1)
+                total = len(group)
+                pnl = sum(e["pnl"] for e in group)
+                results.append({
+                    "value": cat_val,
+                    "count": total,
+                    "wins": wins,
+                    "losses": total - wins,
+                    "win_rate_pct": round(wins / total * 100, 1),
+                    "pnl": round(pnl, 2),
+                })
+
+            results.sort(key=lambda x: x["win_rate_pct"], reverse=True)
+            return json.dumps({
+                "param": param,
+                "type": "categorical",
+                "total_samples": len(entries),
+                "buckets": results,
+                "insight": _param_insight(results, param),
+            }, indent=2)
+
+    finally:
+        db.close()
+
+
+def _param_insight(results, param):
+    """Generate a brief insight string from bucket results."""
+    if not results:
+        return "No buckets with enough samples."
+    best = results[0]
+    worst = results[-1] if len(results) > 1 else None
+    insight = f"Best: {best.get('bucket', best.get('value', '?'))} → {best['win_rate_pct']}% WR ({best['count']} bets)"
+    if worst and worst != best:
+        insight += f" | Worst: {worst.get('bucket', worst.get('value', '?'))} → {worst['win_rate_pct']}% WR ({worst['count']} bets)"
+    spread = best["win_rate_pct"] - (worst["win_rate_pct"] if worst else best["win_rate_pct"])
+    if spread > 10:
+        insight += f" | ⚡ {spread:.0f}pp spread — strong parameter signal"
+    elif spread > 5:
+        insight += f" | {spread:.0f}pp spread — moderate signal"
+    return insight
+
+
+@mcp.tool()
+def lab_param_matrix(
+    strategy: str = "candle_snapshot",
+    param_x: str = "",
+    param_y: str = "",
+    buckets: int = 3,
+    min_samples: int = 5,
+    days: int = 7,
+) -> str:
+    """2D parameter matrix: WR by two parameters simultaneously.
+
+    Cross-tabulates two metadata parameters to find interaction effects.
+    E.g., param_x='rsi_14', param_y='streak_length' shows WR for each
+    (RSI bucket × streak length) combination.
+
+    Args:
+        strategy: Strategy to analyze (default candle_snapshot)
+        param_x: First parameter (rows)
+        param_y: Second parameter (columns)
+        buckets: Number of buckets per numeric param (default 3, keep low for readability)
+        min_samples: Min samples per cell (default 5)
+        days: Lookback period (default 7)
+    """
+    if not STRATEGY_LAB_DB.exists():
+        return json.dumps({"error": "strategy_lab.db not found"})
+
+    if not param_x or not param_y:
+        return json.dumps({"error": "Both param_x and param_y required",
+                           "hint": "Use lab_param_sweep with no param to see available parameters"})
+
+    db = sqlite3.connect(f"file:{STRATEGY_LAB_DB}?mode=ro", uri=True)
+    db.row_factory = sqlite3.Row
+    try:
+        where = [f"predicted_at >= datetime('now', '-{days} days')",
+                 "outcome IS NOT NULL", "metadata IS NOT NULL"]
+        params_list = []
+        if strategy:
+            where.append("strategy = ?")
+            params_list.append(strategy)
+
+        rows = db.execute(f"""
+            SELECT outcome, pnl, metadata
+            FROM lab_predictions
+            WHERE {" AND ".join(where)}
+        """, params_list).fetchall()
+
+        if not rows:
+            return json.dumps({"error": "No data yet"})
+
+        # Extract both params
+        entries = []
+        for r in rows:
+            try:
+                meta = json.loads(r["metadata"])
+                vx = meta.get(param_x)
+                vy = meta.get(param_y)
+                if vx is not None and vy is not None:
+                    entries.append({"x": vx, "y": vy,
+                                    "outcome": r["outcome"],
+                                    "pnl": r["pnl"] or 0})
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        if not entries:
+            return json.dumps({"error": f"Parameters '{param_x}' and/or '{param_y}' not found in metadata"})
+
+        def _bucketize(values, n_buckets):
+            nums = [v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool)]
+            if len(nums) > len(values) * 0.5:
+                mn, mx = min(nums), max(nums)
+                w = (mx - mn) / n_buckets if mx != mn else 1
+                def assign(v):
+                    if not isinstance(v, (int, float)) or isinstance(v, bool):
+                        return str(v)
+                    idx = min(int((v - mn) / w), n_buckets - 1)
+                    lo = mn + idx * w
+                    hi = lo + w
+                    return f"{lo:.3g}–{hi:.3g}"
+                return assign
+            else:
+                return str
+
+        assign_x = _bucketize([e["x"] for e in entries], buckets)
+        assign_y = _bucketize([e["y"] for e in entries], buckets)
+
+        from collections import defaultdict
+        cells = defaultdict(list)
+        for e in entries:
+            bx = assign_x(e["x"])
+            by = assign_y(e["y"])
+            cells[(bx, by)].append(e)
+
+        matrix = []
+        for (bx, by), group in sorted(cells.items()):
+            if len(group) < min_samples:
+                continue
+            wins = sum(1 for e in group if e["outcome"] == 1)
+            total = len(group)
+            matrix.append({
+                param_x: bx,
+                param_y: by,
+                "count": total,
+                "win_rate_pct": round(wins / total * 100, 1),
+                "pnl": round(sum(e["pnl"] for e in group), 2),
+            })
+
+        matrix.sort(key=lambda x: x["win_rate_pct"], reverse=True)
+        return json.dumps({
+            "param_x": param_x,
+            "param_y": param_y,
+            "total_samples": len(entries),
+            "cells": matrix,
+        }, indent=2)
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
