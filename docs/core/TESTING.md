@@ -4,9 +4,9 @@
 
 **Purpose:** Prevent production incidents. Nine incidents since March 15, 2026 cost $1,000+ in losses and 48+ hours of downtime. Every test exists because something broke. The integrity system exists because tests alone weren't enough.
 
-**Current count: 576 tests** (as of 2026-04-09). Runtime: ~85 seconds. 20 pre-existing failures (numpy import, engine dispatch).
+**Current count: 760 tests across 48 files** (as of 2026-04-11). Runtime: ~100 seconds. Pre-existing failures: `test_ta_engine.py` (pandas_ta not on local), `test_fak_semantics.py` (py_clob_client not on local).
 
-**Defense layers:** Tests gate CI (pre-deploy). Integrity checks run post-cycle (runtime). Together they cover what neither can alone.
+**Defense layers:** Tests gate commits (pre-push). Integrity checks run post-cycle (runtime on VPS). Together they cover what neither can alone.
 
 **Methodology: TDD-first.** As of 2026-04-05, all development follows TDD: write behavioral tests BEFORE writing code. Before any implementation, evaluate existing tests for gaps and drift, review relevant plans, then determine both what to test and what to code. Tests assert WHAT the system does (contracts), not HOW it's organized. See `docs/plans/tdd-plan.md` for the full plan.
 
@@ -15,7 +15,7 @@
 ## Running Tests
 
 ```bash
-# Full suite (~60 seconds)
+# Full suite (~100 seconds)
 python -m pytest tests/ -v
 
 # Single file
@@ -25,22 +25,27 @@ python -m pytest tests/test_pnl.py -v
 python -m pytest tests/test_regression.py::test_ci_workflow_no_deleted_paths -v
 ```
 
-Tests run automatically in CI **before** every prediction cycle. If any test fails, the workflow stops — no broken code gets committed, no orders placed.
+Tests run locally **before** every commit. If any test fails, the code does not get pushed — no broken code reaches the VPS engine.
 
 ---
 
 ## Test Architecture
 
-### CI Gate Position
+### Test Gate Position
 
 ```
-Checkout → Install deps → Run Tests → Predict → Trade → Score → Integrity Checks → Dashboard → Commit
-                               │                                        │
-                          FAIL = STOP                              Log to DB
-                     (no predictions, no orders)              (surface in dashboard + daily report)
+Local Dev: Edit → Run Tests → Commit → Push
+                      │
+                 FAIL = STOP
+            (no push, no deploy)
+
+VPS Engine: git pull → Predict → Trade → Score → Integrity Checks → git commit+push
+                                                        │
+                                                   Log to DB
+                                             (surface in daily report)
 ```
 
-Tests prevent broken deploys. Integrity checks catch runtime failures that tests can't simulate (API outages, stale tokens, DB corruption, expired orders).
+Tests prevent broken code from reaching the VPS. Integrity checks catch runtime failures that tests can't simulate (API outages, stale tokens, DB corruption, expired orders).
 
 ### Test Patterns
 
@@ -57,9 +62,9 @@ No `conftest.py`, `pytest.ini`, or `pyproject.toml`. Each test file is self-cont
 
 ---
 
-## Test Layers (28 files, 440 tests)
+## Test Layers (48 files, 760 tests)
 
-### Layer 1: Smoke Tests — `test_smoke.py` (8 tests)
+### Layer 1: Smoke Tests — `test_smoke.py`, `test_smoke_bet.py` (~15 tests)
 
 Catch broken imports and deleted modules before anything else runs.
 
@@ -67,7 +72,7 @@ Covers: `predict.py`, `btc_data.py`, `dashboard.py`, `fetch_markets.py`, `score.
 
 **When these fail:** Something fundamental is broken — fix before doing anything else.
 
-### Layer 2: Signal Logic (3 files, 28 tests)
+### Layer 2: Signal Logic (3 files, ~30 tests)
 
 The core trading brain.
 
@@ -79,38 +84,43 @@ The core trading brain.
 
 **CRITICAL: Strategy is MOMENTUM for both BTC and ETH. Do not revert to contrarian.**
 
-### Layer 3: Trade Execution — `test_trade.py` (33 tests, 10 classes)
+### Layer 3: Trade Execution — `test_trade.py`, `test_execution_fok.py`, `test_multi_pipeline_fok.py` (~55 tests)
 
 Everything between a prediction and money moving.
 
-Covers: flat $25 sizing, conviction gating (conv < 3 = no bet), daily loss limit ($300), consecutive loss breaker (5), kill switch (env + file), ETH agent detection, CLOB thin book guard, order construction, fill-priority spread, fill-size-based P&L, CLOB token import validation.
+Covers: flat $25 sizing, conviction gating (conv < 3 = no bet), daily loss limit ($300), consecutive loss breaker (5), kill switch (env + file), ETH agent detection, CLOB thin book guard, order construction, fill-priority spread, fill-size-based P&L, CLOB token import validation, FOK order semantics, multi-pipeline FOK execution.
 
-### Layer 4: Data & Scoring (2 files, 24 tests)
+### Layer 4: Data & Scoring (3 files, ~35 tests)
 
 | File | Tests | What It Covers |
 |------|-------|----------------|
 | `test_btc_data.py` | 8 | Candle parsing, summary stats, range bounds, volume ratios, trends |
 | `test_pnl.py` | 16 | P&L math, conviction tiers, winning/losing bets, ROI — prevents Incident 2 (inverted conviction) |
+| `test_asset_daily.py` | ~10 | Asset-level daily aggregations and stats |
 
-### Layer 5: Pipeline-Specific (3 files, 75 tests)
+### Layer 5: Pipeline-Specific (6 files, ~120 tests)
 
 | File | Tests | What It Covers |
 |------|-------|----------------|
 | `test_15m.py` | 18 | 15m relaxed params (`min_streak=2`), `loose_mode`, cross-timeframe context, 5m atomic unit |
 | `test_bybit.py` | 45 | Bybit perps: config, schema, synthetic markets, position lifecycle, ATR, P&L, scoring, perps-vs-spot consensus |
 | `test_kalshi.py` | 12 | Kalshi API integration, market fetching, order sizing |
+| `test_hl.py` | ~20 | Hyperliquid pipeline: config, schema, position lifecycle, P&L |
+| `test_perp_pipeline.py` | ~20 | Unified perp pipeline: multi-asset dispatch, ETH/SOL/DOGE lifecycle |
+| `test_alpha_cushion.py` | ~10 | Alpha cushion edge calculation, threshold gating |
 
-### Layer 6: Shadow & Experimental (3 files, 48 tests)
+### Layer 6: Shadow & Experimental (4 files, ~82 tests)
 
-Paper-trading signals that run alongside production but never place orders.
+Paper-trading signals that run alongside production but never place orders. Includes Strategy Lab for multi-strategy shadow testing.
 
 | File | Tests | What It Covers |
 |------|-------|----------------|
 | `test_shadow_conviction.py` | 23 | Parameterized shadow scorer, tier mapping, edge calculation, production isolation (shadow never overrides live conv) |
 | `test_shadow_indicators.py` | 20 | RSI/OBV/VWAP shadow logging, candle parameter passing, no duplicates |
 | `test_vwap_strategy.py` | 5 | VWAP mean-reversion: only fires in MR regime, z-score conviction, direction logic |
+| `test_strategy_lab.py` | 34 | Strategy Lab: base types, indicator snapshots, always-fire strategies, DB operations, dispatch, auto-resolution, config loading, engine integration |
 
-### Layer 7: Infrastructure (6 files, 99 tests)
+### Layer 7: Infrastructure (7 files, ~115 tests)
 
 | File | Tests | What It Covers |
 |------|-------|----------------|
@@ -120,8 +130,9 @@ Paper-trading signals that run alongside production but never place orders.
 | `test_consensus.py` | 10 | Dual-source consensus scoring, tie-breaking, agent weighting |
 | `test_daily_report.py` | 21 | Report generation, P&L rollups, agent breakdowns, empty data, integrity alerts |
 | `test_activity_digest.py` | 6 | Session log generation, skip-when-exists, health queries |
+| `test_orderbook_cache.py` | ~10 | Orderbook caching, staleness, eviction |
 
-### Layer 8: Golden-Path Behavioral (TDD Phase A) — 4 files, 26 tests
+### Layer 8: Golden-Path Behavioral (TDD Phase A) — 4 files, ~26 tests
 
 Written BEFORE refactoring as behavioral contracts. These test WHAT the system does, not HOW it's organized — they survive restructuring.
 
@@ -134,7 +145,7 @@ Written BEFORE refactoring as behavioral contracts. These test WHAT the system d
 
 **Why these exist:** The $2.18 smoke test bug (2026-04-05) happened because code was changed without tests proving correct behavior. These tests are the safety net for Phase B refactoring (extract functions, unify pipelines). See `docs/plans/tdd-plan.md`.
 
-### Layer 9: End-to-End — `test_pipeline_e2e.py` (21 tests, 5 classes)
+### Layer 9: End-to-End — `test_pipeline_e2e.py` (~21 tests, 5 classes)
 
 Full predict → trade → settle → score lifecycle on in-memory DB. Created after the cold-start drawdown breaker incident.
 
@@ -146,7 +157,7 @@ Full predict → trade → settle → score lifecycle on in-memory DB. Created a
 | `TestPnLComputation` | 5 | Winning/losing UP/DOWN, only filled+resolved get P&L |
 | `TestMultiCycleIntegration` | 3 | Full 5-cycle pipeline, breaker trips, daily loss accumulates |
 
-### Layer 10: Regression — `test_regression.py` (17 tests)
+### Layer 10: Regression — `test_regression.py` (~17 tests)
 
 One test per past production incident or optimization. The incident log in code form.
 
@@ -170,12 +181,38 @@ One test per past production incident or optimization. The incident log in code 
 | `test_extreme_estimate_shadow_price_gate` | Extreme estimates shadow at extreme prices |
 | `test_eth_mr_shadow_extreme_estimate` | ETH MR shadow mirrors BTC pattern |
 
-### Layer 11: Manual & Operational (2 files, 18 tests)
+### Layer 11: Manual & Operational (2 files, ~18 tests)
 
 | File | Tests | What It Covers |
 |------|-------|----------------|
 | `test_manual_test_bet.py` | 8 | $5 smoke test: trading-disabled guard, audit trail (`agent=manual_test_user`), $5 size, UP/DOWN routing, abort on non-YES |
 | `test_optimization_tracker.py` | 10 | Experiment registration, stats computation, closure checks |
+
+### Layer 12: State & Invariants (5 files, ~50 tests)
+
+| File | Tests | What It Covers |
+|------|-------|----------------|
+| `test_state_invariants.py` | ~10 | Cross-pipeline state invariants, no global mutation |
+| `test_state_transitions.py` | ~10 | Prediction state machine transitions (pending → resolved) |
+| `test_pipeline_isolation.py` | ~10 | Pipeline isolation: no cross-contamination, mode independence |
+| `test_system_state.py` | ~10 | System-wide state assertions |
+| `test_paper_settlement.py` | ~10 | Paper trading settlement logic, outcome resolution |
+
+### Layer 13: Engine (3 files, ~30 tests)
+
+| File | Tests | What It Covers |
+|------|-------|----------------|
+| `test_engine.py` | ~10 | Engine core: startup, shutdown, pipeline orchestration |
+| `test_engine_resilience.py` | ~10 | Engine resilience: crash recovery, reconnection, error handling |
+| `test_candle_buffer.py` | ~10 | Ring buffer: capacity, eviction, out-of-order handling |
+
+### Layer 14: Specialist (3 files, ~25 tests)
+
+| File | Tests | What It Covers |
+|------|-------|----------------|
+| `test_judge.py` | ~10 | Judge evaluation: prediction grading, accuracy scoring |
+| `test_pure_ta.py` | ~10 | Pure technical analysis: indicator computation without side effects |
+| `test_fill_diagnostic.py` | ~5 | Fill diagnostic instrumentation: expired orders, would-win tracking |
 
 ---
 
@@ -295,19 +332,18 @@ summary = get_integrity_summary(db)
 
 ---
 
-## CI Workflows
+## Test Execution
 
-5 workflows run tests before every cycle:
+> **Note (2026-04-08):** GitHub Actions workflows are fully retired. All pipelines run on a DigitalOcean VPS via `botsy_engine.py` managed by systemd (`botsy.service`). There is no `.github/workflows/` directory.
 
-| Workflow | File | Schedule | Tests |
-|----------|------|----------|-------|
-| BTC 5m | `predict-and-score.yml` | Every 5 min (self-rescheduling) | Full suite before predict |
-| BTC 15m | `predict-15m.yml` | Every 15 min | Full suite before predict |
-| ETH 5m | `predict-eth-5m.yml` | Every 5 min | Full suite before predict |
-| Kalshi | `predict-kalshi.yml` | Every 5 min | Full suite before predict |
-| Bybit | `predict-bybit.yml` | Every 5 min | Full suite before predict |
+Tests run **locally before every commit** as part of the development workflow. The pre-commit discipline is: `pytest tests/ -v` must pass before pushing. A broken push stops the engine from pulling clean code.
 
-All workflows: `python -m pytest tests/ -v --tb=short` → FAIL = STOP.
+```bash
+# Full suite (~100 seconds)
+python -m pytest tests/ -v --tb=short
+```
+
+The VPS engine does not re-run the test suite on every cycle — it trusts that pushed code has been tested locally. This makes local test discipline critical.
 
 ---
 
@@ -336,38 +372,59 @@ TRADING_ENABLED=true python3 manual_test_bet.py --direction UP
 - A new feature is added → unit tests in appropriate file
 - A function's behavior changes → update existing tests first
 
-**Test file map:**
+**Test file map (48 files):**
 
 ```
 tests/
-├── test_smoke.py                  # Imports, connectivity, basic sanity
-├── test_momentum.py               # BTC momentum_signal() logic
-├── test_eth_signal.py             # ETH momentum_signal_eth() logic
-├── test_regime.py                 # compute_regime_from_candles() logic
-├── test_pnl.py                    # P&L math, conviction tiers
-├── test_trade.py                  # Order execution, sizing, circuit breakers
-├── test_btc_data.py               # Candle parsing, summary stats
 ├── test_15m.py                    # 15-minute pipeline specifics
+├── test_activity_digest.py        # Session log generation
+├── test_alpha_cushion.py          # Alpha cushion edge calculation
+├── test_asset_daily.py            # Asset-level daily aggregations
+├── test_btc_data.py               # Candle parsing, summary stats
+├── test_bybit.py                  # Bybit perps pipeline
+├── test_candle_buffer.py          # Ring buffer capacity, eviction
+├── test_ci_run_bybit_lifecycle.py # Bybit pipeline lifecycle (TDD Phase A)
+├── test_ci_run_lifecycle.py       # BTC 5m pipeline lifecycle (TDD Phase A)
+├── test_clob_depth.py             # CLOB book depth, spread, thin book
+├── test_clob_resolution.py        # CLOB price resolution (TDD Phase A)
+├── test_config.py                 # Config constants, shadow configs
+├── test_consensus.py              # Dual-source consensus scoring
+├── test_daily_report.py           # Report generation, P&L, alerts
+├── test_engine.py                 # Engine core orchestration
+├── test_engine_dispatch.py        # Engine dispatch routing/dedup (TDD Phase A)
+├── test_engine_resilience.py      # Engine crash recovery, reconnection
+├── test_eth_signal.py             # ETH momentum_signal_eth() logic
+├── test_execution_fok.py          # FOK order execution semantics
+├── test_fak_semantics.py          # FAK order semantics (needs py_clob_client)
+├── test_fill_diagnostic.py        # Fill diagnostic instrumentation
+├── test_hl.py                     # Hyperliquid pipeline
+├── test_judge.py                  # Judge evaluation, prediction grading
+├── test_kalshi.py                 # Kalshi integration
+├── test_momentum.py               # BTC momentum_signal() logic
+├── test_multi_pipeline_fok.py     # Multi-pipeline FOK execution
+├── test_optimization_tracker.py   # Experiment tracking
+├── test_orderbook_cache.py        # Orderbook caching, staleness
+├── test_paper_settlement.py       # Paper trading settlement logic
+├── test_perp_pipeline.py          # Unified perp pipeline (multi-asset)
+├── test_pipeline_control.py       # pipelines.json loading, mode management
+├── test_pipeline_e2e.py           # Full predict→trade→settle→score lifecycle
+├── test_pipeline_integrity.py     # All 6 integrity checks
+├── test_pipeline_isolation.py     # Pipeline isolation, no cross-contamination
+├── test_pnl.py                    # P&L math, conviction tiers
+├── test_pure_ta.py                # Pure technical analysis indicators
+├── test_regime.py                 # compute_regime_from_candles() logic
 ├── test_regression.py             # One test per past incident
 ├── test_shadow_conviction.py      # Shadow scorer, tier mapping
 ├── test_shadow_indicators.py      # RSI/OBV/VWAP shadow logging
+├── test_smoke.py                  # Imports, connectivity, basic sanity
+├── test_smoke_bet.py              # Smoke bet integration tests
+├── test_state_invariants.py       # Cross-pipeline state invariants
+├── test_state_transitions.py      # Prediction state machine transitions
+├── test_strategy_lab.py           # Strategy Lab: multi-strategy shadow testing
+├── test_system_state.py           # System-wide state assertions
+├── test_trade.py                  # Order execution, sizing, circuit breakers
 ├── test_vwap_strategy.py          # VWAP mean-reversion shadow
-├── test_activity_digest.py        # Session log generation
-├── test_pipeline_e2e.py           # Full predict→trade→settle→score lifecycle
-├── test_config.py                 # Config constants, shadow configs
-├── test_pipeline_control.py       # pipelines.json loading, mode management
-├── test_pipeline_integrity.py     # All 6 integrity checks
-├── test_consensus.py              # Dual-source consensus scoring
-├── test_daily_report.py           # Report generation, P&L, alerts
-├── test_bybit.py                  # Bybit perps pipeline
-├── test_kalshi.py                 # Kalshi integration
-├── test_clob_depth.py             # CLOB book depth, spread, thin book
-├── test_clob_resolution.py        # CLOB price resolution behavioral tests (TDD Phase A)
-├── test_ci_run_lifecycle.py       # BTC 5m pipeline lifecycle (TDD Phase A)
-├── test_engine_dispatch.py        # Engine dispatch routing/dedup (TDD Phase A)
-├── test_ci_run_bybit_lifecycle.py # Bybit pipeline lifecycle (TDD Phase A)
-├── test_manual_test_bet.py        # $5 manual smoke test
-└── test_optimization_tracker.py   # Experiment tracking
+└── test_manual_test_bet.py        # $5 manual smoke test
 ```
 
 ---

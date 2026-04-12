@@ -20,6 +20,7 @@ DB_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
 DB_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 DB_KALSHI = Path(__file__).parent.parent / "data" / "predictions_kalshi.db"
 DB_BYBIT = Path(__file__).parent.parent / "data" / "predictions_bybit.db"
+DB_STRATEGY_LAB = Path(__file__).parent.parent / "data" / "strategy_lab.db"
 DAILY_DIR = Path(__file__).parent.parent / "docs" / "daily"
 
 # Date-aware sizing: imported from centralized config.py
@@ -1037,6 +1038,111 @@ def _get_engine_metrics():
         return None
 
 
+def _analyze_strategy_lab(db_path=None):
+    """Analyze Strategy Lab predictions for the daily report.
+
+    Returns a dict with leaderboard, gate tracker, kill/graduation candidates,
+    or None if the DB doesn't exist or has no data.
+    """
+    db_path = db_path or DB_STRATEGY_LAB
+    if not Path(db_path).exists():
+        return None
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+
+        # All-time stats per strategy (only resolved predictions)
+        rows = conn.execute("""
+            SELECT strategy,
+                   COUNT(*) as total,
+                   SUM(CASE WHEN outcome = 1 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN outcome = 0 THEN 1 ELSE 0 END) as losses,
+                   COALESCE(SUM(pnl), 0) as pnl
+            FROM lab_predictions
+            WHERE outcome IS NOT NULL
+            GROUP BY strategy
+            ORDER BY COUNT(*) DESC
+        """).fetchall()
+
+        if not rows:
+            conn.close()
+            return None
+
+        strategies = []
+        for r in rows:
+            total = r["total"]
+            wins = r["wins"]
+            wr = round(wins / total * 100, 1) if total > 0 else 0.0
+            strategies.append({
+                "strategy": r["strategy"],
+                "total": total,
+                "wins": wins,
+                "losses": r["losses"],
+                "wr": wr,
+                "pnl": r["pnl"],
+            })
+
+        # Leaderboard: only strategies with 10+ resolved
+        leaderboard = sorted(
+            [s for s in strategies if s["total"] >= 10],
+            key=lambda x: -x["wr"],
+        )
+
+        # Gate tracker: progress toward 200-bet graduation gate
+        gate_tracker = []
+        for s in strategies:
+            # Estimate days to gate based on current throughput
+            pending_count = conn.execute(
+                "SELECT COUNT(*) FROM lab_predictions WHERE strategy = ? AND outcome IS NULL",
+                (s["strategy"],),
+            ).fetchone()[0]
+            remaining = max(0, 200 - s["total"])
+            # Rough estimate: bets per day based on total / days active
+            first_row = conn.execute(
+                "SELECT MIN(predicted_at) FROM lab_predictions WHERE strategy = ?",
+                (s["strategy"],),
+            ).fetchone()
+            first_at = first_row[0] if first_row else None
+            days_to_gate = None
+            if first_at and remaining > 0:
+                try:
+                    first_dt = datetime.fromisoformat(first_at.replace("Z", "+00:00"))
+                    days_active = max(1, (datetime.now(timezone.utc) - first_dt).total_seconds() / 86400)
+                    bets_per_day = s["total"] / days_active
+                    if bets_per_day > 0:
+                        days_to_gate = round(remaining / bets_per_day, 1)
+                except (ValueError, TypeError):
+                    pass
+
+            gate_tracker.append({
+                "strategy": s["strategy"],
+                "total": s["total"],
+                "wr": s["wr"],
+                "remaining": remaining,
+                "days_to_gate": days_to_gate,
+            })
+
+        # Kill candidates: below 48% WR on 50+ bets
+        kill_candidates = [s for s in strategies if s["total"] >= 50 and s["wr"] < 48.0]
+
+        # Graduation candidates: above 52% WR on 200+ bets
+        graduation_candidates = [s for s in strategies if s["total"] >= 200 and s["wr"] > 52.0]
+
+        conn.close()
+
+        return {
+            "strategies": strategies,
+            "leaderboard": leaderboard,
+            "gate_tracker": gate_tracker,
+            "kill_candidates": kill_candidates,
+            "graduation_candidates": graduation_candidates,
+        }
+    except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+        print(f"  Strategy Lab DB error: {e}")
+        return None
+
+
 def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None, data_bybit=None):
     """Format analysis data into markdown report."""
     decision_alerts = decision_alerts or []
@@ -1455,6 +1561,78 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
     except Exception as e:
         lines.append(f"\n## Fill Diagnostic (Phase 2)\n\nSkipped: {e}\n")
 
+    # Strategy Lab
+    lab = _analyze_strategy_lab()
+    if lab:
+        lines.extend([
+            "## Strategy Lab",
+            "",
+            "*Shadow strategies running on every candle cycle. No real trades.*",
+            "",
+        ])
+
+        # Leaderboard
+        if lab["leaderboard"]:
+            lines.extend([
+                "### Leaderboard (10+ resolved bets)",
+                "",
+                "| Rank | Strategy | Bets | Wins | WR% | P&L |",
+                "|------|----------|------|------|-----|-----|",
+            ])
+            for i, s in enumerate(lab["leaderboard"], 1):
+                lines.append(
+                    f"| {i} | {s['strategy']} | {s['total']} | {s['wins']} | "
+                    f"{s['wr']}% | ${s['pnl']:+.2f} |"
+                )
+            lines.append("")
+        else:
+            lines.extend([
+                "### Leaderboard",
+                "",
+                "*No strategies have 10+ resolved bets yet.*",
+                "",
+            ])
+
+        # Gate tracker
+        if lab["gate_tracker"]:
+            lines.extend([
+                "### Gate Tracker (200-bet graduation)",
+                "",
+            ])
+            for g in sorted(lab["gate_tracker"], key=lambda x: -x["total"]):
+                days_str = f"~{g['days_to_gate']:.0f} days to gate" if g["days_to_gate"] else "gate reached" if g["remaining"] == 0 else "estimating..."
+                lines.append(
+                    f"- **{g['strategy']}:** {g['total']}/200 bets, "
+                    f"{g['wr']}% WR, {days_str}"
+                )
+            lines.append("")
+
+        # Kill candidates
+        if lab["kill_candidates"]:
+            lines.extend([
+                "### Kill Candidates (<48% WR on 50+ bets)",
+                "",
+            ])
+            for s in lab["kill_candidates"]:
+                lines.append(
+                    f"- **{s['strategy']}:** {s['wr']}% WR on {s['total']} bets, "
+                    f"${s['pnl']:+.2f} P&L"
+                )
+            lines.append("")
+
+        # Graduation candidates
+        if lab["graduation_candidates"]:
+            lines.extend([
+                "### Graduation Candidates (>52% WR on 200+ bets)",
+                "",
+            ])
+            for s in lab["graduation_candidates"]:
+                lines.append(
+                    f"- **{s['strategy']}:** {s['wr']}% WR on {s['total']} bets, "
+                    f"${s['pnl']:+.2f} P&L"
+                )
+            lines.append("")
+
     lines.append("---")
     lines.append("*Generated by `src/daily_report.py`*")
     return "\n".join(lines)
@@ -1797,6 +1975,22 @@ def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None, data_
             for alert in data["alerts"]:
                 lines.append(f"> {alert}")
             lines.append("")
+
+    # Strategy Lab summary
+    lab = _analyze_strategy_lab()
+    if lab and lab["leaderboard"]:
+        top = lab["leaderboard"][0]
+        lines.extend([
+            "## Strategy Lab",
+            f"**Top strategy:** {top['strategy']} ({top['wr']}% WR on {top['total']} bets)",
+        ])
+        if lab["kill_candidates"]:
+            kills = ", ".join(s["strategy"] for s in lab["kill_candidates"])
+            lines.append(f"**Kill candidates:** {kills}")
+        if lab["graduation_candidates"]:
+            grads = ", ".join(s["strategy"] for s in lab["graduation_candidates"])
+            lines.append(f"**Graduation candidates:** {grads}")
+        lines.append("")
 
     # Decision alerts
     if decision_alerts:
