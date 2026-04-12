@@ -263,7 +263,62 @@ The v1 fix still used a writable global, making the same class of bug inevitable
 
 ---
 
-## Summary: The 12 Rules
+## 13. Always Scope Database Operations by Entity
+
+**Incident:** Strategy Lab's `_auto_resolve()` resolved ALL pending predictions regardless of symbol. When a BTCUSDT candle closed, it resolved ETHUSDT, SOLUSDT, and DOGEUSDT predictions using BTC's candle direction. 1,600 predictions were corrupted with wrong outcomes before the bug was caught.
+
+**Why it's subtle:** The function "worked" — it resolved predictions and set outcomes. No errors, no crashes. The corruption was invisible unless you checked whether ETH predictions were being resolved by ETH candles (they weren't).
+
+**The pattern:** Any time you have a shared table with records belonging to different entities (symbols, users, pipelines), every UPDATE/DELETE query must scope by the entity. "Resolve all pending" is always wrong when the table holds data for multiple entities.
+
+**Remediation:**
+- Added `symbol` parameter to `_auto_resolve()` — only resolves predictions matching the candle's symbol
+- Deleted the corrupted DB and reset (1,600 tainted rows were unrecoverable)
+- Added regression test: `test_resolve_scoped_by_symbol`
+
+**Best practice:** When a shared table stores data for multiple entities, every write operation must include a WHERE clause scoping to the entity being processed. If you find yourself writing `WHERE outcome IS NULL` without an entity filter, you almost certainly have a cross-contamination bug.
+
+---
+
+## 14. Historical Data Pollutes Analysis — Always Check the Timestamp
+
+**Incident:** BTC 5m showed 101 HIGH_VOL/NEUTRAL bets at 49.5% WR. This looked like the HV/N gate (added Apr 9) wasn't working. Investigation revealed those 101 bets were ALL from before Apr 9 — the gate was working perfectly, but the MCP returned historical + post-gate data mixed together.
+
+**Why it matters:** Acting on this mixed data would have led to removing a filter that was already working. The data was factually correct but temporally misleading.
+
+**The pattern:** Any time you add a gate/filter to production, all historical data predating the gate will dilute your performance metrics. If you don't partition by "before" and "after," you'll conclude the gate doesn't work when it does.
+
+**Remediation:**
+- Always query with a date filter: "show me results SINCE the gate was deployed"
+- The gate's commit timestamp is the partition point, not arbitrary calendar dates
+- Added this as a mental check before any "this isn't working" conclusion
+
+**Best practice:** Before acting on any aggregate metric, ask: "When was this data generated?" If it spans a code change you're evaluating, partition it. Pre-change data tells you what WAS happening, not what IS happening.
+
+---
+
+## 15. Log Everything, Optimize Post-Hoc (Always-Fire Pattern)
+
+**Context:** Strategy Lab initially used hard thresholds (e.g., "only fire if z-score > 2.0 AND regime is mean-reverting"). This bakes in assumptions about which parameters matter before you have data.
+
+**The better pattern:** Make strategies "always-fire" — return a signal for EVERY candle, storing the full indicator snapshot (27 parameters) in metadata. The signal itself becomes a data collection exercise. Post-hoc analysis determines which parameter ranges have edge.
+
+**Why this is better:**
+- Hard thresholds are premature optimization — you don't know which z-score cutoff is optimal until you have 500+ observations
+- Always-fire generates 10x more data (every cycle vs. 10-30% of cycles), reaching statistical significance faster
+- You discover interaction effects you never would have hypothesized (e.g., VWAP z-score only matters in mean-reverting regimes with RSI < 30)
+- You never wonder "what would have happened if I'd used threshold X?" — the data for every threshold is already there
+
+**Risks:**
+- 27 parameters × 200 predictions = massive overfitting potential. Require min 30-50 observations per bucket.
+- Most bucketed results will be noise. The discipline is requiring statistical significance, not just "bucket X shows 60%."
+- The real payoff is refining 1-2 production filters, not spawning 15 new strategies.
+
+**Best practice:** When you don't know which thresholds matter, log everything and decide later. The cost of storing metadata is near-zero. The cost of choosing wrong thresholds early is months of wasted data.
+
+---
+
+## Summary: The 15 Rules
 
 1. **One source of truth.** The deployed system is canonical. Local state is a cache.
 2. **Test from deployment.** If it works on your machine but not in CI, it doesn't work.
@@ -277,3 +332,6 @@ The v1 fix still used a writable global, making the same class of bug inevitable
 10. **Stage everything.** Define the gate before you start. Never skip a stage.
 11. **No import-time env.** Override module constants at runtime, not import time.
 12. **One process per engine.** Verify process count after every deployment.
+13. **Scope every DB write.** Shared tables need entity filters on every UPDATE/DELETE.
+14. **Check the timestamp.** Historical data dilutes post-change metrics. Partition by deploy date.
+15. **Log everything, optimize later.** Hard thresholds are premature. Store full state, decide post-hoc.

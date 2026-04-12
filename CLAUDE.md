@@ -57,6 +57,15 @@ The [BOTSY Kanban](https://github.com/users/mariomerinom/projects/1) is the live
 - **If the MCP doesn't cover a pipeline, fix the MCP** — don't work around it with Bash/SQL. The MCP auto-discovers from `config/pipelines.json`, so adding a pipeline there is usually sufficient.
 - **Never cite performance numbers from memory or context.** Always query fresh. Stale numbers from earlier in a conversation are wrong — the bot generates new predictions every 5 minutes.
 
+## Strategy Lab (Parameter Optimization)
+
+- **Strategy Lab is for testing signals.** New strategy ideas go through `config/strategy_lab.json` → shadow predictions → 200-bet validation before becoming a pipeline. Use `lab_performance` MCP tool to check results.
+- **Always-fire pattern.** Lab strategies fire on EVERY candle cycle, storing full indicator snapshots (27 params) in metadata. Post-hoc analysis determines which parameter ranges have edge. Do NOT add hard thresholds to lab strategies.
+- **Parameter optimization tools:** `lab_param_sweep` (1D: WR by any metadata parameter) and `lab_param_matrix` (2D: interaction effects between two parameters). Require min 30-50 observations per bucket to avoid overfitting.
+- **Scope resolution by symbol.** `_auto_resolve()` MUST filter by symbol. Never resolve predictions for one asset using another asset's candle data.
+- **Check timestamps before acting.** When evaluating a gate or filter's effectiveness, partition data by the deploy date. Pre-change historical data dilutes post-change metrics and leads to wrong conclusions.
+- **Graduation gate:** 200 resolved predictions with WR > breakeven → file GitHub Issue with `decision,strategy-lab` label recommending graduation to production pipeline.
+
 ## Bot Design
 
 - **No agent bias.** The bot must not have built-in directional bias (UP or DOWN). All bias comes from human macro config, not prompts or code.
