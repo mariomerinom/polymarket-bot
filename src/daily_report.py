@@ -1423,7 +1423,7 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 lines.append("")
 
             # Direction breakdown
-            if orders["by_direction"]:
+            if orders and orders.get("by_direction"):
                 lines.extend([
                     "| Direction | Orders | P&L |",
                     "|-----------|--------|-----|",
