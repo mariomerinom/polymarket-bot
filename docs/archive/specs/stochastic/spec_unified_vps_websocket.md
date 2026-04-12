@@ -1,5 +1,7 @@
 # Spec: Unified VPS + Websocket Architecture
 
+> **Status:** IMPLEMENTED — All 3 phases complete; botsy_engine.py live on VPS
+
 **Status:** Proposed
 **Replaces:** `spec_bybit_vps_migration.md`, `spec_fill_diagnostic.md`
 **Goal:** Consolidate all execution onto one VPS, replace polling with websockets, and instrument the diagnostics that resolve the fill-problem debate — in three sequential phases over ~10 days.

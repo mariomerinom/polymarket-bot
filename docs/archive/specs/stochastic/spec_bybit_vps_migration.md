@@ -1,5 +1,7 @@
 # Spec: Migrate Bybit to VPS Loop
 
+> **Status:** IMPLEMENTED — VPS consolidated, systemd live
+
 **Status:** Proposed
 **Priority:** High — every 7-8 min cycle is a ~40% throughput loss vs. the 5-min target
 **Risk:** Low — pattern is identical to the three pipelines already running on the VPS

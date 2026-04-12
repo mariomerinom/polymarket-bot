@@ -1,5 +1,7 @@
 # Configuration Architecture Improvements
 
+> **Status:** STILL RELEVANT — Pydantic validation, hot-reload not implemented
+
 ## Goal
 To outline future structural and operational improvements following the centralization of pipeline parameters into `config.py` (completed 2026-04-03). As the platform migrates to a continuous DigitalOcean VPS droplet, the configuration layer should evolve to support long-polling logic and dynamic scaling requirements seamlessly.
 

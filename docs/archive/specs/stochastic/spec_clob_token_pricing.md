@@ -1,5 +1,7 @@
 # Spec: Fix Token Pricing — Use CLOB Orderbook Instead of Gamma Implied Price
 
+> **Status:** IMPLEMENTED — Per-token CLOB cache in botsy_engine.py
+
 **Date:** 2026-04-05
 **Status:** Proposed
 **Triggered by:** Smoke test bet filled at 37¢ when system expected 79¢

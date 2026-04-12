@@ -1,5 +1,7 @@
 # Spec: Fill-Side Adverse Selection on FOK Orders
 
+> **Status:** IMPLEMENTED — FOK adverse selection handling in trade.py
+
 **Status:** ACTIVE — consolidates fill problem across prior specs
 **Pipeline:** BTC 5m (initial), applies to all Polymarket FOK paths
 **Date opened:** 2026-04-06

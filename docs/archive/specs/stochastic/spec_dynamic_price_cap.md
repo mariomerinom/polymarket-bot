@@ -1,5 +1,7 @@
 # Spec: Dynamic Price Cap — Volume & Depth Aware
 
+> **Status:** REDUNDANT — Merged into spec_fill_adverse_selection.md
+
 **Status:** Proposed
 **Pipeline:** All live pipelines (BTC 5m, ETH 5m)
 **Problem:** Static 7¢ price cap (`MAX_SLIPPAGE_SPREAD` 5¢ + `FILL_PRIORITY_SPREAD` 2¢) causes orders to expire or partially fill when the estimate is far above market price. The cap is the same whether the book is deep with $100k volume or paper-thin. In thick markets we leave money on the table. In thin markets we're arguably too aggressive.

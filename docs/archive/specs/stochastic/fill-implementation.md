@@ -1,5 +1,7 @@
 # Fix Catastrophic Adverse Selection in Order Execution
 
+> **Status:** REDUNDANT — Superseded by gemini-fill-resolution.md synthesis
+
 The daily report correctly identified a massive P&L bleed: **11 expired orders would have won (100% WR), while filled orders took heavy losses (36% WR).** 
 
 This is textbook **adverse selection (toxic flow)**. Your momentum signals are highly accurate, meaning when they trigger, the broader market also reacts quickly. By the time `src/trade.py` submits the order, the real-time liquidity has moved. 

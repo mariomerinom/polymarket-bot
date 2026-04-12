@@ -1,5 +1,7 @@
 # Spec: Generic Conviction Scorer (Shadow Mode)
 
+> **Status:** OBSOLETE — Replaced by Strategy Lab (strategy_lab.py + always-fire pattern)
+
 **Status:** ACTIVE — shadow scorer built 2026-04-02, collecting data. Waiting on BTC live gate (Decision #17, 33/50) for Phase A analysis.
 **Version:** 2.0 (rewritten 2026-04-01, supersedes v1.0)
 **Scope:** Shadow tracking only. Zero changes to production pipelines.

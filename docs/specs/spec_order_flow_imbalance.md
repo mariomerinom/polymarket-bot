@@ -1,5 +1,7 @@
 # Spec: Order Flow Imbalance Strategy
 
+> **Status:** STILL RELEVANT — CLOB data available but no imbalance detection built
+
 **Status:** Proposed
 **Pipeline:** BTC 5m (primary), ETH 5m (after liquidity improves)
 **Category:** New strategy — leading indicator. Independent from momentum.

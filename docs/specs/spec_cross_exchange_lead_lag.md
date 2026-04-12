@@ -1,5 +1,7 @@
 # Spec: Cross-Exchange Lead-Lag Strategy
 
+> **Status:** STILL RELEVANT — No lead-lag detection implemented
+
 **Status:** Proposed
 **Pipeline:** BTC 5m (primary), BTC 15m (secondary)
 **Category:** New strategy — temporal arbitrage. Extends existing consensus signal.

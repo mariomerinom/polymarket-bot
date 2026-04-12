@@ -1,5 +1,7 @@
 # Execution Layer — Acceptance Criteria (v2)
 
+> **Status:** IMPLEMENTED — FOK orders and edge calculation live in trade.py
+
 **Status:** Ready for implementation
 **Supersedes:** Original spec_execution.md
 **Problem:** Adverse selection on the CLOB. Filled orders: 5W-9L (35.7% WR). Unfilled orders: 34W-3L (91.9% WR). Signal picks winners at 76.5% — execution destroys the edge. Every passive limit order that sits in the book self-selects for losers.

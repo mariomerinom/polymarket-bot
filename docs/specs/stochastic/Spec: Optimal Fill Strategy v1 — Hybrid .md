@@ -1,4 +1,7 @@
 Spec: Optimal Fill Strategy v1 — Hybrid Dynamic Slippage + Phased Stochastic Timing
+
+> **Status:** PARTIALLY IMPLEMENTED — Dynamic slippage live; Phase 2 stochastic timing deferred
+
 Status: Proposed
 Pipeline: All live pipelines (BTC 5m, ETH 5m)
 Author: Grok

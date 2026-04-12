@@ -1,5 +1,7 @@
 # Spec: Stochastic Entry Timing
 
+> **Status:** STILL RELEVANT — Deferred; toxic flow was root cause, not entry timing
+
 **Status:** Proposed
 **Pipeline:** 5-minute (execution layer, applies to all bets)
 **Problem:** The pipeline currently executes bets immediately when a signal fires. On Polymarket's CLOB, timing matters — entering at a bad moment within a 5-min window costs spread and slippage. The Mar 29 liquidity data showed 1.44% avg spread and 0.97% slippage at $200. With average bet size now at $219 (up from $84), execution cost is a growing concern as Part 6 (live paper trading) approaches.

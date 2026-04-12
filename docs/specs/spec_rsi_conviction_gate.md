@@ -1,5 +1,7 @@
 # Spec: RSI Conviction Gate
 
+> **Status:** STILL RELEVANT — RSI computed by TA engine but not used as conviction gate
+
 **Status:** Proposed
 **Pipeline:** 5-minute
 **Problem:** conv=4/5 performance is regime-dependent. 50% WR and -$60.79 on Mar 27, then 75% WR and +$1,935 on Mar 28. No mechanism currently distinguishes good conv=4 conditions from bad ones.

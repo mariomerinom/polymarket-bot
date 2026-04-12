@@ -1,5 +1,7 @@
 # Instruction: Widen DIAG Logging to Prediction Path
 
+> **Status:** IMPLEMENTED — DIAG logging extended to predict.py path
+
 **Context:** Phase 2 diagnostic logging currently lives inside `compute_order()` in `trade.py`. This only fires when a prediction passes all filters and reaches order submission (~41 times/day at best). When the market is quiet (conv=0 skips), zero DIAG lines are emitted and `validate_phase2.py` has nothing to analyze. We need data accumulating on every prediction cycle.
 
 **Goal:** Move snapshot_age and conviction-vs-drift DIAG logging upstream into the prediction path so every prediction emits diagnostics, regardless of whether it becomes an order.

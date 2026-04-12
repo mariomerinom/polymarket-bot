@@ -1,5 +1,7 @@
 # Epic: Separation of Down and Neutral Regimes
 
+> **Status:** STILL RELEVANT — Directional regime separation not deployed
+
 **Background:** 
 Currently, the pipeline uses autocorrelation to classify markets as `TRENDING`, `NEUTRAL`, or `MEAN_REVERTING`. Because this relies only on correlation and volatility, it lacks directional bias (an upward grind and a downward bleed can both appear as `NEUTRAL` or `TRENDING`). To avoid taking bad `DOWN` bets in sideways markets, we currently rely on a hardcoded, hacky filter (`DOWN + NEUTRAL = conviction 2`).
 

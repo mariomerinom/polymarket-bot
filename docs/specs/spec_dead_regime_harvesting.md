@@ -1,5 +1,7 @@
 # Spec: Dead Regime Harvesting Strategy
 
+> **Status:** STILL RELEVANT — Mean-reverting regime still skipped, not harvested
+
 **Status:** Proposed
 **Pipeline:** BTC 5m (primary), ETH 5m (secondary)
 **Category:** New strategy — mean reversion in unfavorable regimes. Independent from momentum.

@@ -1,5 +1,7 @@
 # Spec: Volatility Breakout Strategy
 
+> **Status:** STILL RELEVANT — In Strategy Lab as always-fire; spec has full threshold logic for production
+
 **Status:** Proposed
 **Pipeline:** BTC 5m (primary), ETH 5m (after Phase 1 validates)
 **Category:** New strategy — regime transition. Independent from momentum.

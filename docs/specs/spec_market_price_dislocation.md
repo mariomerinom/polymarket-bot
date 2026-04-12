@@ -1,5 +1,7 @@
 # Spec: Market Price Dislocation Strategy
 
+> **Status:** STILL RELEVANT — Basis trade between spot and Polymarket not built
+
 **Status:** Proposed
 **Pipeline:** BTC 5m (primary), ETH 5m (after Phase 1 validates)
 **Category:** New strategy — arbitrage-adjacent. Independent from momentum.

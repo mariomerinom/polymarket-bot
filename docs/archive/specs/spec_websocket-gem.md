@@ -1,5 +1,7 @@
 # Phase 3: Websocket Rewrite (Unified VPS + Websocket Architecture)
 
+> **Status:** IMPLEMENTED — botsy_engine.py Phases 1-3 complete
+
 I have audited the current repository state and verified that Phase 1 (VPS loop consolidation) and Phase 2 (Fill diagnostic instrumentation via `src/fill_diagnostic.py` and `trade.py`) are fully implemented. 
 
 The remaining work is **Phase 3 (Websocket Rewrite)**.

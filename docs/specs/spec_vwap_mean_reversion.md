@@ -1,5 +1,7 @@
 # Spec: VWAP Mean-Reversion Strategy
 
+> **Status:** STILL RELEVANT — In Strategy Lab as always-fire; spec describes production graduation version
+
 **Status:** Proposed
 **Pipeline:** 5-minute (new signal source within existing pipeline)
 **Problem:** The model skips all MEAN_REVERTING regime predictions — 200+ per day, zero bets. This is by design: the current model is momentum-based and has no edge in mean-reverting conditions. But the skip rate is massive. If even a fraction of those predictions could be traded with a different strategy, it's a significant untapped source of P&L.

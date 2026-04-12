@@ -1,5 +1,7 @@
 # Spec: OBV Confirmation Filter for 0.50–0.70 Bucket
 
+> **Status:** STILL RELEVANT — OBV computed but not used; price-bucket specific filter
+
 **Status:** Proposed
 **Pipeline:** 5-minute
 **Problem:** The 0.50–0.70 price bucket is the highest-volume bucket but the most inconsistent performer. WR swings wildly by day: 75% → 52% → 56% → 91.7% → 83.3%. These contracts sit near fair value, making them hardest to predict on price alone. The model needs a secondary confirmation signal to distinguish real moves from noise in this range.
