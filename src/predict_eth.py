@@ -98,7 +98,8 @@ def ensure_schema(db):
 
 
 def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None,
-                         mkt_price=None, consensus=None, liquidity=None):
+                         mkt_price=None, consensus=None, liquidity=None,
+                         indicators=None, candles=None):
     """Store an ETH prediction in the database.
 
     Conviction scoring calibrated from 36 momentum_eth predictions:
@@ -143,6 +144,22 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
         reasoning_data["consensus"] = consensus
     if liquidity:
         reasoning_data["liquidity"] = liquidity
+    if indicators:
+        try:
+            from strategies.base import indicator_snapshot
+            class _Ctx:
+                pass
+            ctx = _Ctx()
+            ctx.indicators = indicators
+            ctx.regime = regime
+            ctx.candles = candles or []
+            reasoning_data["indicators"] = indicator_snapshot(ctx)
+        except Exception:
+            reasoning_data["indicators"] = {
+                k: round(v, 4) if isinstance(v, float) else v
+                for k, v in indicators.items()
+                if k not in ("bbands", "stoch")
+            }
     reasoning = json.dumps(reasoning_data)
 
     # Store as "momentum_eth" agent (distinct from BTC's "momentum_rule")
@@ -257,7 +274,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
             # Extreme-estimate override: estimates >0.65/<0.35 win at 80%+ WR regardless of gate
             if signal["should_trade"] and (signal["estimate"] > EXTREME_ESTIMATE_UPPER or signal["estimate"] < EXTREME_ESTIMATE_LOWER):
                 shadow_signal = dict(signal, confidence="medium", reason=f"shadow_extreme_dead_hour (UTC {current_hour_utc})")
-                store_prediction_eth(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price)
+                store_prediction_eth(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price, indicators=indicators, candles=candles)
                 db.execute("""
                     UPDATE predictions SET conviction_score = 2
                     WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
@@ -273,7 +290,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                     "confidence": "skip",
                     "reason": f"time_gate_dead_hour (UTC {current_hour_utc})",
                 }
-                store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
+                store_prediction_eth(db, market["id"], skip_signal, regime, cycle, indicators=indicators, candles=candles)
                 print(f"    → SKIP (dead hour: UTC {current_hour_utc})")
                 _emit_diag_eth(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
             continue
@@ -283,7 +300,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
             # Extreme-estimate override: estimates >0.65/<0.35 win at 80%+ WR regardless of gate
             if signal["should_trade"] and (signal["estimate"] > EXTREME_ESTIMATE_UPPER or signal["estimate"] < EXTREME_ESTIMATE_LOWER):
                 shadow_signal = dict(signal, confidence="medium", reason=f"shadow_extreme_price_gate ({mkt_price:.0%})")
-                store_prediction_eth(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price)
+                store_prediction_eth(db, market["id"], shadow_signal, regime, cycle, mkt_price=mkt_price, indicators=indicators, candles=candles)
                 db.execute("""
                     UPDATE predictions SET conviction_score = 2
                     WHERE market_id = ? AND cycle = ? AND conviction_score >= 3
@@ -299,7 +316,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                     "confidence": "skip",
                     "reason": f"price_gate_extreme ({mkt_price:.0%})",
                 }
-                store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
+                store_prediction_eth(db, market["id"], skip_signal, regime, cycle, indicators=indicators, candles=candles)
                 print(f"    → SKIP (price gate: {mkt_price:.0%})")
                 _emit_diag_eth(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
             continue
@@ -310,7 +327,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
             # Track at conv=2 for forward validation. Coin-flip zone skipped as before.
             if signal["should_trade"] and (signal["estimate"] > EXTREME_ESTIMATE_UPPER or signal["estimate"] < EXTREME_ESTIMATE_LOWER):
                 mr_signal = dict(signal, confidence="medium", reason="mr_shadow_extreme_estimate")
-                store_prediction_eth(db, market["id"], mr_signal, regime, cycle, mkt_price=mkt_price)
+                store_prediction_eth(db, market["id"], mr_signal, regime, cycle, mkt_price=mkt_price, indicators=indicators, candles=candles)
                 # Force conv=2 (shadow) — store_prediction_eth sets conv=3 for medium+should_trade
                 db.execute("""
                     UPDATE predictions SET conviction_score = 2
@@ -328,7 +345,7 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                     "confidence": "skip",
                     "reason": "regime_skip_mean_reverting",
                 }
-                store_prediction_eth(db, market["id"], skip_signal, regime, cycle)
+                store_prediction_eth(db, market["id"], skip_signal, regime, cycle, indicators=indicators, candles=candles)
                 print(f"    → SKIP (mean-reverting regime)")
                 _emit_diag_eth(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
             continue
@@ -351,7 +368,8 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
 
             store_prediction_eth(db, market["id"], signal, regime, cycle,
                                  mkt_price=mkt_price, consensus=consensus,
-                                 liquidity=liquidity)
+                                 liquidity=liquidity, indicators=indicators,
+                                 candles=candles)
             direction = "UP" if signal["estimate"] > 0.5 else "DOWN"
             conv = 3 if signal.get("confidence") == "medium" else 2
             conv_label = f"conv={conv}" + (" LIVE" if conv >= 3 else " paper")
@@ -369,7 +387,8 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
                 "confidence": "skip",
                 "reason": signal.get("reason", "no_signal"),
             }
-            store_prediction_eth(db, market["id"], no_signal, regime, cycle)
+            store_prediction_eth(db, market["id"], no_signal, regime, cycle,
+                                     indicators=indicators, candles=candles)
             print(f"    → SKIP ({signal.get('reason', 'no_signal')})")
             _emit_diag_eth(market["id"], 0, _diag_candle_ts_ms, _diag_candle_close, _diag_current_price)
 

@@ -286,6 +286,9 @@ def record(db, *, asset: str, date: str, metrics: dict) -> None:
     ))
     db.commit()
 
+    # Recompute z-scores for this asset (cheap: reads ~30 recent rows)
+    recompute_zscores(db, asset)
+
 
 # ── Bybit REST fetcher (used by engine hook + backfill) ─────────────────────
 

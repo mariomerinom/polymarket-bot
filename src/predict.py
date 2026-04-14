@@ -477,12 +477,26 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
     if consensus: reasoning_data["consensus"] = consensus
     if liquidity: reasoning_data["liquidity"] = liquidity
     if indicators:
-        # Store compact indicator snapshot for traceability
-        reasoning_data["indicators"] = {
-            k: round(v, 4) if isinstance(v, float) else v
-            for k, v in indicators.items()
-            if k not in ("bbands", "stoch")  # skip nested dicts for compactness
-        }
+        # Store full indicator snapshot (flattened) for post-hoc analysis.
+        # Uses indicator_snapshot() to flatten nested dicts (bbands, stoch)
+        # into queryable flat keys (bb_bandwidth, stoch_k, etc.)
+        try:
+            from strategies.base import indicator_snapshot
+            # Build a minimal context object for the snapshot helper
+            class _Ctx:
+                pass
+            ctx = _Ctx()
+            ctx.indicators = indicators
+            ctx.regime = regime
+            ctx.candles = candles or []
+            reasoning_data["indicators"] = indicator_snapshot(ctx)
+        except Exception:
+            # Fallback: store compact snapshot without flattening
+            reasoning_data["indicators"] = {
+                k: round(v, 4) if isinstance(v, float) else v
+                for k, v in indicators.items()
+                if k not in ("bbands", "stoch")
+            }
     reasoning = json.dumps(reasoning_data)
 
     db.execute("""

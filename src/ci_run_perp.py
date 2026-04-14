@@ -475,7 +475,8 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
             "reason": f"time_gate_dead_hour (UTC {current_hour_utc})",
         }
         _store_prediction(db, market_id, skip_signal, regime, cycle, config,
-                          mark_price=mark_price, consensus=consensus)
+                          mark_price=mark_price, consensus=consensus,
+                          indicators=indicators, candles=candles)
         print(f"  -> SKIP (dead hour: UTC {current_hour_utc})")
 
     elif "HIGH_VOL" in regime["label"] and "TRENDING" not in regime["label"]:
@@ -484,7 +485,8 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
             "reason": "regime_gate_high_vol_non_trending",
         }
         _store_prediction(db, market_id, skip_signal, regime, cycle, config,
-                          mark_price=mark_price, consensus=consensus)
+                          mark_price=mark_price, consensus=consensus,
+                          indicators=indicators, candles=candles)
         print(f"  -> SKIP (HIGH_VOL non-trending)")
 
     elif regime["is_mean_reverting"]:
@@ -493,7 +495,8 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
             "reason": "regime_gate_mean_reverting",
         }
         _store_prediction(db, market_id, skip_signal, regime, cycle, config,
-                          mark_price=mark_price, consensus=consensus)
+                          mark_price=mark_price, consensus=consensus,
+                          indicators=indicators, candles=candles)
         print(f"  -> SKIP (mean-reverting regime)")
 
     else:
@@ -508,6 +511,7 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
         prediction = _store_prediction(
             db, market_id, signal, regime, cycle, config,
             mark_price=mark_price, consensus=consensus,
+            indicators=indicators, candles=candles,
         )
 
         direction = signal.get("direction", "?")
@@ -571,7 +575,8 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
 
 
 def _store_prediction(db, market_id, signal, regime, cycle, config,
-                      mark_price=None, consensus=None):
+                      mark_price=None, consensus=None, indicators=None,
+                      candles=None):
     """Store a prediction in the database."""
     predicted_at = datetime.now(timezone.utc).isoformat()
 
@@ -595,6 +600,22 @@ def _store_prediction(db, market_id, signal, regime, cycle, config,
     }
     if consensus:
         reasoning_data["consensus"] = consensus
+    if indicators:
+        try:
+            from strategies.base import indicator_snapshot
+            class _Ctx:
+                pass
+            ctx = _Ctx()
+            ctx.indicators = indicators
+            ctx.regime = regime
+            ctx.candles = candles or []
+            reasoning_data["indicators"] = indicator_snapshot(ctx)
+        except Exception:
+            reasoning_data["indicators"] = {
+                k: round(v, 4) if isinstance(v, float) else v
+                for k, v in indicators.items()
+                if k not in ("bbands", "stoch")
+            }
     reasoning = json.dumps(reasoning_data)
 
     db.execute("""

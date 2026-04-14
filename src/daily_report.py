@@ -21,6 +21,7 @@ DB_ETH = Path(__file__).parent.parent / "data" / "predictions_eth.db"
 DB_KALSHI = Path(__file__).parent.parent / "data" / "predictions_kalshi.db"
 DB_BYBIT = Path(__file__).parent.parent / "data" / "predictions_bybit.db"
 DB_STRATEGY_LAB = Path(__file__).parent.parent / "data" / "strategy_lab.db"
+DB_ASSET_DAILY = Path(__file__).parent.parent / "data" / "asset_daily.db"
 DAILY_DIR = Path(__file__).parent.parent / "docs" / "daily"
 
 # Date-aware sizing: imported from centralized config.py
@@ -1143,6 +1144,38 @@ def _analyze_strategy_lab(db_path=None):
         return None
 
 
+def _get_daily_regime(date_str):
+    """Fetch daily macro context from asset_daily.db for the report date.
+
+    Returns dict keyed by asset (BTC, ETH, SOL) with OHLCV, trend, vol metrics.
+    Returns empty dict if DB missing or no data for that date.
+    """
+    if not DB_ASSET_DAILY.exists():
+        return {}
+    try:
+        db = sqlite3.connect(str(DB_ASSET_DAILY))
+        rows = db.execute(
+            "SELECT asset, open, high, low, close, "
+            "range_pct, realized_vol, body_pct, velocity, "
+            "trend_label, velocity_zscore, range_zscore "
+            "FROM asset_daily WHERE date = ? ORDER BY asset",
+            (date_str,),
+        ).fetchall()
+        db.close()
+        result = {}
+        for row in rows:
+            result[row[0]] = {
+                "open": row[1], "high": row[2], "low": row[3], "close": row[4],
+                "range_pct": row[5], "realized_vol": row[6],
+                "body_pct": row[7], "velocity": row[8],
+                "trend_label": row[9],
+                "velocity_zscore": row[10], "range_zscore": row[11],
+            }
+        return result
+    except Exception:
+        return {}
+
+
 def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=None, data_kalshi=None, data_bybit=None):
     """Format analysis data into markdown report."""
     decision_alerts = decision_alerts or []
@@ -1152,6 +1185,28 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
         f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
         "",
     ]
+
+    # Daily macro context from asset_daily.db
+    regime_ctx = _get_daily_regime(date_str)
+    if regime_ctx:
+        lines.extend([
+            "## Market Context (Daily Regime)",
+            "",
+            "| Asset | Close | Range% | RealVol | Body% | Velocity | Trend | Vel-Z | Rng-Z |",
+            "|-------|-------|--------|---------|-------|----------|-------|-------|-------|",
+        ])
+        for asset in sorted(regime_ctx):
+            r = regime_ctx[asset]
+            close_str = f"${r['close']:,.0f}" if r['close'] and r['close'] > 100 else f"${r['close']:.2f}" if r['close'] else "N/A"
+            vel_z = f"{r['velocity_zscore']:+.1f}" if r['velocity_zscore'] is not None else "—"
+            rng_z = f"{r['range_zscore']:+.1f}" if r['range_zscore'] is not None else "—"
+            lines.append(
+                f"| {asset} | {close_str} | "
+                f"{r['range_pct']*100:.2f}% | {r['realized_vol']*100:.2f}% | "
+                f"{r['body_pct']*100:+.2f}% | {r['velocity']:+.1f} | "
+                f"{r['trend_label']} | {vel_z} | {rng_z} |"
+            )
+        lines.append("")
 
     pipelines = [
         ("5-Minute Pipeline", data_5m),
