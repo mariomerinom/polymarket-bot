@@ -14,5 +14,9 @@ data/v3.db
 # MCP config (local absolute paths)
 .mcp.json
 
+# SQLite WAL/SHM — transient, rebuilt on connection, must never be committed
+*.db-wal
+*.db-shm
+
 # Bybit microstructure WS capture — large, gzipped hourly, retention handled out of band
 data/bybit_capture/

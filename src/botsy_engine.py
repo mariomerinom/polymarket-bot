@@ -790,19 +790,49 @@ class BotsyEngine:
         except Exception as e:
             log(f"[DAILY] {asset} {date} failed: {e}")
 
+    def _checkpoint_all_dbs(self):
+        """Flush all WAL journals so .db files are self-contained for git.
+
+        Opens a fresh connection per DB (doesn't interfere with pipeline
+        connections), checkpoints with TRUNCATE mode (waits for writers,
+        flushes all pages, deletes WAL file). Per-DB errors are logged
+        but don't block other DBs or the commit.
+        """
+        import sqlite3
+        for db_path in sorted(DATA_DIR.glob("*.db")):
+            try:
+                conn = sqlite3.connect(str(db_path))
+                conn.execute("PRAGMA busy_timeout=3000")
+                result = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                if result and result[0] == 1:
+                    log(f"WAL checkpoint blocked for {db_path.name} (busy)")
+                conn.close()
+            except Exception as e:
+                log(f"WARNING: WAL checkpoint failed for {db_path.name}: {e}")
+
     def _git_commit_push(self):
         """Synchronous git add + commit + push.
 
-        Order: add → diff check → commit → pull --rebase → push.
+        Order: checkpoint WALs → add → diff check → commit → pull --rebase → push.
         git pull --rebase refuses to run with ANY uncommitted changes
         (staged OR unstaged), so we must commit first, then rebase.
         """
         try:
             os.chdir(str(REPO_DIR))
 
+            # Flush WAL journals before snapshotting DBs
+            self._checkpoint_all_dbs()
+
             # Stage data files
             subprocess.run(
                 ["git", "add", "data/", "docs/daily/"],
+                capture_output=True, timeout=10,
+            )
+
+            # Remove any accidentally tracked WAL/SHM files
+            subprocess.run(
+                ["git", "rm", "--cached", "--ignore-unmatch", "--quiet",
+                 "data/*.db-wal", "data/*.db-shm"],
                 capture_output=True, timeout=10,
             )
 
