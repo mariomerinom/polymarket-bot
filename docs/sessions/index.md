@@ -2,6 +2,7 @@
 
 Working session summaries — what was built, shipped, learned, and kicked forward.
 
+- [2026-04-15](2026-04-15.md) — VWAP mean-reversion graduated to perps (SOL/DOGE primary), ETH HIGH_VOL gate expanded to block all HV regimes
 - [2026-04-14](2026-04-14.md) — P0 incident fix: SQLite WAL race condition corrupted 3 DBs; checkpoint-before-commit + gitignore WAL/SHM + DB restoration
 - [2026-04-13](2026-04-13.md) — Data unification: Kraken→Coinbase swap, z-score fix, indicator snapshots across all pipelines, 6,306 predictions backfilled
 - [2026-04-12](2026-04-12.md) — Strategy Lab parameter optimization: always-fire redesign, cross-symbol resolution bug fix, 3 new engineering lessons, HV/N gate modeling
