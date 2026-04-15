@@ -2,6 +2,7 @@
 
 Working session summaries — what was built, shipped, learned, and kicked forward.
 
+- [2026-04-14](2026-04-14.md) — P0 incident fix: SQLite WAL race condition corrupted 3 DBs; checkpoint-before-commit + gitignore WAL/SHM + DB restoration
 - [2026-04-13](2026-04-13.md) — Data unification: Kraken→Coinbase swap, z-score fix, indicator snapshots across all pipelines, 6,306 predictions backfilled
 - [2026-04-12](2026-04-12.md) — Strategy Lab parameter optimization: always-fire redesign, cross-symbol resolution bug fix, 3 new engineering lessons, HV/N gate modeling
 - [2026-04-09](2026-04-09.md) — Biggest improvement day: Bybit rehabilitation, Kalshi resolution fix, HIGH_VOL gate across all 5m pipelines, 12 issues closed, full doc sweep (12 commits)
