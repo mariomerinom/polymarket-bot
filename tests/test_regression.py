@@ -540,7 +540,7 @@ def test_highvol_non_trending_gate_eth():
 
     assert rows[0] == ("e1", 2), f"ETH HV/NEUTRAL should be conv=2, got {rows[0]}"
     assert rows[1] == ("e2", 3), f"ETH MED/NEUTRAL should be conv=3, got {rows[1]}"
-    assert rows[2] == ("e3", 3), f"ETH HV/TRENDING should be conv=3, got {rows[2]}"
+    assert rows[2] == ("e3", 2), f"ETH HV/TRENDING should be conv=2 (full HV gate), got {rows[2]}"
 
 
 def test_mr_shadow_extreme_estimate():

@@ -515,6 +515,50 @@
       },
       "closed_at": null,
       "close_reason": null
+    },
+    {
+      "name": "vwap_graduation_perps",
+      "description": "Graduate VWAP mean-reversion to all perp pipelines. Fires in mean-reverting regimes where momentum skips. Conv>=3 (z>=2.0) only. Lab: SOL 55.2% WR (531 bets, +$1,375), DOGE 53.4% (532 bets, +$900), BTC 54.3% (501), ETH 51.6% (541).",
+      "registered_at": "2026-04-15T16:00:00+00:00",
+      "pipeline": "perps",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < 52 on 50+ bets for any asset",
+      "baseline": {
+        "note": "Lab results (pre-graduation, always-fire mode)",
+        "sol_wr": 55.2,
+        "sol_bets": 531,
+        "doge_wr": 53.4,
+        "doge_bets": 532,
+        "btc_wr": 54.3,
+        "btc_bets": 501,
+        "eth_wr": 51.6,
+        "eth_bets": 541
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "eth_highvol_full_gate",
+      "description": "Expand ETH HIGH_VOL gate to block ALL HIGH_VOL regimes (was only NON_TRENDING). HIGH_VOL/TRENDING at 37.5% WR (40 bets), HIGH_VOL/NEUTRAL at 39.3% (28 bets). BTC unaffected (54-63% in HV).",
+      "registered_at": "2026-04-15T16:00:00+00:00",
+      "pipeline": "eth_5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "counterfactual HV/TRENDING WR > 55% on 50+ shadow bets",
+      "baseline": {
+        "hv_trending_wr": 37.5,
+        "hv_trending_bets": 40,
+        "hv_neutral_wr": 39.3,
+        "hv_neutral_bets": 28,
+        "total_hv_bets": 68
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
     }
   ]
 }

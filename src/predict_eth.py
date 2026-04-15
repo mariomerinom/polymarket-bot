@@ -118,8 +118,8 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
     # high (streak >= 5): 20% WR on 5 bets → keep paper until more data
     regime_label = regime.get("label", "") if regime else ""
 
-    if signal["should_trade"] and "HIGH_VOL" in regime_label and "TRENDING" not in regime_label:
-        # HIGH_VOL non-trending gate: 40.7% WR on 27 ETH bets — net loser.
+    if signal["should_trade"] and "HIGH_VOL" in regime_label:
+        # HIGH_VOL gate: 37.5% trending + 39.3% neutral on 68 ETH bets — all losers.
         conviction = 2
     elif signal["should_trade"] and confidence == "medium":
         conviction = 3  # $25 flat bet

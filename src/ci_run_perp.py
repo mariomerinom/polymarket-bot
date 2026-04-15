@@ -490,14 +490,52 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
         print(f"  -> SKIP (HIGH_VOL non-trending)")
 
     elif regime["is_mean_reverting"]:
-        skip_signal = {
-            "estimate": 0.5, "should_trade": False, "confidence": "skip",
-            "reason": "regime_gate_mean_reverting",
-        }
-        _store_prediction(db, market_id, skip_signal, regime, cycle, config,
-                          mark_price=mark_price, consensus=consensus,
-                          indicators=indicators, candles=candles)
-        print(f"  -> SKIP (mean-reverting regime)")
+        # VWAP mean-reversion: fire in regimes momentum skips
+        # Lab: SOL 55.2% WR (531 bets), DOGE 53.4% (532 bets). Decision #TBD.
+        vwap_result = None
+        try:
+            from strategies.vwap_meanrev import signal as vwap_signal
+            from strategies.base import StrategyContext
+            from datetime import datetime, timezone
+            vwap_ctx = StrategyContext(
+                symbol=config["symbol"], timeframe="5",
+                pipeline=pipeline_name, candles=candles,
+                indicators=indicators, regime=regime,
+                current_price=mark_price,
+                timestamp=datetime.now(timezone.utc),
+            )
+            vwap_result = vwap_signal(vwap_ctx)
+        except Exception as e:
+            print(f"  VWAP signal error: {e}")
+
+        if vwap_result and vwap_result.conviction >= 3:
+            # Convert StrategySignal to momentum-compatible dict
+            signal = {
+                "estimate": vwap_result.estimate,
+                "should_trade": True,
+                "confidence": "medium",
+                "direction": vwap_result.direction,
+                "streak": 0,
+                "reason": vwap_result.reason,
+            }
+            print(f"  Signal: VWAP {vwap_result.direction} "
+                  f"(z={vwap_result.metadata.get('zscore', 0):+.2f}, "
+                  f"conv={vwap_result.conviction})")
+            prediction = _store_prediction(
+                db, market_id, signal, regime, cycle, config,
+                mark_price=mark_price, consensus=consensus,
+                indicators=indicators, candles=candles,
+            )
+        else:
+            skip_signal = {
+                "estimate": 0.5, "should_trade": False, "confidence": "skip",
+                "reason": "regime_skip_mean_reverting_no_vwap",
+            }
+            _store_prediction(db, market_id, skip_signal, regime, cycle, config,
+                              mark_price=mark_price, consensus=consensus,
+                              indicators=indicators, candles=candles)
+            z_info = f" (z={vwap_result.metadata.get('zscore', 0):+.2f})" if vwap_result else ""
+            print(f"  -> SKIP (mean-reverting, VWAP conv<3{z_info})")
 
     else:
         signal = momentum_signal(candles, min_streak=config["min_streak"],
