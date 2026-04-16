@@ -29,6 +29,8 @@ Usage:
 """
 
 import asyncio
+import ctypes
+import ctypes.util
 import gc
 import json
 import os
@@ -39,6 +41,22 @@ import time
 import tracemalloc
 from datetime import datetime, timezone
 from pathlib import Path
+
+# libc.malloc_trim(0) returns freed memory back to the OS (Linux/glibc only).
+# Counters glibc malloc arena fragmentation from pandas/numpy short-lived allocs.
+# See issue #77 — RSS grows while Python heap stays flat.
+_LIBC_MALLOC_TRIM = None
+if sys.platform.startswith("linux"):
+    try:
+        _libc_path = ctypes.util.find_library("c")
+        if _libc_path:
+            _libc = ctypes.CDLL(_libc_path)
+            if hasattr(_libc, "malloc_trim"):
+                _libc.malloc_trim.argtypes = [ctypes.c_size_t]
+                _libc.malloc_trim.restype = ctypes.c_int
+                _LIBC_MALLOC_TRIM = _libc.malloc_trim
+    except (OSError, AttributeError):
+        _LIBC_MALLOC_TRIM = None
 
 # Ensure src/ is on the path for pipeline imports
 SRC_DIR = Path(__file__).parent
@@ -976,6 +994,15 @@ class BotsyEngine:
         while True:
             await asyncio.sleep(1800)  # every 30 min
             try:
+                # Force glibc to release unused memory back to OS (issue #77).
+                # Python heap stays ~90MB but RSS grows 500MB+ from fragmented
+                # glibc arenas holding freed pandas/numpy buffers.
+                if _LIBC_MALLOC_TRIM is not None:
+                    gc.collect()
+                    trimmed = _LIBC_MALLOC_TRIM(0)
+                    log(f"[MEM] malloc_trim(0) returned {trimmed} "
+                        f"({'freed memory' if trimmed else 'no-op'})")
+
                 # RSS (total process memory)
                 rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 # macOS returns bytes, Linux returns KB
