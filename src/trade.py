@@ -1094,11 +1094,8 @@ def execute_trades(db, cycle, pipeline_name=None):
     print(f"\n  [{mode_label}] Processing {len(predictions)} qualifying prediction(s)...")
 
     for pred in predictions:
-        # Check trade gates
+        # Check trade gates (but don't skip yet — shadow maker needs to fire first)
         ok, reason = should_trade(pred, db, pipeline_name=pipeline_name or "btc_5m")
-        if not ok:
-            print(f"    [{mode_label}] SKIP {pred['market_id'][:12]}... — {reason}")
-            continue
 
         # Extract liquidity from reasoning JSON (already computed during prediction)
         liquidity = None
@@ -1118,9 +1115,10 @@ def execute_trades(db, cycle, pipeline_name=None):
 
         market_row, tokens = resolve_clob_prices(pred, tokens)
 
-        order_params, order_reason = compute_order(pred, market_row, liquidity)
+        order_params, order_reason = compute_order(pred, market_row, liquidity) if ok else (None, reason)
 
         # ── Shadow maker logging (Phase 1: measurement only) ──────────
+        # Fires for ALL conv≥3 predictions — both traded and skipped.
         try:
             import shadow_maker
             _sm_dir = "UP" if pred["estimate"] > 0.5 else "DOWN"
@@ -1150,10 +1148,14 @@ def execute_trades(db, cycle, pipeline_name=None):
                     spread=_sm_spr, mid=_sm_mid,
                     shadow_price=_sm_price, shadow_side=_sm_side,
                     taker_price=order_params.get("price_limit") if order_params else None,
-                    taker_action="placed" if order_params else order_reason,
+                    taker_action="placed" if order_params else (order_reason or reason),
                 )
-        except Exception:
-            pass  # Shadow logging must never break the hot path
+        except Exception as _sm_err:
+            print(f"    [shadow_maker] {_sm_err}")  # debug; must never break hot path
+
+        if not ok:
+            print(f"    [{mode_label}] SKIP {pred['market_id'][:12]}... — {reason}")
+            continue
 
         if order_params is None:
             print(f"    [{mode_label}] SKIP {pred['market_id'][:12]}... — {order_reason}")

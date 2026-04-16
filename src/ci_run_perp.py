@@ -496,7 +496,6 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
         try:
             from strategies.vwap_meanrev import signal as vwap_signal
             from strategies.base import StrategyContext
-            from datetime import datetime, timezone
             vwap_ctx = StrategyContext(
                 symbol=config["symbol"], timeframe="5",
                 pipeline=pipeline_name, candles=candles,
