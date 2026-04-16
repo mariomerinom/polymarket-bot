@@ -60,3 +60,71 @@ def is_pipeline_live(pipeline_name: str) -> bool:
 def get_bet_size_override(pipeline_name: str):
     """Return bet_size override or None if pipeline uses defaults."""
     return load_pipeline_config(pipeline_name)["bet_size"]
+
+
+# ── Pipeline → DB path mapping ──────────────────────────────────────
+# Mirrors the logic in tools/botsy_mcp.py so that modules needing pipeline
+# discovery (e.g. consolidated_report.py) don't have to import the MCP
+# package just to resolve a DB path.
+
+_DATA_DIR = Path(__file__).parent.parent / "data"
+
+_LEGACY_DB_NAMES = {
+    "btc_5m": "predictions.db",
+    "btc_15m": "predictions_15m.db",
+    "eth_5m": "predictions_eth.db",
+    "kalshi": "predictions_kalshi.db",
+    "bybit": "predictions_bybit.db",
+}
+
+_EXCHANGES = {"bybit", "hl"}
+
+
+def pipeline_to_db_path(name: str) -> Path:
+    """Map a pipeline name to its DB file path. See tools/botsy_mcp.py."""
+    if name in _LEGACY_DB_NAMES:
+        return _DATA_DIR / _LEGACY_DB_NAMES[name]
+    parts = name.rsplit("_", 1)
+    if len(parts) == 2 and parts[1] in _EXCHANGES:
+        asset, exchange = parts
+        return _DATA_DIR / f"predictions_{exchange}_{asset}.db"
+    return _DATA_DIR / f"predictions_{name}.db"
+
+
+def discover_pipelines(only_existing: bool = True) -> dict:
+    """Return {pipeline_name: db_path} for all pipelines in config/pipelines.json.
+
+    If only_existing=True (default), filter out pipelines whose DB file is
+    missing on disk — matches the MCP _discover_pipelines behavior.
+    """
+    result = {}
+    try:
+        data = json.loads(CONFIG_PATH.read_text())
+        for name in data.get("pipelines", {}):
+            path = pipeline_to_db_path(name)
+            if not only_existing or path.exists():
+                result[name] = path
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return result
+
+
+# ── Asset roll-up helper ─────────────────────────────────────────────
+
+def pipeline_to_asset(name: str) -> str:
+    """Map a pipeline name to its underlying asset for roll-up.
+
+    BTC = btc_5m, btc_15m, bybit, hl, kalshi (kalshi is BTC binary markets)
+    ETH = eth_5m, eth_bybit, eth_hl
+    SOL = sol_bybit, sol_hl
+    DOGE = doge_bybit, doge_hl
+    """
+    lowered = name.lower()
+    if lowered.startswith("eth"):
+        return "ETH"
+    if lowered.startswith("sol"):
+        return "SOL"
+    if lowered.startswith("doge"):
+        return "DOGE"
+    # btc_5m, btc_15m, bybit, hl, kalshi all trade BTC
+    return "BTC"

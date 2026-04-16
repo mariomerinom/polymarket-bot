@@ -1,0 +1,208 @@
+"""Tests for consolidated_report.py — cross-pipeline aggregation."""
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+import consolidated_report
+import pipeline_control
+
+
+# ── Pipeline discovery ───────────────────────────────────────────────
+
+
+class TestPipelineDiscovery:
+
+    def test_all_12_pipelines_resolve_to_existing_dbs(self):
+        """Every pipeline in config/pipelines.json maps to an existing DB."""
+        cfg_path = Path(__file__).parent.parent / "config" / "pipelines.json"
+        cfg = json.loads(cfg_path.read_text())
+        configured = set(cfg["pipelines"].keys())
+        discovered = set(pipeline_control.discover_pipelines().keys())
+        assert configured == discovered, \
+            f"Missing DBs for: {configured - discovered}"
+        assert len(discovered) == 12, \
+            f"Expected 12 pipelines, got {len(discovered)}"
+
+    def test_pipeline_to_asset_mapping(self):
+        assert pipeline_control.pipeline_to_asset("btc_5m") == "BTC"
+        assert pipeline_control.pipeline_to_asset("btc_15m") == "BTC"
+        assert pipeline_control.pipeline_to_asset("bybit") == "BTC"
+        assert pipeline_control.pipeline_to_asset("hl") == "BTC"
+        assert pipeline_control.pipeline_to_asset("kalshi") == "BTC"
+        assert pipeline_control.pipeline_to_asset("eth_5m") == "ETH"
+        assert pipeline_control.pipeline_to_asset("eth_bybit") == "ETH"
+        assert pipeline_control.pipeline_to_asset("eth_hl") == "ETH"
+        assert pipeline_control.pipeline_to_asset("sol_bybit") == "SOL"
+        assert pipeline_control.pipeline_to_asset("sol_hl") == "SOL"
+        assert pipeline_control.pipeline_to_asset("doge_bybit") == "DOGE"
+        assert pipeline_control.pipeline_to_asset("doge_hl") == "DOGE"
+
+
+# ── Portfolio totals ─────────────────────────────────────────────────
+
+
+def _mk_result(pipeline, bets=10, wins=6, pnl=100.0, wagered=250.0):
+    """Helper: synthesize per-pipeline result shaped like analyze_pipeline."""
+    return {
+        "pipeline": pipeline,
+        "summary": {
+            "total_predictions": bets + 5,
+            "bets": bets,
+            "skips": 5,
+            "resolved_bets": bets,
+            "wins": wins,
+            "losses": bets - wins,
+            "wr": round(wins / bets * 100, 1) if bets else 0.0,
+            "pnl": pnl,
+            "wagered": wagered,
+        },
+        "ehr": None,
+        "shadow_maker": None,
+        "alerts": [],
+    }
+
+
+class TestPortfolioTotals:
+
+    def test_empty_list_returns_zero_totals(self):
+        totals = consolidated_report.compute_portfolio_totals([])
+        assert totals["total_bets"] == 0
+        assert totals["total_wins"] == 0
+        assert totals["total_losses"] == 0
+        assert totals["aggregate_wr_pct"] == 0.0
+        assert totals["total_pnl_usd"] == 0.0
+        assert totals["total_wagered_usd"] == 0.0
+        assert totals["active_pipelines"] == 0
+
+    def test_sums_across_pipelines(self):
+        results = [
+            _mk_result("btc_5m", bets=10, wins=7, pnl=100.0, wagered=250.0),
+            _mk_result("eth_5m", bets=5, wins=3, pnl=50.0, wagered=125.0),
+            _mk_result("bybit", bets=0, wins=0, pnl=0.0, wagered=0.0),
+        ]
+        totals = consolidated_report.compute_portfolio_totals(results)
+        assert totals["total_bets"] == 15
+        assert totals["total_wins"] == 10
+        assert totals["total_losses"] == 5
+        assert totals["aggregate_wr_pct"] == round(10 / 15 * 100, 1)
+        assert totals["total_pnl_usd"] == 150.0
+        assert totals["total_wagered_usd"] == 375.0
+        # "bybit" had 0 bets so only 2 active pipelines
+        assert totals["active_pipelines"] == 2
+        assert totals["total_pipelines"] == 3
+
+    def test_handles_missing_summary(self):
+        """Pipelines with no predictions return None from analyze_pipeline."""
+        results = [
+            {"pipeline": "btc_5m", "summary": None},
+            _mk_result("eth_5m", bets=5, wins=3, pnl=50.0, wagered=125.0),
+        ]
+        totals = consolidated_report.compute_portfolio_totals(results)
+        assert totals["total_bets"] == 5
+        assert totals["active_pipelines"] == 1
+
+    def test_handles_error_rows(self):
+        results = [
+            {"pipeline": "btc_5m", "error": "DB locked"},
+            _mk_result("eth_5m", bets=5, wins=3, pnl=50.0, wagered=125.0),
+        ]
+        totals = consolidated_report.compute_portfolio_totals(results)
+        assert totals["total_bets"] == 5
+        assert totals["active_pipelines"] == 1
+
+
+# ── Asset roll-up ────────────────────────────────────────────────────
+
+
+class TestAssetRollup:
+
+    def test_groups_by_asset(self):
+        results = [
+            _mk_result("btc_5m", bets=10, wins=7, pnl=100.0, wagered=250.0),
+            _mk_result("btc_15m", bets=4, wins=2, pnl=20.0, wagered=100.0),
+            _mk_result("eth_5m", bets=5, wins=3, pnl=50.0, wagered=125.0),
+            _mk_result("eth_bybit", bets=2, wins=1, pnl=10.0, wagered=50.0),
+            _mk_result("sol_hl", bets=3, wins=2, pnl=15.0, wagered=75.0),
+            _mk_result("doge_bybit", bets=1, wins=0, pnl=-25.0, wagered=25.0),
+        ]
+        rollup = consolidated_report.compute_asset_rollup(results)
+        # BTC = btc_5m + btc_15m
+        assert rollup["BTC"]["bets"] == 14
+        assert rollup["BTC"]["wins"] == 9
+        assert rollup["BTC"]["pnl"] == 120.0
+        # ETH = eth_5m + eth_bybit
+        assert rollup["ETH"]["bets"] == 7
+        assert rollup["ETH"]["pnl"] == 60.0
+        # SOL = sol_hl
+        assert rollup["SOL"]["bets"] == 3
+        # DOGE = doge_bybit
+        assert rollup["DOGE"]["bets"] == 1
+        assert rollup["DOGE"]["pnl"] == -25.0
+
+    def test_empty_assets_absent(self):
+        """No bets for an asset → it's not in the rollup."""
+        results = [_mk_result("btc_5m", bets=10, wins=7, pnl=100.0, wagered=250.0)]
+        rollup = consolidated_report.compute_asset_rollup(results)
+        assert "BTC" in rollup
+        assert "ETH" not in rollup  # no ETH pipelines in input
+        assert "SOL" not in rollup
+        assert "DOGE" not in rollup
+
+
+# ── Rendering ────────────────────────────────────────────────────────
+
+
+class TestRender:
+
+    def test_overview_section_has_required_tables(self):
+        """The inline overview block has Consolidated Overview + By Asset."""
+        results = [
+            _mk_result("btc_5m", bets=10, wins=7, pnl=100.0, wagered=250.0),
+            _mk_result("eth_5m", bets=5, wins=3, pnl=50.0, wagered=125.0),
+        ]
+        md = consolidated_report.render_overview_block(results, "2026-04-15")
+        assert "Consolidated Overview" in md
+        assert "By Asset" in md
+        assert "Total P&L" in md
+        assert "+$150" in md  # sum of 100+50
+        assert "consolidated-2026-04-15.md" in md  # link to detail
+        # Table rows render
+        assert "BTC" in md
+        assert "ETH" in md
+
+    def test_detail_file_has_all_sections(self):
+        results = [
+            _mk_result("btc_5m", bets=10, wins=7, pnl=100.0, wagered=250.0),
+            _mk_result("eth_5m", bets=5, wins=3, pnl=50.0, wagered=125.0),
+        ]
+        md = consolidated_report.render_consolidated_detail(results, "2026-04-15")
+        # Required sections
+        for section in [
+            "Portfolio Totals",
+            "Leaderboard",
+            "Per-Asset Roll-up",
+            "Pipeline Config Snapshot",
+        ]:
+            assert section in md, f"Missing section: {section}"
+        # Every pipeline from input appears in leaderboard
+        assert "btc_5m" in md
+        assert "eth_5m" in md
+
+    def test_zero_bets_day_does_not_crash(self):
+        """No-activity day still renders."""
+        results = []
+        md = consolidated_report.render_overview_block(results, "2026-04-15")
+        assert "Consolidated Overview" in md
+        md2 = consolidated_report.render_consolidated_detail(results, "2026-04-15")
+        assert "Portfolio Totals" in md2
+
+    def test_error_pipelines_shown_in_leaderboard(self):
+        results = [
+            _mk_result("btc_5m", bets=10, wins=7, pnl=100.0, wagered=250.0),
+            {"pipeline": "kalshi", "error": "DB locked"},
+        ]
+        md = consolidated_report.render_consolidated_detail(results, "2026-04-15")
+        assert "kalshi" in md
+        assert "error" in md.lower() or "DB locked" in md

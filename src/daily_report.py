@@ -2282,6 +2282,22 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
             print(f"  {label}: {s['total_predictions']} predictions, {s['resolved_bets']} resolved bets, "
                   f"{s['wr']}% WR, ${s['pnl']:+.2f} P&L")
 
+    # ── Consolidated cross-pipeline analysis (all 12 pipelines) ──
+    # Runs analyze_pipeline for every pipeline in config/pipelines.json.
+    # Prepends a summary block to the legacy daily and writes a separate
+    # consolidated-YYYY-MM-DD.md drill-down file.
+    consolidated_overview_md = ""
+    try:
+        import consolidated_report
+        all_results = consolidated_report.analyze_all_pipelines(date_str)
+        consolidated_overview_md = consolidated_report.render_overview_block(
+            all_results, date_str)
+        detail_path = consolidated_report.write_consolidated_detail(
+            all_results, date_str, daily_dir)
+        print(f"  Consolidated detail: {detail_path}")
+    except Exception as e:
+        print(f"  [WARN] Consolidated report failed: {e}")
+
     # Check decision triggers
     decision_alerts = check_decisions(db_5m, db_15m)
 
@@ -2297,6 +2313,15 @@ def generate_report(date_str=None, db_5m_path=None, db_15m_path=None, output_dir
     report = format_report(date_str, data_5m, data_15m,
                            decision_alerts=decision_alerts, data_eth=data_eth,
                            data_kalshi=data_kalshi, data_bybit=data_bybit)
+
+    # Prepend consolidated overview (after the H1 title) if we have it
+    if consolidated_overview_md:
+        lines = report.split("\n", 1)
+        if len(lines) == 2 and lines[0].startswith("# "):
+            # Insert after title + one blank line
+            report = lines[0] + "\n\n" + consolidated_overview_md + "\n" + lines[1]
+        else:
+            report = consolidated_overview_md + "\n\n" + report
 
     # Write report file
     daily_dir.mkdir(parents=True, exist_ok=True)
