@@ -29,11 +29,14 @@ Usage:
 """
 
 import asyncio
+import gc
 import json
 import os
+import resource
 import subprocess
 import sys
 import time
+import tracemalloc
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -148,6 +151,8 @@ class BotsyEngine:
         }
         self._latencies: list = []  # recent dispatch latencies in ms
         self._orderbook_ages: list = []  # recent orderbook ages in ms
+        self._orderbook_cache: dict = {}  # in-memory: asset_id → entry dict
+        self._orderbook_dirty = False     # flag: needs disk flush
 
         # Daily regime metrics: track last recorded UTC date per asset so we
         # only fire the rollover fetch once per asset per day. See asset_daily.py.
@@ -155,6 +160,8 @@ class BotsyEngine:
 
     async def run(self):
         """Main entry point. Connect all WS feeds and run event loop."""
+        tracemalloc.start()
+        self._tracemalloc_snapshot = tracemalloc.take_snapshot()
         log("=== Botsy Engine starting ===")
         log(f"Repo: {REPO_DIR}")
         log(f"Python: {sys.executable}")
@@ -184,6 +191,7 @@ class BotsyEngine:
             self._supervise(self.daily_report_check, name="daily_report"),
             self._supervise(self.fallback_timer, name="fallback"),
             self._supervise(self.metrics_writer, name="metrics"),
+            self._supervise(self.memory_profiler, name="memory_profiler"),
             self._supervise(self.log_rotator, name="log_rotator"),
             self._verify_orderbook_cache_format(),  # one-shot, no supervision
         ]
@@ -499,10 +507,14 @@ class BotsyEngine:
         return list(token_ids)
 
     def _update_orderbook_cache(self, data: dict):
-        """Write live orderbook to data/live_orderbook.json (per-token cache).
+        """Update in-memory orderbook cache from WS book event.
 
-        Cache format: {"tokens": {asset_id: {mid, best_bid, best_ask, ...}}}
-        Each WS book event upserts the token entry, preserving other tokens.
+        Previous implementation read/parsed/wrote a 1.4MB JSON file on EVERY
+        WS event — thousands of times per minute. Now updates an in-memory
+        dict; disk flush happens periodically in _flush_orderbook_cache().
+
+        Issue #77: this was likely a major contributor to the ~50MB/hour
+        memory growth (transient json.loads/dumps allocations pressuring GC).
         """
         try:
             asset_id = data.get("asset_id", "")
@@ -516,7 +528,7 @@ class BotsyEngine:
             mid = (best_bid + best_ask) / 2 if (best_bid and best_ask) else None
             spread = (best_ask - best_bid) if (best_bid and best_ask) else None
 
-            entry = {
+            self._orderbook_cache[asset_id] = {
                 "mid": mid,
                 "spread": spread,
                 "best_bid": best_bid,
@@ -525,23 +537,7 @@ class BotsyEngine:
                 "bids": bids[:5],  # top 5 levels
                 "asks": asks[:5],
             }
-
-            # Read existing cache, upsert this token
-            cache = {"tokens": {}}
-            try:
-                if ORDERBOOK_CACHE.exists():
-                    cache = json.loads(ORDERBOOK_CACHE.read_text())
-                    if "tokens" not in cache:
-                        cache = {"tokens": {}}  # migrate from legacy format
-            except (json.JSONDecodeError, OSError):
-                cache = {"tokens": {}}
-
-            cache["tokens"][asset_id] = entry
-
-            # Atomic write via temp file
-            tmp = ORDERBOOK_CACHE.with_suffix(".tmp")
-            tmp.write_text(json.dumps(cache))
-            tmp.rename(ORDERBOOK_CACHE)
+            self._orderbook_dirty = True
 
             if mid:
                 self._orderbook_ages.append(0)  # just written
@@ -551,24 +547,39 @@ class BotsyEngine:
         except (IndexError, KeyError, ValueError, TypeError) as e:
             log(f"[WS] Polymarket orderbook cache update failed: {e}")
 
-    async def _verify_orderbook_cache_format(self):
-        """Startup guard: verify per-token cache format is live within 60s."""
-        await asyncio.sleep(60)
+    def _flush_orderbook_cache(self):
+        """Write in-memory orderbook cache to disk. Called every 5s by metrics_writer."""
+        if not self._orderbook_dirty:
+            return
         try:
-            if not ORDERBOOK_CACHE.exists():
-                log("WARNING: No orderbook cache found after 60s — WS feed may not be writing")
-                log("DIAG|cache_format=missing|age_s=60")
-                return
-            cache = json.loads(ORDERBOOK_CACHE.read_text())
-            if "tokens" not in cache:
-                log("WARNING: Cache still in legacy format after 60s — per-token pricing inactive")
-                log("DIAG|cache_format=legacy|age_s=60")
-            else:
-                n = len(cache["tokens"])
-                log(f"[CACHE] Per-token orderbook format verified: {n} tokens")
+            cache = {"tokens": self._orderbook_cache}
+            tmp = ORDERBOOK_CACHE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(cache))
+            tmp.rename(ORDERBOOK_CACHE)
+            self._orderbook_dirty = False
+        except OSError as e:
+            log(f"[WS] Polymarket orderbook cache flush failed: {e}")
+
+    async def _verify_orderbook_cache_format(self):
+        """Startup guard: seed in-memory cache from disk, verify format within 60s."""
+        # Seed in-memory cache from existing disk file
+        try:
+            if ORDERBOOK_CACHE.exists():
+                cache = json.loads(ORDERBOOK_CACHE.read_text())
+                if "tokens" in cache:
+                    self._orderbook_cache = cache["tokens"]
+                    log(f"[CACHE] Seeded in-memory cache from disk: "
+                        f"{len(self._orderbook_cache)} tokens")
         except (json.JSONDecodeError, OSError) as e:
-            log(f"WARNING: Orderbook cache unreadable after 60s: {e}")
-            log("DIAG|cache_format=error|age_s=60")
+            log(f"[CACHE] Could not seed from disk: {e}")
+
+        await asyncio.sleep(60)
+        n = len(self._orderbook_cache)
+        if n > 0:
+            log(f"[CACHE] Per-token orderbook format verified: {n} tokens")
+        else:
+            log("WARNING: No orderbook data after 60s — WS feed may not be writing")
+            log("DIAG|cache_format=missing|age_s=60")
 
     # ── Event Dispatch ─────────────────────────────────────────────────
 
@@ -911,7 +922,7 @@ class BotsyEngine:
 
     async def metrics_writer(self):
         """Write ws_metrics.json every 60s for dashboard + daily report.
-        Also persists candle buffer to disk for fast restarts."""
+        Also persists candle buffer and orderbook cache to disk."""
         while True:
             await asyncio.sleep(METRICS_INTERVAL_S)
             self._compute_percentiles()
@@ -926,6 +937,11 @@ class BotsyEngine:
                 self.candle_buffer.save_to_disk(DATA_DIR / "candle_buffer.json")
             except Exception as e:
                 log(f"WARNING: buffer save failed: {e}")
+            # Flush orderbook cache to disk (was per-event, now batched)
+            try:
+                self._flush_orderbook_cache()
+            except Exception as e:
+                log(f"WARNING: orderbook flush failed: {e}")
 
     def _compute_percentiles(self):
         """Compute p50/p95 from recent latency samples."""
@@ -947,6 +963,58 @@ class BotsyEngine:
             }
 
     # ── Log Rotation ──────────���────────────────────────────────────────
+
+    # ── Memory Profiler (Issue #77) ──────────────────────────────────
+
+    async def memory_profiler(self):
+        """Log memory usage and top allocators every 30 min.
+
+        Uses tracemalloc for Python heap analysis and RSS from resource
+        module for total process memory. Helps identify the ~50MB/hour
+        growth reported in issue #77.
+        """
+        while True:
+            await asyncio.sleep(1800)  # every 30 min
+            try:
+                # RSS (total process memory)
+                rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                # macOS returns bytes, Linux returns KB
+                if sys.platform == "darwin":
+                    rss_mb = rss_kb / (1024 * 1024)
+                else:
+                    rss_mb = rss_kb / 1024
+
+                # tracemalloc: current snapshot vs baseline
+                current = tracemalloc.take_snapshot()
+                current = current.filter_traces((
+                    tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
+                    tracemalloc.Filter(False, "<frozen importlib._bootstrap_external>"),
+                ))
+                stats = current.compare_to(self._tracemalloc_snapshot, "lineno")
+
+                # Python heap size
+                traced_current, traced_peak = tracemalloc.get_traced_memory()
+
+                log(f"[MEM] RSS={rss_mb:.0f}MB | "
+                    f"Python heap={traced_current/1024/1024:.1f}MB "
+                    f"(peak={traced_peak/1024/1024:.1f}MB) | "
+                    f"GC objects={len(gc.get_objects())}")
+
+                # Top 10 growth lines since engine start
+                log("[MEM] Top 10 growth lines since start:")
+                for stat in stats[:10]:
+                    log(f"  {stat}")
+
+                # Also log top 5 by current size (lineno grouping)
+                top_current = current.statistics("lineno")
+                log("[MEM] Top 5 current allocations:")
+                for stat in top_current[:5]:
+                    log(f"  {stat}")
+
+            except Exception as e:
+                log(f"[MEM] profiler error: {e}")
+
+    # ── Log Rotation ─────────────────────────────────────────────────
 
     async def log_rotator(self):
         """Rotate log file when it exceeds 50k lines (keep last 10k)."""
