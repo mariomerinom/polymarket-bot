@@ -1120,6 +1120,41 @@ def execute_trades(db, cycle, pipeline_name=None):
 
         order_params, order_reason = compute_order(pred, market_row, liquidity)
 
+        # ── Shadow maker logging (Phase 1: measurement only) ──────────
+        try:
+            import shadow_maker
+            _sm_dir = "UP" if pred["estimate"] > 0.5 else "DOWN"
+            if _sm_dir == "UP":
+                _sm_bid = market_row.get("_yes_best_bid")
+                _sm_ask = market_row.get("_yes_best_ask")
+                _sm_spr = market_row.get("_yes_spread")
+            else:
+                _sm_bid = market_row.get("_no_best_bid")
+                _sm_ask = market_row.get("_no_best_ask")
+                _sm_spr = market_row.get("_no_spread")
+            _sm_mid = (_sm_bid + _sm_ask) / 2 if _sm_bid and _sm_ask else None
+            _sm_price, _sm_side = shadow_maker.compute_shadow_price(
+                _sm_dir, _sm_bid, _sm_ask, _sm_spr, _sm_mid)
+            if _sm_price is not None:
+                shadow_maker.record(
+                    db,
+                    prediction_id=pred["id"],
+                    market_id=pred["market_id"],
+                    pipeline=pipeline_name or "btc_5m",
+                    cycle=cycle,
+                    direction=_sm_dir,
+                    estimate=pred["estimate"],
+                    conviction=pred["conviction_score"],
+                    regime=pred.get("regime", ""),
+                    best_bid=_sm_bid, best_ask=_sm_ask,
+                    spread=_sm_spr, mid=_sm_mid,
+                    shadow_price=_sm_price, shadow_side=_sm_side,
+                    taker_price=order_params.get("price_limit") if order_params else None,
+                    taker_action="placed" if order_params else order_reason,
+                )
+        except Exception:
+            pass  # Shadow logging must never break the hot path
+
         if order_params is None:
             print(f"    [{mode_label}] SKIP {pred['market_id'][:12]}... — {order_reason}")
             # Record skips to fill_diagnostic for adverse-selection analysis

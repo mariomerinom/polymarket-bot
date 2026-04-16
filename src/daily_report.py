@@ -730,7 +730,7 @@ def analyze_bybit_positions(db_path, date_str):
         return None
 
 
-def generate_alerts(summary, rolling, orders=None, integrity_issues=None):
+def generate_alerts(summary, rolling, orders=None, integrity_issues=None, ehr=None):
     """Flag concerning patterns."""
     alerts = []
 
@@ -789,6 +789,13 @@ def generate_alerts(summary, rolling, orders=None, integrity_issues=None):
         for issue in integrity_issues[:3]:  # Cap at 3 most recent
             if issue["check_name"] in ("orphaned_predictions", "expired_would_win", "failed_orders"):
                 alerts.append(f"⚠️ {issue['check_name']}: {issue['detail']}")
+
+    # AC-EHR-2: Rolling 7d signal EHR < 0 on 50+ bets
+    if ehr and ehr.get("alert"):
+        alerts.append(
+            f"🚨 Signal EHR negative: {ehr['rolling_signal']:+.4f} "
+            f"over {ehr['rolling_n']} bets (7-day) — model may be buying overpriced contracts"
+        )
 
     return alerts
 
@@ -1236,6 +1243,27 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
             "",
         ])
 
+        # EHR (Excess Hit Rate) — spec_maker_mode.md AC-EHR-1
+        ehr = data.get("ehr")
+        if ehr:
+            lines.append("### Excess Hit Rate (EHR)")
+            lines.extend([
+                "| Metric | Value |",
+                "|--------|-------|",
+            ])
+            if ehr.get("signal"):
+                lines.append(f"| Signal EHR (today) | {ehr['signal']['ehr']:+.4f} ({ehr['signal']['n']} bets) |")
+            if ehr.get("execution"):
+                lines.append(f"| Execution EHR (today) | {ehr['execution']['ehr']:+.4f} ({ehr['execution']['n']} fills) |")
+            if ehr.get("rolling_signal") is not None:
+                lines.append(f"| Signal EHR (7-day) | {ehr['rolling_signal']:+.4f} ({ehr['rolling_n']} bets) |")
+            if ehr.get("rolling_execution") is not None:
+                lines.append(f"| Execution EHR (7-day) | {ehr['rolling_execution']:+.4f} |")
+            if ehr.get("signal") and ehr.get("execution"):
+                gap = ehr["signal"]["ehr"] - ehr["execution"]["ehr"]
+                lines.append(f"| Gap (signal − exec) | {gap:+.4f} ({gap*100:.1f}¢/dollar) |")
+            lines.append("")
+
         # Regime breakdown
         if data["regimes"]:
             lines.extend([
@@ -1529,6 +1557,26 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
         if data is None:
             continue
         shadow = data.get("shadow")
+        # Shadow Maker (Phase 1) — spec_maker_mode.md AC-SM-4/5
+        sm = data.get("shadow_maker")
+        if sm:
+            lines.extend([
+                f"## Shadow Maker ({label})",
+                "",
+                "*Phase 1 — hypothetical maker orders logged, no real trades.*",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Shadow orders logged | {sm['n_logged']} |",
+            ])
+            if sm.get("fill_rate") is not None:
+                lines.append(f"| Shadow fill rate | {sm['fill_rate']*100:.1f}% ({sm['n_filled']}/{sm['n_resolved']}) |")
+            if sm.get("adverse_pct") is not None:
+                lines.append(f"| Adverse selection % | {sm['adverse_pct']*100:.1f}% |")
+            if sm.get("shadow_ehr") is not None:
+                lines.append(f"| Shadow maker EHR | {sm['shadow_ehr']:+.4f} |")
+            lines.extend(["", ""])
+
         if not shadow:
             continue
 
@@ -1868,6 +1916,138 @@ def analyze_shadow_conviction(resolved):
     }
 
 
+def analyze_ehr(db, date_str):
+    """Compute Excess Hit Rate (EHR) for AC-EHR-1/AC-EHR-2.
+
+    Signal EHR: predictions JOIN markets, using market price_yes.
+    Execution EHR: orders with settled_at, using actual price_filled.
+    Rolling 7-day with alert trigger.
+
+    Reference: spec_maker_mode.md, ehr_baseline_2026-04-16.md
+    """
+    result = {"signal": None, "execution": None, "rolling_signal": None,
+              "rolling_execution": None, "rolling_n": 0, "alert": False}
+
+    try:
+        # Daily signal EHR
+        row = db.execute("""
+            SELECT COUNT(*) as n,
+              AVG(CASE WHEN p.estimate > 0.5 THEN (1.0*m.outcome - m.price_yes)
+                   ELSE ((1.0 - m.outcome) - (1.0 - m.price_yes)) END) as ehr
+            FROM predictions p JOIN markets m ON p.market_id = m.id
+            WHERE p.conviction_score >= 3 AND m.resolved = 1
+              AND date(p.predicted_at) = ?
+        """, (date_str,)).fetchone()
+        if row and row["n"] and row["n"] > 0:
+            result["signal"] = {"ehr": round(row["ehr"], 4), "n": row["n"]}
+
+        # Daily execution EHR
+        row = db.execute("""
+            SELECT COUNT(*) as n,
+              AVG((CASE WHEN o.pnl > 0 THEN 1.0 ELSE 0.0 END) - o.price_filled) as ehr
+            FROM orders o JOIN predictions p ON o.prediction_id = p.id
+            WHERE o.settled_at IS NOT NULL AND o.price_filled IS NOT NULL
+              AND p.conviction_score >= 3 AND date(o.settled_at) = ?
+        """, (date_str,)).fetchone()
+        if row and row["n"] and row["n"] > 0:
+            result["execution"] = {"ehr": round(row["ehr"], 4), "n": row["n"]}
+
+        # Rolling 7-day signal EHR (AC-EHR-2)
+        row = db.execute("""
+            SELECT COUNT(*) as n,
+              AVG(CASE WHEN p.estimate > 0.5 THEN (1.0*m.outcome - m.price_yes)
+                   ELSE ((1.0 - m.outcome) - (1.0 - m.price_yes)) END) as ehr
+            FROM predictions p JOIN markets m ON p.market_id = m.id
+            WHERE p.conviction_score >= 3 AND m.resolved = 1
+              AND date(p.predicted_at) >= date(?, '-7 days')
+              AND date(p.predicted_at) <= ?
+        """, (date_str, date_str)).fetchone()
+        if row and row["n"] and row["n"] > 0:
+            result["rolling_signal"] = round(row["ehr"], 4)
+            result["rolling_n"] = row["n"]
+            # AC-EHR-2: Alert if 7d EHR < 0 on 50+ bets
+            if row["n"] >= 50 and row["ehr"] < 0:
+                result["alert"] = True
+
+        # Rolling 7-day execution EHR
+        row = db.execute("""
+            SELECT COUNT(*) as n,
+              AVG((CASE WHEN o.pnl > 0 THEN 1.0 ELSE 0.0 END) - o.price_filled) as ehr
+            FROM orders o JOIN predictions p ON o.prediction_id = p.id
+            WHERE o.settled_at IS NOT NULL AND o.price_filled IS NOT NULL
+              AND p.conviction_score >= 3
+              AND date(o.settled_at) >= date(?, '-7 days')
+              AND date(o.settled_at) <= ?
+        """, (date_str, date_str)).fetchone()
+        if row and row["n"] and row["n"] > 0:
+            result["rolling_execution"] = round(row["ehr"], 4)
+
+    except Exception:
+        pass
+
+    return result
+
+
+def analyze_shadow_maker(db, date_str):
+    """Shadow maker Phase 1 metrics for daily report (AC-SM-4, AC-SM-5).
+
+    Reads from shadow_maker table, computes fill rate, adverse %,
+    and shadow EHR for resolved markets.
+    """
+    try:
+        # Check table exists
+        tables = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='shadow_maker'"
+        ).fetchone()
+        if not tables:
+            return None
+
+        row = db.execute("""
+            SELECT COUNT(*) as n_logged,
+              SUM(CASE WHEN filled = 1 THEN 1 ELSE 0 END) as n_filled,
+              SUM(CASE WHEN filled IS NOT NULL THEN 1 ELSE 0 END) as n_resolved
+            FROM shadow_maker WHERE date(timestamp) = ?
+        """, (date_str,)).fetchone()
+
+        n_logged = row["n_logged"] or 0
+        if n_logged == 0:
+            return None
+
+        n_filled = row["n_filled"] or 0
+        n_resolved = row["n_resolved"] or 0
+
+        # Adverse selection rate
+        adv_row = db.execute("""
+            SELECT SUM(CASE WHEN adverse = 1 THEN 1 ELSE 0 END) as n_adverse
+            FROM shadow_maker WHERE filled = 1 AND date(timestamp) = ?
+        """, (date_str,)).fetchone()
+        n_adverse = adv_row["n_adverse"] or 0
+
+        # Shadow maker EHR on resolved+filled
+        ehr_row = db.execute("""
+            SELECT AVG(
+              CASE WHEN s.direction = 'UP' THEN (1.0 * m.outcome - s.shadow_price)
+                   ELSE ((1.0 - m.outcome) - s.shadow_price) END
+            ) as shadow_ehr,
+            COUNT(*) as n_ehr
+            FROM shadow_maker s
+            JOIN markets m ON s.market_id = m.id
+            WHERE s.filled = 1 AND m.resolved = 1 AND date(s.timestamp) = ?
+        """, (date_str,)).fetchone()
+        shadow_ehr = round(ehr_row["shadow_ehr"], 4) if ehr_row and ehr_row["n_ehr"] > 0 and ehr_row["shadow_ehr"] is not None else None
+
+        return {
+            "n_logged": n_logged,
+            "n_filled": n_filled,
+            "n_resolved": n_resolved,
+            "fill_rate": round(n_filled / n_resolved, 3) if n_resolved else None,
+            "adverse_pct": round(n_adverse / n_filled, 3) if n_filled else None,
+            "shadow_ehr": shadow_ehr,
+        }
+    except Exception:
+        return None
+
+
 def analyze_pipeline(db_path, date_str):
     """Run full analysis for one pipeline (5m, 15m, ETH, or Kalshi)."""
     global CONVICTION_BETS
@@ -1912,6 +2092,8 @@ def analyze_pipeline(db_path, date_str):
         bybit_positions = analyze_bybit_positions(db_path, date_str) if is_bybit else None
         shadow = analyze_shadow_indicators(predictions, resolved)
         shadow_conviction = analyze_shadow_conviction(resolved)
+        ehr = analyze_ehr(db, date_str)
+        shadow_maker_data = analyze_shadow_maker(db, date_str)
     finally:
         db.close()
         CONVICTION_BETS = old_bets
@@ -1933,7 +2115,7 @@ def analyze_pipeline(db_path, date_str):
         pass  # Table doesn't exist yet or DB issue
 
     # Re-generate alerts with integrity data
-    alerts = generate_alerts(summary, rolling, orders=orders, integrity_issues=integrity_issues)
+    alerts = generate_alerts(summary, rolling, orders=orders, integrity_issues=integrity_issues, ehr=ehr)
 
     return {
         "summary": summary,
@@ -1951,6 +2133,8 @@ def analyze_pipeline(db_path, date_str):
         "shadow_conviction": shadow_conviction,
         "integrity_issues": integrity_issues,
         "bybit_positions": bybit_positions,
+        "ehr": ehr,
+        "shadow_maker": shadow_maker_data,
     }
 
 
