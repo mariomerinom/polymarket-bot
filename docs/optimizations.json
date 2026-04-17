@@ -559,6 +559,28 @@
       "post_stats": null,
       "closed_at": null,
       "close_reason": null
+    },
+    {
+      "name": "highvol_full_gate_perps",
+      "description": "Expand ci_run_perp.py HIGH_VOL gate from non-trending-only to ALL HIGH_VOL. Affects 6 perps (eth_bybit, sol_bybit, doge_bybit, eth_hl, sol_hl, doge_hl). Mirrors eth_highvol_full_gate for spot ETH. HV/NEUTRAL was already effectively zero-sampled; the leak is HV/TRENDING.",
+      "registered_at": "2026-04-16T18:30:00+00:00",
+      "pipeline": "perps",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "counterfactual HV/TRENDING WR > 55% on 50+ shadow bets for any asset",
+      "baseline": {
+        "eth_bybit_hv_trending_wr": 25.7,
+        "eth_bybit_hv_trending_bets": 35,
+        "sol_bybit_hv_trending_wr": 41.2,
+        "sol_bybit_hv_trending_bets": 34,
+        "doge_bybit_hv_trending_wr": 38.5,
+        "doge_bybit_hv_trending_bets": 13,
+        "note": "_hl pipelines identical to _bybit (same asset signal, different venue)"
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
     }
   ]
 }

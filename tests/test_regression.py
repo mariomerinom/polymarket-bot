@@ -543,6 +543,35 @@ def test_highvol_non_trending_gate_eth():
     assert rows[2] == ("e3", 2), f"ETH HV/TRENDING should be conv=2 (full HV gate), got {rows[2]}"
 
 
+def test_highvol_full_gate_perps():
+    """ALL HIGH_VOL regimes skip on perps (ci_run_perp.py).
+
+    Expanded 2026-04-16 from non-trending only. Evidence: eth_bybit
+    HV/TRENDING 25.7% WR (35 bets), sol_bybit 41.2% (34), doge_bybit
+    38.5% (13). Mirrors eth_highvol_full_gate (#80) for spot ETH.
+
+    Source-inspection test: verify the gate condition is broadened from
+    "HIGH_VOL non-trending" to "all HIGH_VOL" in the run() dispatcher.
+    """
+    import inspect
+    import ci_run_perp
+
+    src = inspect.getsource(ci_run_perp.run_perp_pipeline)
+
+    # The skip-block condition must gate ALL HIGH_VOL, not just non-trending.
+    # Before: elif "HIGH_VOL" in regime["label"] and "TRENDING" not in regime["label"]:
+    # After:  elif "HIGH_VOL" in regime["label"]:
+    assert 'elif "HIGH_VOL" in regime["label"]:' in src, \
+        "Perp HIGH_VOL gate must cover all HIGH_VOL regimes (not just non-trending)"
+    # The old non-trending-only condition must NOT still be present
+    assert ('"HIGH_VOL" in regime["label"] and "TRENDING" not in regime["label"]'
+            not in src), \
+        "Old non-trending-only condition still present — gate not fully expanded"
+    # The skip reason string should reflect the broader scope
+    assert '"regime_gate_high_vol"' in src, \
+        "Skip reason should be generic 'regime_gate_high_vol' post-expansion"
+
+
 def test_mr_shadow_extreme_estimate():
     """MR shadow mode: extreme estimates (>0.65/<0.35) tracked at conv=2,
     coin-flip zone skipped at conv=0.

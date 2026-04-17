@@ -479,15 +479,20 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
                           indicators=indicators, candles=candles)
         print(f"  -> SKIP (dead hour: UTC {current_hour_utc})")
 
-    elif "HIGH_VOL" in regime["label"] and "TRENDING" not in regime["label"]:
+    elif "HIGH_VOL" in regime["label"]:
+        # Expanded 2026-04-16: gate ALL HIGH_VOL regimes on perps (previously
+        # only non-trending). Evidence: eth_bybit HV/TRENDING 25.7% WR (35 bets),
+        # sol_bybit 41.2% (34), doge_bybit 38.5% (13). Mirrors eth_highvol_full_gate
+        # (#80) shipped for eth_5m spot 2026-04-15. HV/NEUTRAL already gated
+        # effectively — no samples in 14d perp data.
         skip_signal = {
             "estimate": 0.5, "should_trade": False, "confidence": "skip",
-            "reason": "regime_gate_high_vol_non_trending",
+            "reason": "regime_gate_high_vol",
         }
         _store_prediction(db, market_id, skip_signal, regime, cycle, config,
                           mark_price=mark_price, consensus=consensus,
                           indicators=indicators, candles=candles)
-        print(f"  -> SKIP (HIGH_VOL non-trending)")
+        print(f"  -> SKIP (HIGH_VOL {regime['label']})")
 
     elif regime["is_mean_reverting"]:
         # VWAP mean-reversion: fire in regimes momentum skips
