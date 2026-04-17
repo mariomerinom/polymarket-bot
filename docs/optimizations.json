@@ -581,6 +581,34 @@
       "post_stats": null,
       "closed_at": null,
       "close_reason": null
+    },
+    {
+      "name": "intraday_range_gate",
+      "description": "Demote conv>=3 to conv=2 when today's in-progress intraday range_pct is ≥1.5σ above the 30-day historical mean. Uses TODAY's candles (not yesterday's completed row — fixing the failure mode of reverted btc_daily_regime_gate #68). Morning exemption before 12:00 UTC. Applies to btc_5m and eth_5m.",
+      "registered_at": "2026-04-17T15:00:00+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "counterfactual gated-bets WR > 60% on 50+ shadow observations, OR gate fires on >30% of cycles",
+      "baseline": {
+        "apr_7_range_zscore": 2.9,
+        "apr_7_btc_5m_pnl": -193,
+        "apr_7_btc_5m_wr_pct": 39,
+        "apr_13_range_zscore": 1.83,
+        "apr_13_btc_5m_pnl": -27,
+        "apr_13_btc_5m_wr_pct": 40,
+        "note": "On days with range_zscore ≥+1.5, BTC 5m consistently lost money. Gate throttles these days proactively."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null,
+      "predecessor": {
+        "name": "btc_daily_regime_gate",
+        "issue": 68,
+        "reverted": "2026-04-09",
+        "reason": "prior-day lag caused overcorrection on calm days; this version uses in-progress intraday range instead"
+      }
     }
   ]
 }

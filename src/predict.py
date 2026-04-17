@@ -408,6 +408,39 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         else:
             conviction = 3
 
+        # Intraday range gate (2026-04-17): demote when today's in-progress
+        # range_pct is ≥1.5σ above 30-day historical mean. Evidence:
+        # Apr 7 r_z=+2.9 → btc_5m −$193 (39% WR); Apr 13 r_z=+1.8 → −$27
+        # at 40% WR. Uses TODAY's candles (not yesterday's completed row,
+        # which was the failure mode of reverted #68).
+        if not loose_mode and conviction >= 3 and candles:
+            try:
+                import sqlite3
+                from pathlib import Path
+                from intraday_regime_gate import (
+                    evaluate_intraday_range_gate, fetch_historical_ranges_pct,
+                )
+                _daily_db_path = (
+                    Path(__file__).parent.parent / "data" / "asset_daily.db"
+                )
+                if _daily_db_path.exists():
+                    with sqlite3.connect(str(_daily_db_path)) as _daily_db:
+                        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                        _hist = fetch_historical_ranges_pct(
+                            _daily_db, "BTC", exclude_date=_today, days=30)
+                    _gate = evaluate_intraday_range_gate(
+                        candles=candles, asset="BTC",
+                        asof_utc=datetime.now(timezone.utc),
+                        historical_ranges_pct=_hist,
+                    )
+                    if _gate["gated"]:
+                        conviction = 2
+                        print(f"    [INTRADAY_GATE] demoted to conv=2: "
+                              f"{_gate['reason']}")
+            except Exception as _e:
+                # Safety: never break predict on gate error
+                print(f"    [INTRADAY_GATE] error: {_e}")
+
         consensus_score = consensus.get("score", 0) if consensus else 0
         if consensus_score == 2 and conviction >= 3:
             conviction = min(conviction + 1, MAX_CONVICTION)

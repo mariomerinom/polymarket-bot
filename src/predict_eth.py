@@ -130,6 +130,36 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
     else:
         conviction = 0
 
+    # Intraday range gate (2026-04-17): demote if today's in-progress
+    # range_pct ≥1.5σ above 30-day ETH mean. Applies only when the
+    # conviction was otherwise going to be >=3.
+    if conviction >= 3 and candles:
+        try:
+            import sqlite3
+            from pathlib import Path
+            from intraday_regime_gate import (
+                evaluate_intraday_range_gate, fetch_historical_ranges_pct,
+            )
+            _daily_db_path = (
+                Path(__file__).parent.parent / "data" / "asset_daily.db"
+            )
+            if _daily_db_path.exists():
+                with sqlite3.connect(str(_daily_db_path)) as _daily_db:
+                    _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    _hist = fetch_historical_ranges_pct(
+                        _daily_db, "ETH", exclude_date=_today, days=30)
+                _gate = evaluate_intraday_range_gate(
+                    candles=candles, asset="ETH",
+                    asof_utc=datetime.now(timezone.utc),
+                    historical_ranges_pct=_hist,
+                )
+                if _gate["gated"]:
+                    conviction = 2
+                    print(f"    [INTRADAY_GATE] ETH demoted to conv=2: "
+                          f"{_gate['reason']}")
+        except Exception as _e:
+            print(f"    [INTRADAY_GATE] ETH error: {_e}")
+
     reasoning_data = {
         "signal": signal,
         "regime": regime,
