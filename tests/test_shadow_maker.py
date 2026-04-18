@@ -288,3 +288,106 @@ class TestShadowStats:
         # EHR = avg(0.49, 0.51, -0.51) = 0.163
         assert stats["shadow_ehr"] is not None
         db.close()
+
+
+# ── resolve_shadow_fills_polymarket ──────────────────────────────────
+
+
+class TestPolymarketResolver:
+
+    def _setup_db(self):
+        db = _make_db()
+        db.execute("""CREATE TABLE markets (
+            id TEXT PRIMARY KEY, resolved INTEGER, outcome INTEGER,
+            price_yes REAL)""")
+        return db
+
+    def test_resolves_only_resolved_markets(self):
+        """Shadow rows for unresolved markets stay pending."""
+        db = self._setup_db()
+        shadow_maker.record(
+            db, prediction_id=1, market_id="m1", pipeline="btc_5m",
+            cycle=1, direction="UP", estimate=0.62, conviction=3,
+            regime="MEDIUM_VOL / NEUTRAL",
+            best_bid=0.50, best_ask=0.54, spread=0.04, mid=0.52,
+            shadow_price=0.51, shadow_side="BUY",
+        )
+        # Market NOT resolved
+        db.execute("INSERT INTO markets VALUES ('m1', 0, NULL, 0.52)")
+        db.commit()
+
+        n_resolved, n_filled = shadow_maker.resolve_shadow_fills_polymarket(
+            db, "btc_5m")
+        assert n_resolved == 0
+        # Row still pending
+        row = db.execute("SELECT filled FROM shadow_maker").fetchone()
+        assert row[0] is None
+        db.close()
+
+    def test_buy_fills_and_wins_when_yes_resolves_yes(self):
+        """BUY shadow at 0.51 when mid=0.52; market resolves YES (outcome=1)."""
+        db = self._setup_db()
+        shadow_maker.record(
+            db, prediction_id=1, market_id="m1", pipeline="btc_5m",
+            cycle=1, direction="UP", estimate=0.62, conviction=3,
+            regime="MEDIUM_VOL / NEUTRAL",
+            best_bid=0.50, best_ask=0.54, spread=0.04, mid=0.52,
+            shadow_price=0.51, shadow_side="BUY",
+        )
+        db.execute("INSERT INTO markets VALUES ('m1', 1, 1, 0.52)")
+        db.commit()
+
+        n_resolved, n_filled = shadow_maker.resolve_shadow_fills_polymarket(
+            db, "btc_5m")
+        assert n_resolved == 1
+        assert n_filled == 1
+        row = db.execute(
+            "SELECT filled, adverse, fill_candle_close FROM shadow_maker"
+        ).fetchone()
+        assert row[0] == 1
+        assert row[1] == 0  # not adverse — we bought YES, YES won
+        assert row[2] == 1.0
+        db.close()
+
+    def test_buy_fills_and_loses_when_yes_resolves_no(self):
+        """BUY shadow when NO wins → filled + adverse."""
+        db = self._setup_db()
+        shadow_maker.record(
+            db, prediction_id=1, market_id="m1", pipeline="btc_5m",
+            cycle=1, direction="UP", estimate=0.62, conviction=3,
+            regime="MEDIUM_VOL / NEUTRAL",
+            best_bid=0.50, best_ask=0.54, spread=0.04, mid=0.52,
+            shadow_price=0.51, shadow_side="BUY",
+        )
+        db.execute("INSERT INTO markets VALUES ('m1', 1, 0, 0.52)")
+        db.commit()
+
+        n_resolved, n_filled = shadow_maker.resolve_shadow_fills_polymarket(
+            db, "btc_5m")
+        assert n_resolved == 1
+        assert n_filled == 1
+        row = db.execute(
+            "SELECT filled, adverse FROM shadow_maker"
+        ).fetchone()
+        assert row[0] == 1
+        assert row[1] == 1  # adverse — we bought YES, NO won
+        db.close()
+
+    def test_idempotent(self):
+        """Second call does not re-resolve already-resolved rows."""
+        db = self._setup_db()
+        shadow_maker.record(
+            db, prediction_id=1, market_id="m1", pipeline="btc_5m",
+            cycle=1, direction="UP", estimate=0.62, conviction=3,
+            regime="MEDIUM_VOL / NEUTRAL",
+            best_bid=0.50, best_ask=0.54, spread=0.04, mid=0.52,
+            shadow_price=0.51, shadow_side="BUY",
+        )
+        db.execute("INSERT INTO markets VALUES ('m1', 1, 1, 0.52)")
+        db.commit()
+
+        n1, _ = shadow_maker.resolve_shadow_fills_polymarket(db, "btc_5m")
+        n2, _ = shadow_maker.resolve_shadow_fills_polymarket(db, "btc_5m")
+        assert n1 == 1
+        assert n2 == 0  # already resolved, no-op
+        db.close()

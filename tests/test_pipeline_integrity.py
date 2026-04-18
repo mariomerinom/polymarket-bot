@@ -131,6 +131,60 @@ class TestOrphanedPredictions:
         assert result["status"] == "OK"
         db.close()
 
+    def test_breaker_tripped_not_orphaned(self):
+        """When consecutive_loss_breaker is active, missing orders on
+        conv>=3 predictions are correct behavior, not orphans. The
+        daily report was flagging these as WARN which caused noise
+        across the perp pipelines (2026-04-17 session finding).
+
+        We simulate the trigger by adding a KILL_SWITCH file which
+        system_state reads as a blocker. Avoids coupling to the specific
+        live-vs-paper order-status filter in _compute_consecutive_losses.
+        """
+        import os
+        import tempfile
+        from pathlib import Path
+        from pipeline_integrity import _check_orphaned_predictions
+
+        db = _make_db()
+        db.execute(
+            "INSERT INTO predictions (id, market_id, agent, estimate, "
+            "cycle, conviction_score) "
+            "VALUES (1, 'm1', 'momentum', 0.65, 1, 3)"
+        )
+
+        # Install KILL_SWITCH env var to force a blocker
+        os.environ["KILL_SWITCH"] = "true"
+        try:
+            result = _check_orphaned_predictions(db, "btc_5m", 1)
+        finally:
+            os.environ.pop("KILL_SWITCH", None)
+
+        # Should be OK (not WARN) because a blocker prevented the trade
+        assert result["status"] == "OK", \
+            f"Expected OK when blocker active, got {result}"
+        assert "blocker" in result["detail"].lower()
+        db.close()
+
+    def test_no_blocker_still_flags_orphan(self):
+        """Regression guard: when there's NO blocker, a missing order
+        on conv>=3 IS still a real orphan and should WARN."""
+        import os
+        from pipeline_integrity import _check_orphaned_predictions
+
+        # Ensure no env-based blockers
+        os.environ.pop("KILL_SWITCH", None)
+
+        db = _make_db()
+        db.execute(
+            "INSERT INTO predictions (id, market_id, agent, estimate, "
+            "cycle, conviction_score) "
+            "VALUES (1, 'm1', 'momentum', 0.65, 1, 3)"
+        )
+        result = _check_orphaned_predictions(db, "btc_5m", 1)
+        assert result["status"] == "WARN"
+        db.close()
+
 
 class TestApiHealth:
     def test_ok(self):

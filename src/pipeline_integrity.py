@@ -124,7 +124,13 @@ def _check_failed_orders(db, pipeline, cycle) -> dict:
 
 
 def _check_orphaned_predictions(db, pipeline, cycle) -> dict:
-    """Check for conv>=3 predictions with no matching order this cycle."""
+    """Check for conv>=3 predictions with no matching order this cycle.
+
+    Skip the alert if the pipeline has active blockers (kill switch,
+    daily-loss limit, consecutive-loss breaker) — those are legitimate
+    reasons to skip trading on a qualifying signal. Only alert when
+    there's NO reason the trade shouldn't have happened.
+    """
     result = {"check_name": "orphaned_predictions", "status": "OK", "detail": ""}
 
     # Check if orders table exists
@@ -134,6 +140,20 @@ def _check_orphaned_predictions(db, pipeline, cycle) -> dict:
     if not table:
         result["detail"] = "no orders table — cannot check"
         return result
+
+    # If the pipeline has active blockers, predictions skipped by them
+    # are not orphans — they're correctly-declined trades.
+    try:
+        from system_state import get_system_state
+        state = get_system_state(db, pipeline or "btc_5m")
+        if state.blockers:
+            result["detail"] = (
+                f"skipped (active blocker: {state.blockers[0]})"
+            )
+            return result
+    except Exception:
+        # system_state unavailable — fall through to legacy check
+        pass
 
     rows = db.execute("""
         SELECT p.id, p.market_id, p.conviction_score

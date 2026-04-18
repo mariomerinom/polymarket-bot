@@ -1993,6 +1993,10 @@ def analyze_shadow_maker(db, date_str):
 
     Reads from shadow_maker table, computes fill rate, adverse %,
     and shadow EHR for resolved markets.
+
+    Also resolves any pending shadow rows whose underlying markets
+    have since resolved. This is the batch-at-report-time resolution
+    path — the engine hot path only LOGS shadow rows, never resolves.
     """
     try:
         # Check table exists
@@ -2001,6 +2005,21 @@ def analyze_shadow_maker(db, date_str):
         ).fetchone()
         if not tables:
             return None
+
+        # Resolve any pending shadow orders whose markets are now resolved.
+        # One pipeline per DB — we don't know the name here, but the SQL
+        # filter `pipeline=?` would require it. Resolve all pending rows
+        # regardless of pipeline (they're all in this DB, for this pipeline).
+        try:
+            from shadow_maker import resolve_shadow_fills_polymarket
+            # Look up the pipeline name from any row — they're all the same DB
+            pipeline_row = db.execute(
+                "SELECT DISTINCT pipeline FROM shadow_maker LIMIT 1"
+            ).fetchone()
+            if pipeline_row:
+                resolve_shadow_fills_polymarket(db, pipeline_row[0])
+        except Exception as _e:
+            print(f"  [shadow_maker] resolve failed: {_e}")
 
         row = db.execute("""
             SELECT COUNT(*) as n_logged,

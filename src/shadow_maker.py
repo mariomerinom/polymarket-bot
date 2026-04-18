@@ -121,6 +121,74 @@ def record(
 # ── Fill Simulation (AC-SM-3) ────────────────────────────────────────
 
 
+def resolve_shadow_fills_polymarket(db, pipeline, oscillation_buffer=0.05):
+    """Resolve pending shadow maker rows for Polymarket pipelines.
+
+    Polymarket token prices (0-1) don't have intraday candles stored, so
+    we synthesize a conservative range around the shadow entry:
+        candle_low  = min(mid − oscillation_buffer, resolved_price)
+        candle_high = max(mid + oscillation_buffer, resolved_price)
+        candle_close = resolved_price  (0 if NO won, 1 if YES won)
+
+    oscillation_buffer = 5¢ is conservative. Real Polymarket 5m markets
+    typically oscillate 5–15¢ intraday. Under this model shadow bids
+    within 5¢ of mid fill ~100% of the time — appropriate for Phase 1
+    measurement, not execution-accurate.
+
+    Returns (n_resolved, n_filled) counts for logging.
+
+    Only resolves rows where filled IS NULL AND the market is resolved.
+    """
+    init_table(db)
+
+    # Only process pending shadows whose markets have resolved outcomes
+    rows = db.execute(
+        """
+        SELECT sm.id, sm.shadow_price, sm.shadow_side, sm.mid,
+               m.outcome, m.price_yes
+        FROM shadow_maker sm
+        JOIN markets m ON sm.market_id = m.id
+        WHERE sm.pipeline = ? AND sm.filled IS NULL
+          AND m.resolved = 1 AND m.outcome IS NOT NULL
+        """,
+        (pipeline,),
+    ).fetchall()
+
+    n_resolved = 0
+    n_filled = 0
+    for row in rows:
+        sid, shadow_price, shadow_side, mid, outcome, price_yes = row
+        if shadow_price is None or mid is None:
+            continue
+        # YES token resolves to 1 if outcome=1, else 0
+        resolved_price = 1.0 if outcome == 1 else 0.0
+        candle_low = min(mid - oscillation_buffer, resolved_price)
+        candle_high = max(mid + oscillation_buffer, resolved_price)
+        candle_close = resolved_price
+
+        if shadow_side == "BUY":
+            filled = 1 if candle_low <= shadow_price else 0
+        else:
+            filled = 1 if candle_high >= shadow_price else 0
+
+        adverse = None
+        if filled:
+            if shadow_side == "BUY":
+                adverse = 1 if candle_close < shadow_price else 0
+            else:
+                adverse = 1 if candle_close > shadow_price else 0
+            n_filled += 1
+
+        db.execute(
+            "UPDATE shadow_maker SET filled=?, fill_candle_low=?, "
+            "fill_candle_high=?, fill_candle_close=?, adverse=? WHERE id=?",
+            (filled, candle_low, candle_high, candle_close, adverse, sid),
+        )
+        n_resolved += 1
+    db.commit()
+    return n_resolved, n_filled
+
+
 def resolve_shadow_fills(db, pipeline, candle_low, candle_high,
                          candle_close, cycle):
     """Batch-resolve pending shadow orders using candle high/low.
