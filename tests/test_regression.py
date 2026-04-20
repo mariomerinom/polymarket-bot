@@ -543,6 +543,32 @@ def test_highvol_non_trending_gate_eth():
     assert rows[2] == ("e3", 2), f"ETH HV/TRENDING should be conv=2 (full HV gate), got {rows[2]}"
 
 
+def test_vwap_graduated_to_eth_5m():
+    """VWAP mean-reversion graduates to eth_5m spot (2026-04-19).
+
+    Evidence: Lab on eth_5m 747 bets / 52.6% WR / +$975 est P&L over
+    30d window — above 200-bet graduation threshold and above breakeven.
+
+    Mirrors decision #78 (VWAP graduated to SOL/DOGE perps).
+
+    Source-inspection test: verify VWAP branch was added in
+    run_predictions_eth's mean-reverting handler in predict_eth.py.
+    """
+    import inspect
+    import predict_eth
+
+    src = inspect.getsource(predict_eth.run_predictions_eth)
+
+    # Must import and call vwap_signal when regime is mean-reverting
+    assert "from strategies.vwap_meanrev import signal as vwap_signal" in src, \
+        "VWAP import missing from eth_5m prediction path"
+    assert "vwap_signal(vwap_ctx)" in src, \
+        "VWAP signal not invoked in eth_5m prediction path"
+    # Must store the VWAP prediction when conviction >= 3
+    assert "vwap_result.conviction >= 3" in src, \
+        "VWAP conviction threshold missing — all z-scores would fire"
+
+
 def test_highvol_full_gate_perps():
     """ALL HIGH_VOL regimes skip on perps (ci_run_perp.py).
 

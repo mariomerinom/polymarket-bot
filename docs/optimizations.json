@@ -611,6 +611,68 @@
       }
     },
     {
+      "name": "shadow_regime_relative_perps",
+      "description": "Phase A of asset-relative regime redesign. SOL/DOGE spend 95%+ of cycles in absolute-threshold HIGH_VOL and are starved of trading activity. Log a parallel z-score-based regime (vs each asset's own 30d realized_vol distribution from asset_daily.db) without changing gating. After 7 days of shadow data, compare counterfactual WR on cycles that would have been reclassified.",
+      "registered_at": "2026-04-19T18:40:00+00:00",
+      "pipeline": "perps",
+      "status": "shadow",
+      "min_sample": 200,
+      "revert_condition": "if reclassified-cycles WR < 48% on 200+ bets, abandon Phase C; otherwise proceed with shadow logging only",
+      "baseline": {
+        "sol_bybit_hv_exposure_pct": 91,
+        "sol_bybit_bets_per_day_avg": 2.25,
+        "doge_bybit_hv_exposure_pct": 97,
+        "doge_bybit_bets_per_day_avg": 1.5,
+        "note": "4-day sample 2026-04-15 to 18. Absolute-threshold HIGH_VOL gate is correctly blocking losing regimes (HV/TRENDING 25-41% WR) but leaves pipelines with <3% tradeable cycles. Shadow relative regime tests whether a self-referential threshold would unlock safe trading activity."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "vwap_graduation_eth_5m",
+      "description": "Graduate VWAP mean-reversion to eth_5m spot. Fires in MEAN_REVERTING regimes where momentum currently skips. Conv>=3 (z>=2.0) only. Mirrors decision #78 (VWAP graduation to SOL/DOGE perps). Lab 30d: 747 bets at 52.6% WR / +$975 est P&L.",
+      "registered_at": "2026-04-19T18:30:00+00:00",
+      "pipeline": "eth_5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_wr < 48 on 50+ bets",
+      "baseline": {
+        "lab_bets": 747,
+        "lab_wr": 52.6,
+        "lab_pnl": 975.0,
+        "lab_window_days": 30,
+        "note": "Lab always-fire results from strategy_lab.db. HV+MR VWAP fires will hit HIGH_VOL gate in store_prediction_eth → logged at conv=2 (shadow). MV+MR VWAP fires at conv=3 (real bet)."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "eth_mv_trending_down_monitor",
+      "description": "Monitor ETH 5m MEDIUM_VOL/TRENDING + DOWN direction bucket. Identified 2026-04-19 investigation: 65% WR on 20 bets over 14 days — only ETH bucket with clear edge. Hypothesis: 5m down-streaks inside larger up-trends are contrarian-valid. No code change; data already being collected via predictions table. If sample reaches 50 with WR > 60%, consider conviction +1 bonus in this specific regime/direction pair.",
+      "registered_at": "2026-04-19T18:45:00+00:00",
+      "pipeline": "eth_5m",
+      "status": "monitoring",
+      "min_sample": 50,
+      "revert_condition": "WR falls below 55% on 50+ bets before any action — close as reverted (false positive in thin sample)",
+      "baseline": {
+        "bucket_bets": 20,
+        "bucket_wr": 65.0,
+        "window_days": 14,
+        "query": "SELECT ... WHERE regime='MEDIUM_VOL / TRENDING' AND estimate<0.5 AND m.outcome=0",
+        "all_mv_trending_up_wr": 48.0,
+        "all_mv_trending_up_bets": 25,
+        "comparison": "DOWN wins 65% while UP in same regime wins 48% — directional asymmetry worth tracking."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
       "name": "bucket_15_30_monitor",
       "description": "Monitor 0.15-0.30 price bucket — decision #6 triggered 2026-04-19 at 85.7% WR on 21 bets (threshold >65% at 20+). Sample is thin; registered as Monitoring until N reaches 50. No code change yet — if WR holds above 65% at 50+ bets, promote to conviction +1 boost in predict.py.",
       "registered_at": "2026-04-19T16:00:00+00:00",

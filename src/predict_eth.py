@@ -353,6 +353,48 @@ def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,
 
         # Regime gate — MR shadow mode for extreme estimates
         if regime["is_mean_reverting"]:
+            # VWAP mean-reversion: fire in MR regimes where momentum skips.
+            # Lab evidence (30-day, 2026-04-19): eth_5m vwap_meanrev 52.6% WR
+            # on 747 bets (+$975 est P&L). Mirrors perp graduation (decision #78).
+            # Fires when VWAP z-score >= 2.0 (conviction >= 3 from strategy).
+            vwap_result = None
+            try:
+                from strategies.vwap_meanrev import signal as vwap_signal
+                from strategies.base import StrategyContext
+                vwap_ctx = StrategyContext(
+                    symbol="ETHUSDT", timeframe="5",
+                    pipeline="eth_5m", candles=candles,
+                    indicators=indicators, regime=regime,
+                    current_price=candles[-1]["close"] if candles else None,
+                    timestamp=datetime.now(timezone.utc),
+                )
+                vwap_result = vwap_signal(vwap_ctx)
+            except Exception as e:
+                print(f"    VWAP signal error: {e}")
+
+            if vwap_result and vwap_result.conviction >= 3:
+                vwap_estimate = vwap_result.estimate
+                vwap_direction = vwap_result.direction
+                vwap_reason = vwap_result.reason
+                vwap_signal_dict = {
+                    "estimate": vwap_estimate,
+                    "should_trade": True,
+                    "confidence": "medium",
+                    "direction": vwap_direction,
+                    "streak": 0,
+                    "reason": vwap_reason,
+                }
+                print(f"    → VWAP {vwap_direction} @ {vwap_estimate:.3f} "
+                      f"(z={vwap_result.metadata.get('zscore', 0):+.2f}, "
+                      f"conv={vwap_result.conviction})")
+                store_prediction_eth(db, market["id"], vwap_signal_dict, regime,
+                                     cycle, mkt_price=mkt_price,
+                                     indicators=indicators, candles=candles)
+                _emit_diag_eth(market["id"], vwap_result.conviction,
+                               _diag_candle_ts_ms, _diag_candle_close,
+                               _diag_current_price)
+                continue
+
             # Extreme estimates (>0.65/<0.35) win at 80%+ WR regardless of regime (Phase 1 analysis).
             # Track at conv=2 for forward validation. Coin-flip zone skipped as before.
             if signal["should_trade"] and (signal["estimate"] > EXTREME_ESTIMATE_UPPER or signal["estimate"] < EXTREME_ESTIMATE_LOWER):

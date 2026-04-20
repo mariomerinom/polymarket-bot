@@ -640,6 +640,18 @@ def _store_prediction(db, market_id, signal, regime, cycle, config,
         "conviction_tier": conviction,
         "mark_price": mark_price,
     }
+
+    # Phase A shadow: log the asset-relative regime alongside the
+    # absolute regime. No behavior change. After 7 days of data we can
+    # compare against absolute-regime gates to decide whether to promote
+    # to primary path (Phase C). Registered 2026-04-19 as shadow_regime_relative.
+    try:
+        from relative_regime import compute_shadow_regime
+        shadow_rel = compute_shadow_regime(candles, short)
+        reasoning_data["shadow_regime_relative"] = shadow_rel
+    except Exception as _e:
+        reasoning_data["shadow_regime_relative"] = {"error": str(_e)}
+
     if consensus:
         reasoning_data["consensus"] = consensus
     if indicators:
