@@ -2,9 +2,9 @@
   "_comment": "Pipeline control. mode: live | paper | paused. Commit + push for CI.",
   "pipelines": {
     "btc_5m": {
-      "mode": "paper",
+      "mode": "live",
       "bet_size": 25,
-      "notes": "Paper 2026-04-06 — adverse selection on FOK fills. 6 would-wins killed, 1 filled loss. See docs/specs/stochastic/spec_fill_adverse_selection.md"
+      "notes": "LIVE FAK pilot 2026-04-19. Validating FAK fixes pre-FAK adverse selection (GTC+FOK era: 35% filled WR vs 95% unfill WR). Flat $25, $300 daily loss cap, 5-consecutive-loss breaker, kill switch active. Revert: flip mode to paper."
     },
     "btc_15m": {
       "mode": "paused",
