@@ -79,11 +79,18 @@ RESULT_CODES = frozenset({
 
 
 def init_table(db):
-    """Create the fill_diagnostic table if it does not exist. Idempotent."""
+    """Create the fill_diagnostic table if it does not exist. Idempotent.
+
+    Also migrates existing tables to add the `prediction_id` column
+    (added 2026-04-19 to let the pipeline_integrity orphan check
+    distinguish genuinely-silent-fail predictions from predictions
+    consciously skipped for recorded reasons like thin-book/low-edge).
+    """
     db.execute("""
         CREATE TABLE IF NOT EXISTS fill_diagnostic (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_id INTEGER,
+            prediction_id INTEGER,
             timestamp TEXT NOT NULL,
             cycle INTEGER,
             pipeline TEXT NOT NULL,
@@ -105,6 +112,11 @@ def init_table(db):
             resolved_at TEXT
         )
     """)
+    # Migration for pre-existing tables that lack prediction_id
+    try:
+        db.execute("ALTER TABLE fill_diagnostic ADD COLUMN prediction_id INTEGER")
+    except Exception:
+        pass  # column already exists
     db.commit()
 
 
@@ -114,6 +126,7 @@ def record(
     pipeline,
     result,
     order_id=None,
+    prediction_id=None,
     cycle=None,
     decision_best_bid=None,
     decision_best_ask=None,
@@ -140,7 +153,7 @@ def record(
     init_table(db)
     db.execute("""
         INSERT INTO fill_diagnostic (
-            order_id, timestamp, cycle, pipeline,
+            order_id, prediction_id, timestamp, cycle, pipeline,
             decision_best_bid, decision_best_ask, decision_spread,
             decision_top_ask_size, decision_max_bet_2pct,
             response_best_bid, response_best_ask,
@@ -148,9 +161,10 @@ def record(
             filled_size, filled_avg_price,
             order_type, cushion, result,
             outcome, resolved_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         order_id,
+        prediction_id,
         datetime.now(timezone.utc).isoformat(),
         cycle,
         pipeline,

@@ -185,6 +185,59 @@ class TestOrphanedPredictions:
         assert result["status"] == "WARN"
         db.close()
 
+    def test_fill_diagnostic_entry_not_orphaned(self):
+        """Consciously-skipped predictions (thin book, low edge, etc.)
+        write to fill_diagnostic with their prediction_id. These are NOT
+        orphans — the trade was correctly declined. Added 2026-04-19 to
+        stop the false-positive orphan alerts we saw on perp pipelines."""
+        import os
+        from pipeline_integrity import _check_orphaned_predictions
+        import fill_diagnostic as fd
+
+        os.environ.pop("KILL_SWITCH", None)
+
+        db = _make_db()
+        db.execute(
+            "INSERT INTO predictions (id, market_id, agent, estimate, "
+            "cycle, conviction_score) "
+            "VALUES (1, 'm1', 'momentum', 0.65, 1, 3)"
+        )
+        fd.init_table(db)
+        fd.record(
+            db, pipeline="btc_5m", result="skipped_thin_book",
+            prediction_id=1, cycle=1,
+        )
+        result = _check_orphaned_predictions(db, "btc_5m", 1)
+        assert result["status"] == "OK", \
+            f"Expected OK when fill_diagnostic records skip, got {result}"
+        db.close()
+
+    def test_no_diag_and_no_blocker_still_orphan(self):
+        """Regression guard: with fill_diagnostic table present but no
+        matching row for this prediction, orphan is still flagged."""
+        import os
+        from pipeline_integrity import _check_orphaned_predictions
+        import fill_diagnostic as fd
+
+        os.environ.pop("KILL_SWITCH", None)
+
+        db = _make_db()
+        db.execute(
+            "INSERT INTO predictions (id, market_id, agent, estimate, "
+            "cycle, conviction_score) "
+            "VALUES (1, 'm1', 'momentum', 0.65, 1, 3)"
+        )
+        fd.init_table(db)
+        # Unrelated diagnostic row — filter must be on prediction_id
+        fd.record(
+            db, pipeline="btc_5m", result="skipped_thin_book",
+            prediction_id=999, cycle=1,
+        )
+        result = _check_orphaned_predictions(db, "btc_5m", 1)
+        assert result["status"] == "WARN", \
+            f"Expected WARN with no matching diag entry, got {result}"
+        db.close()
+
 
 class TestApiHealth:
     def test_ok(self):

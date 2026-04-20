@@ -155,12 +155,36 @@ def _check_orphaned_predictions(db, pipeline, cycle) -> dict:
         # system_state unavailable — fall through to legacy check
         pass
 
-    rows = db.execute("""
-        SELECT p.id, p.market_id, p.conviction_score
-        FROM predictions p
-        WHERE p.cycle = ? AND p.conviction_score >= 3
-        AND p.id NOT IN (SELECT prediction_id FROM orders WHERE cycle = ?)
-    """, (cycle, cycle)).fetchall()
+    # Build the skip-cross-reference. fill_diagnostic now carries
+    # prediction_id (added 2026-04-19), so any conv>=3 prediction that
+    # was consciously skipped for a recorded reason (thin-book, low-edge,
+    # cushion) can be distinguished from a genuinely silent failure.
+    diag_table_exists = db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name='fill_diagnostic'"
+    ).fetchone()
+
+    if diag_table_exists:
+        rows = db.execute("""
+            SELECT p.id, p.market_id, p.conviction_score
+            FROM predictions p
+            WHERE p.cycle = ? AND p.conviction_score >= 3
+              AND p.id NOT IN (
+                SELECT prediction_id FROM orders
+                WHERE cycle = ? AND prediction_id IS NOT NULL)
+              AND p.id NOT IN (
+                SELECT prediction_id FROM fill_diagnostic
+                WHERE cycle = ? AND prediction_id IS NOT NULL)
+        """, (cycle, cycle, cycle)).fetchall()
+    else:
+        rows = db.execute("""
+            SELECT p.id, p.market_id, p.conviction_score
+            FROM predictions p
+            WHERE p.cycle = ? AND p.conviction_score >= 3
+              AND p.id NOT IN (
+                SELECT prediction_id FROM orders
+                WHERE cycle = ? AND prediction_id IS NOT NULL)
+        """, (cycle, cycle)).fetchall()
 
     if rows:
         ids = [str(r[0]) for r in rows]

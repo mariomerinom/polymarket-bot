@@ -895,15 +895,21 @@ def compute_decision_stats(db):
 
 
 DECISIONS = [
-    {
-        "id": 1,
-        "decision": "Demote conv=4 to flat $75 (5m)",
-        "check": lambda s: s["conv4_bets"] >= 50 and s["conv4_wr"] < 60,
-        "describe": lambda s: (
-            f"conv=4 WR is {s['conv4_wr']}% over {s['conv4_bets']} bets "
-            f"(threshold: <60% at 50+)"
-        ),
-    },
+    # Decision #1 closed 2026-04-19 as OBSOLETE. The decision text said
+    # "demote conv=4 to flat $75," but by the time it triggered the live
+    # sizing was already flat $25 across all tiers (config.py::
+    # LIVE_BTC_CONVICTION_BETS = {3:25, 4:25, 5:25}). There is nothing to
+    # demote. If tiered live sizing is ever reinstated, re-activate this
+    # check. See GitHub decision #1 issue for context.
+    # {
+    #     "id": 1,
+    #     "decision": "Demote conv=4 to flat $75 (5m)",
+    #     "check": lambda s: s["conv4_bets"] >= 50 and s["conv4_wr"] < 60,
+    #     "describe": lambda s: (
+    #         f"conv=4 WR is {s['conv4_wr']}% over {s['conv4_bets']} bets "
+    #         f"(threshold: <60% at 50+)"
+    #     ),
+    # },
     {
         "id": 2,
         "decision": "Tighten 0.50-0.70 price bucket",

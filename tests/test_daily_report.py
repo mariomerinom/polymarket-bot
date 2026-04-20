@@ -261,20 +261,36 @@ def test_conviction_tier_analysis():
 
 # ── Decision alert tests ──────────────────────────────────────────────
 
+def test_decision_1_is_closed():
+    """Decision #1 ('Demote conv=4 to flat $75') was closed 2026-04-19
+    as obsolete — live BTC sizing is already flat $25 across all tiers,
+    so there's nothing to demote. This test guards against accidental
+    re-enablement without re-evaluating the decision logic.
+    """
+    assert not any(d["id"] == 1 for d in DECISIONS), \
+        "Decision #1 was closed as stale — re-enabling it requires " \
+        "re-evaluating the check logic against the current flat-sizing regime"
+
+
 def test_decision_alert_fires_when_ready():
-    """Decision alert fires when stats cross the threshold."""
+    """Decision alert fires when stats cross the threshold.
+    Uses Decision #6 (0.15-0.30 bucket) as the exemplar since
+    Decision #1 was closed 2026-04-19.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Create a DB with 60 conv=4 bets, only 30 wins (50% WR < 60% threshold)
+        # 25 predictions in 0.15-0.30 bucket, predicting NO (est<0.5).
+        # 20 markets resolve NO (outcome=0) = wins, 5 resolve YES = losses.
+        # Gives 80% WR > 65% threshold.
         markets = []
         predictions = []
-        for i in range(60):
+        for i in range(25):
             mid = f"m{i}"
-            outcome = 1 if i < 30 else 0  # 50% WR
-            markets.append({"id": mid, "price_yes": 0.45, "resolved": 1, "outcome": outcome})
+            outcome = 0 if i < 20 else 1  # predicting NO; NO wins 20 of 25
+            markets.append({"id": mid, "price_yes": 0.22, "resolved": 1, "outcome": outcome})
             predictions.append({
-                "market_id": mid, "estimate": 0.62,
+                "market_id": mid, "estimate": 0.22,
                 "predicted_at": f"2026-03-26T{10 + i // 60}:{i % 60:02d}:00",
-                "conviction_score": 4, "regime": "HIGH_VOL / TRENDING",
+                "conviction_score": 3, "regime": "MEDIUM_VOL / NEUTRAL",
             })
         db_path = _create_test_db(tmpdir, predictions, markets)
 
@@ -283,12 +299,12 @@ def test_decision_alert_fires_when_ready():
         stats = compute_decision_stats(db)
         db.close()
 
-        assert stats["conv4_bets"] == 60
-        assert stats["conv4_wr"] == 50.0
+        assert stats["bucket_15_30_bets"] == 25
+        assert stats["bucket_15_30_wr"] == 80.0
 
-        # Decision #1 should fire (conv4 >= 50 bets AND WR < 60%)
-        fired = [d for d in DECISIONS if d["id"] == 1 and d["check"](stats)]
-        assert len(fired) == 1, f"Decision #1 should fire, stats: {stats}"
+        # Decision #6 should fire (bucket_15_30 bets >= 20 AND WR > 65%)
+        fired = [d for d in DECISIONS if d["id"] == 6 and d["check"](stats)]
+        assert len(fired) == 1, f"Decision #6 should fire, stats: {stats}"
 
 
 def test_decision_alert_silent_when_monitoring():

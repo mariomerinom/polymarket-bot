@@ -609,6 +609,26 @@
         "reverted": "2026-04-09",
         "reason": "prior-day lag caused overcorrection on calm days; this version uses in-progress intraday range instead"
       }
+    },
+    {
+      "name": "bucket_15_30_monitor",
+      "description": "Monitor 0.15-0.30 price bucket — decision #6 triggered 2026-04-19 at 85.7% WR on 21 bets (threshold >65% at 20+). Sample is thin; registered as Monitoring until N reaches 50. No code change yet — if WR holds above 65% at 50+ bets, promote to conviction +1 boost in predict.py.",
+      "registered_at": "2026-04-19T16:00:00+00:00",
+      "pipeline": "btc_5m",
+      "status": "monitoring",
+      "min_sample": 50,
+      "revert_condition": "WR falls below 55% on 50+ bets — no shipment to revert",
+      "baseline": {
+        "bucket_bets": 21,
+        "bucket_wr": 85.7,
+        "threshold": ">65% at 20+",
+        "trigger_date": "2026-04-19",
+        "note": "From Decision #6 in daily_report.py::DECISIONS. No code change in this registration — will promote to conviction +1 bonus when sample reaches 50 with sustained WR."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
     }
   ]
 }
