@@ -41,6 +41,15 @@ The [BOTSY Kanban](https://github.com/users/mariomerinom/projects/1) is the live
 - **Check timestamps before acting.** Partition data by deploy date. Pre-change data dilutes post-change metrics.
 - **Graduation:** 200 resolved predictions with WR > breakeven → `gh issue create --label decision,strategy-lab`.
 
+## Shadow Experiments
+
+Low-risk experimentation pattern. Log what the alternative WOULD have done alongside real behavior, accumulate N observations, then decide whether to promote or revert. Dominant pattern in the codebase (7 instances as of Apr 2026).
+
+- **When to use, storage decisions, the five-step template, anti-patterns:** `docs/core/SHADOW_FRAMEWORK.md`
+- **Registration:** `docs/optimizations.json` with `status: "shadow"` — single source of truth for experiment lifecycle.
+- **Promotion gate:** 50-bet minimum (200+ for conviction-structure changes), pre-registered revert criteria, one-week minimum shadow duration, apples-to-apples comparison function defined before shipping.
+- **Learning from failures:** Four thin-sample over-promotions reverted in April 2026 (`mr_shadow_extreme`, `eth_mr_shadow_extreme`, `unified_extreme_estimate_shadow`, `shadow_vwap_meanrev`). Follow the doc.
+
 ## Bot Design
 
 - **No agent bias.** All directional bias from human macro config, not code.
@@ -63,6 +72,7 @@ The [BOTSY Kanban](https://github.com/users/mariomerinom/projects/1) is the live
 
 - **Terminal cheatsheet:** `./tools/cheatsheet.sh skills` — all skills, hooks, MCP tools, architecture rules
 - **Engineering lessons:** `docs/ops/ENGINEERING_LESSONS.md` — 15 rules from production incidents
+- **Shadow experiment guide:** `docs/core/SHADOW_FRAMEWORK.md` — pattern, storage options, promotion criteria
 - **Full doc map:** `docs/core/PRIMER.md` — system overview, repo map, all document locations
 - **Health check:** Use `/health-check` skill — checks CI, predictions, orders, circuit breaker, board state
 

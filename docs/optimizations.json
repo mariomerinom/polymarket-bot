@@ -611,6 +611,65 @@
       }
     },
     {
+      "name": "shadow_maker_phase_1",
+      "description": "Shadow maker Phase 1. Every conv>=3 prediction logs a hypothetical passive maker order (mid ± 0.25×spread) alongside the real taker decision. Measures fill rate, adverse selection, and shadow EHR. Goal: validate whether passive posting closes the 60-point adverse-selection gap seen in historical GTC+FOK live data (filled WR 35% vs unfilled WR 95%). Promotion to Phase 2 (real maker orders) gated on shadow_ehr > taker EHR on 200+ fills.",
+      "registered_at": "2026-04-16T00:00:00+00:00",
+      "pipeline": "btc_5m",
+      "status": "shadow",
+      "min_sample": 200,
+      "revert_condition": "shadow_ehr <= taker_ehr on 200+ resolved fills, OR fill_rate < 30% (maker orders don't fill often enough to matter)",
+      "baseline": {
+        "historical_gtc_fok_filled_wr": 35.3,
+        "historical_gtc_fok_unfilled_wr": 95.3,
+        "historical_live_taker_ehr": -0.149,
+        "first_shadow_day_btc_ehr": 0.023,
+        "first_shadow_day_eth_ehr": -0.099,
+        "first_shadow_day_date": "2026-04-18",
+        "spec": "docs/specs/spec_maker_mode.md",
+        "note": "Apr 18 first real data: BTC 19 filled at 52.6% adverse (shadow_ehr +0.023); ETH 36 filled at 63.9% adverse (shadow_ehr -0.099). BTC needs execution help, ETH has signal problem."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "shadow_conviction_scorer",
+      "description": "Shadow alt-conviction scorer running on every cycle across 11 pipelines. Parametrized via SHADOW_CONFIGS (config.py): each pipeline has its own max_edge, baseline_streak, strength function. Output stored in predictions.reasoning['shadow_generic_scorer'] as {strength, length_strength, magnitude_strength, conviction_tier, production_conviction, production_estimate, net_return_pct, realized_vol}. Daily report compares shadow tier vs production tier divergence.",
+      "registered_at": "2026-03-30T00:00:00+00:00",
+      "pipeline": "all",
+      "status": "shadow",
+      "min_sample": 200,
+      "revert_condition": "no graduation yet; shadow WR across tiers does not differentiate from production by >3pp on 200+ bets per pipeline",
+      "baseline": {
+        "pipelines_active": ["btc_5m", "eth_5m", "kalshi", "bybit", "hl", "eth_bybit", "eth_hl", "sol_bybit", "sol_hl", "doge_bybit", "doge_hl"],
+        "note": "Running since ~2026-03-30. Data is embedded in every prediction's reasoning JSON. analyze_shadow_conviction() in daily_report.py surfaces divergence counts. Previously-unregistered; registration added 2026-04-19 for catalog completeness."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "shadow_indicators_rsi_obv_vwap",
+      "description": "Shadow logging of three technical indicators (RSI-14, OBV slope, VWAP z-score) attached to every prediction via reasoning['shadow_rsi_14'/'shadow_obv_slope'/'shadow_vwap_zscore']. Purpose: post-hoc indicator-edge analysis without changing live trading. Two earlier promotions derived from this data were reverted (shadow_rsi_14_gate, shadow_obv_bucket_filter); standalone observation continues.",
+      "registered_at": "2026-03-30T00:00:00+00:00",
+      "pipeline": "all",
+      "status": "shadow",
+      "min_sample": 500,
+      "revert_condition": "no active revert — this is continuous observation; individual indicator-based optimizations carry their own revert criteria",
+      "baseline": {
+        "indicators_logged": ["rsi_14", "obv_slope", "vwap_zscore"],
+        "trigger": "RSI always; OBV only in 0.50-0.70 price bucket; VWAP z-score only in MEAN_REVERTING regime",
+        "related_reverts": ["shadow_rsi_14_gate", "shadow_obv_bucket_filter", "shadow_vwap_meanrev"],
+        "note": "Previously-unregistered; registration added 2026-04-19. Core observation continues — specific indicator-based gates spun off as separate optimizations each with their own baseline."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
       "name": "shadow_regime_relative_perps",
       "description": "Phase A of asset-relative regime redesign. SOL/DOGE spend 95%+ of cycles in absolute-threshold HIGH_VOL and are starved of trading activity. Log a parallel z-score-based regime (vs each asset's own 30d realized_vol distribution from asset_daily.db) without changing gating. After 7 days of shadow data, compare counterfactual WR on cycles that would have been reclassified.",
       "registered_at": "2026-04-19T18:40:00+00:00",
