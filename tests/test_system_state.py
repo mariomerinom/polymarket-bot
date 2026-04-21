@@ -236,6 +236,114 @@ class TestCanTrade:
             assert isinstance(b, str) and len(b) > 0
 
 
+class TestSignalEhrLiveGate:
+    """Auto-suspend live mode when 7d rolling signal EHR drifts negative.
+
+    Added 2026-04-21 after FAK pilot on btc_5m took −$159 on day 1 — the
+    signal EHR had silently drifted from +0.035 to −0.082 over 48h and
+    we didn't catch it in time. This gate would have prevented the pilot
+    from going live in the first place.
+    """
+
+    def _insert_predictions_with_outcomes(self, db, n, ehr_target, price=0.55):
+        """Create n conv>=3 predictions where the EHR equals ehr_target.
+
+        Uses predict_UP (estimate > 0.5) so the EHR formula becomes
+        (outcome - price). With fixed price, control wins/losses to
+        tune the EHR: target = win_rate - price.
+        """
+        from datetime import datetime, timezone, timedelta
+        # Fraction that win to produce target EHR
+        win_frac = max(0.0, min(1.0, price + ehr_target))
+        n_wins = int(round(n * win_frac))
+        for i in range(n):
+            ts_pred = (datetime.now(timezone.utc) - timedelta(hours=24 + i)).isoformat()
+            ts_res = (datetime.now(timezone.utc) - timedelta(hours=23 + i)).isoformat()
+            mid = f"sig_mkt_{i}"
+            outcome = 1 if i < n_wins else 0
+            db.execute(
+                "INSERT INTO markets (id, price_yes, resolved, outcome) "
+                "VALUES (?, ?, 1, ?)",
+                (mid, price, outcome),
+            )
+            db.execute(
+                "INSERT INTO predictions (market_id, agent, estimate, edge, "
+                "confidence, reasoning, predicted_at, cycle, "
+                "conviction_score, regime) "
+                "VALUES (?, 'm', 0.62, 0.12, 'high', 'x', ?, 1, 3, 'r')",
+                (mid, ts_pred),
+            )
+        db.commit()
+
+    def test_ehr_computed_for_all_modes(self, db, monkeypatch):
+        """EHR fields are populated regardless of mode (paper or live).
+        Only the BLOCKER firing depends on mode."""
+        from system_state import get_system_state
+        import system_state
+        self._insert_predictions_with_outcomes(db, n=60, ehr_target=-0.08)
+        # Force paper mode explicitly to isolate the field-computation path
+        monkeypatch.setattr(system_state, "_trading_enabled_for",
+                            lambda name: False)
+        state = get_system_state(db, "btc_5m")
+        assert state.signal_ehr_n >= 50
+        assert state.signal_ehr_7d is not None
+        assert state.signal_ehr_7d < 0
+
+    def test_live_with_negative_ehr_blocks(self, db, monkeypatch):
+        """Patch is_pipeline_live to simulate live mode, verify blocker."""
+        from system_state import get_system_state
+        import system_state
+        self._insert_predictions_with_outcomes(db, n=60, ehr_target=-0.08)
+        monkeypatch.setattr(system_state, "_trading_enabled_for",
+                            lambda name: True)
+        state = get_system_state(db, "btc_5m")
+        assert state.trading_enabled is True
+        assert state.signal_ehr_7d < 0
+        assert state.signal_ehr_n >= 50
+        # Blocker must fire
+        blocker_msg = " ".join(state.blockers)
+        assert "signal_ehr_negative_7d" in blocker_msg
+        assert state.can_trade is False
+
+    def test_positive_ehr_does_not_block(self, db, monkeypatch):
+        """Live mode + positive 7d EHR → no EHR blocker."""
+        from system_state import get_system_state
+        import system_state
+        self._insert_predictions_with_outcomes(db, n=60, ehr_target=+0.05)
+        monkeypatch.setattr(system_state, "_trading_enabled_for",
+                            lambda name: True)
+        state = get_system_state(db, "btc_5m")
+        assert state.signal_ehr_7d is not None
+        assert state.signal_ehr_7d >= 0
+        blocker_msg = " ".join(state.blockers)
+        assert "signal_ehr_negative_7d" not in blocker_msg
+
+    def test_insufficient_sample_does_not_block(self, db, monkeypatch):
+        """Live + negative EHR but only 30 bets (< 50) → no blocker."""
+        from system_state import get_system_state
+        import system_state
+        self._insert_predictions_with_outcomes(db, n=30, ehr_target=-0.10)
+        monkeypatch.setattr(system_state, "_trading_enabled_for",
+                            lambda name: True)
+        state = get_system_state(db, "btc_5m")
+        assert state.signal_ehr_n == 30
+        blocker_msg = " ".join(state.blockers)
+        assert "signal_ehr_negative_7d" not in blocker_msg
+
+    def test_paper_mode_exempt_from_ehr_gate(self, db, monkeypatch):
+        """Paper mode: EHR-negative does not block. Paper should keep
+        generating predictions for monitoring even when signal weakens."""
+        from system_state import get_system_state
+        import system_state
+        monkeypatch.setattr(system_state, "_trading_enabled_for",
+                            lambda name: False)
+        self._insert_predictions_with_outcomes(db, n=100, ehr_target=-0.15)
+        state = get_system_state(db, "btc_5m")
+        assert state.trading_enabled is False
+        blocker_msg = " ".join(state.blockers)
+        assert "signal_ehr_negative_7d" not in blocker_msg
+
+
 class TestActivityCounters:
     """Counters that feed silent-failure detection."""
 

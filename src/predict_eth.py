@@ -170,6 +170,16 @@ def store_prediction_eth(db, market_id, signal, regime, cycle, predicted_at=None
         "conviction_tier": conviction,
         "mkt_price": mkt_price,
     }
+
+    # Shadow regime relative (Phase A, added 2026-04-21): log self-referential
+    # z-score regime for spot ETH mirroring btc_5m + SOL/DOGE pattern.
+    try:
+        from relative_regime import compute_shadow_regime
+        reasoning_data["shadow_regime_relative"] = compute_shadow_regime(
+            candles, "ETH")
+    except Exception as _e:
+        reasoning_data["shadow_regime_relative"] = {"error": str(_e)}
+
     if consensus:
         reasoning_data["consensus"] = consensus
     if liquidity:

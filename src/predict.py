@@ -500,6 +500,19 @@ def store_prediction(db, market_id, signal, regime, cycle, predicted_at=None,
         "judge": judge_state,
         "mkt_price": mkt_price,
     }
+
+    # Shadow regime relative (Phase A, added 2026-04-21): log the asset's
+    # own-distribution z-score regime alongside the absolute one. Mirrors
+    # SOL/DOGE pattern shipped 2026-04-19. BTC's HIGH_VOL/NEUTRAL cycles
+    # may reclassify to MEDIUM or LOW under self-referential thresholds,
+    # unlocking tradeable activity. After 7 days of shadow data, compare
+    # counterfactual WR on reclassified cycles (Phase B).
+    try:
+        from relative_regime import compute_shadow_regime
+        reasoning_data["shadow_regime_relative"] = compute_shadow_regime(
+            candles, "BTC")
+    except Exception as _e:
+        reasoning_data["shadow_regime_relative"] = {"error": str(_e)}
     if sibling_context:
         reasoning_data["sibling_5m"] = sibling_context
         direction = signal.get("direction", "")

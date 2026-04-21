@@ -611,6 +611,29 @@
       }
     },
     {
+      "name": "signal_ehr_live_gate",
+      "description": "Auto-suspend live mode when 7-day rolling signal EHR drifts below 0 on 50+ bets. Protective circuit breaker one abstraction layer above the 5-loss / $300-daily rails. Added 2026-04-21 after FAK pilot on btc_5m took −$159 on day 1 — the signal EHR had silently drifted from +0.035 to −0.082 over 48h and we didn't catch it before going live. Paper mode is unaffected (we want paper to keep generating predictions for monitoring). Implemented in src/system_state.py::get_system_state — a new blocker in state.blockers when the conditions hold.",
+      "registered_at": "2026-04-21T19:30:00+00:00",
+      "pipeline": "all",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "if the gate fires when signal_ehr_7d between -0.005 and 0 (flapping at threshold) causing frequent live/paper toggles, add a hysteresis band (e.g., re-enable only when ehr >= +0.01 for 24h)",
+      "baseline": {
+        "threshold": 0.0,
+        "min_sample": 50,
+        "fak_pilot_loss": -159,
+        "fak_pilot_fill_rate": 0.9,
+        "fak_pilot_filled_wr": 0.11,
+        "signal_ehr_at_activation": -0.082,
+        "signal_ehr_48h_prior": 0.035,
+        "note": "FAK fill rate validated at 90% (success). FAK filled WR 11% — execution improvement does not rescue a negative-EHR signal. This gate ensures future live activations require a verified-healthy signal."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
       "name": "shadow_maker_phase_1",
       "description": "Shadow maker Phase 1. Every conv>=3 prediction logs a hypothetical passive maker order (mid ± 0.25×spread) alongside the real taker decision. Measures fill rate, adverse selection, and shadow EHR. Goal: validate whether passive posting closes the 60-point adverse-selection gap seen in historical GTC+FOK live data (filled WR 35% vs unfilled WR 95%). Promotion to Phase 2 (real maker orders) gated on shadow_ehr > taker EHR on 200+ fills.",
       "registered_at": "2026-04-16T00:00:00+00:00",
@@ -671,7 +694,7 @@
     },
     {
       "name": "shadow_regime_relative_perps",
-      "description": "Phase A of asset-relative regime redesign. SOL/DOGE spend 95%+ of cycles in absolute-threshold HIGH_VOL and are starved of trading activity. Log a parallel z-score-based regime (vs each asset's own 30d realized_vol distribution from asset_daily.db) without changing gating. After 7 days of shadow data, compare counterfactual WR on cycles that would have been reclassified.",
+      "description": "Phase A of asset-relative regime redesign. SOL/DOGE spend 95%+ of cycles in absolute-threshold HIGH_VOL and are starved of trading activity. Log a parallel z-score-based regime (vs each asset's own 30d realized_vol distribution from asset_daily.db) without changing gating. After 7 days of shadow data, compare counterfactual WR on cycles that would have been reclassified. Extended to BTC/ETH spot on 2026-04-21 (predict.py, predict_eth.py) after observing BTC 5m's signal EHR drift and recognizing the same calibration-drift pattern.",
       "registered_at": "2026-04-19T18:40:00+00:00",
       "pipeline": "perps",
       "status": "shadow",

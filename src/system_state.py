@@ -41,6 +41,14 @@ CONSECUTIVE_LOSS_COOLDOWN_HOURS = 8
 # orders are placed and trading is enabled, flag as unhealthy.
 SILENT_FAILURE_SIGNAL_THRESHOLD = 3
 
+# Signal-EHR live gate (added 2026-04-21 after FAK pilot on btc_5m took
+# −$159 on day 1 — signal EHR had quietly drifted from +0.035 to −0.082
+# over 48h before going live). When live-mode, require 7-day rolling
+# signal EHR >= threshold on a minimum sample before allowing trades.
+# Paper mode is unaffected — the gate only blocks LIVE trading.
+SIGNAL_EHR_LIVE_GATE_THRESHOLD = 0.0  # strictly require non-negative
+SIGNAL_EHR_LIVE_GATE_MIN_SAMPLE = 50  # minimum bets in 7d window to gate
+
 # Stale prediction threshold for the health check.
 STALE_PREDICTION_SECONDS = 15 * 60
 
@@ -123,6 +131,10 @@ class SystemState:
     orders_today: int
     qualifying_signals_today: int
 
+    # Signal health — rolling 7d EHR, used for live-mode auto-gating
+    signal_ehr_7d: Optional[float]
+    signal_ehr_n: int
+
     # Final answers — the ONLY fields callers should branch on
     can_trade: bool
     blockers: List[str]
@@ -147,6 +159,36 @@ def _parse_ts(ts: Optional[str]) -> Optional[datetime]:
 
 def _today_prefix() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _compute_signal_ehr_7d(db) -> tuple[Optional[float], int]:
+    """Compute the 7-day rolling signal EHR for this pipeline's DB.
+
+    Returns (ehr, n). ehr is None if n < 5 (insufficient data to report).
+    Matches the formula in daily_report.analyze_ehr — signal EHR for
+    conv>=3 predictions: avg((1*outcome - price_yes) if predict_YES else
+    ((1-outcome) - (1-price_yes))) for resolved markets in last 7d.
+
+    Safe: returns (None, 0) on any error; never raises.
+    """
+    try:
+        if not _table_exists(db, "predictions") or not _table_exists(db, "markets"):
+            return None, 0
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        row = db.execute("""
+            SELECT COUNT(*) as n,
+              AVG(CASE WHEN p.estimate > 0.5 THEN (1.0*m.outcome - m.price_yes)
+                   ELSE ((1.0 - m.outcome) - (1.0 - m.price_yes)) END) as ehr
+            FROM predictions p JOIN markets m ON p.market_id = m.id
+            WHERE p.conviction_score >= 3 AND m.resolved = 1
+              AND date(p.predicted_at) >= date(?, '-7 days')
+              AND date(p.predicted_at) <= ?
+        """, (today, today)).fetchone()
+        if not row or not row[0] or row[0] < 5:
+            return None, 0
+        return round(row[1], 4) if row[1] is not None else None, int(row[0])
+    except Exception:
+        return None, 0
 
 
 def _is_perp(pipeline_name: str) -> bool:
@@ -384,6 +426,9 @@ def get_system_state(db, pipeline_name: str) -> SystemState:
         _compute_prediction_activity(db)
     )
 
+    # Signal health — rolling 7d EHR
+    signal_ehr_7d, signal_ehr_n = _compute_signal_ehr_7d(db)
+
     # Final answer: can we trade?
     blockers: List[str] = []
     if kill_switch:
@@ -395,6 +440,20 @@ def get_system_state(db, pipeline_name: str) -> SystemState:
     if consec >= CONSECUTIVE_LOSS_MAX:
         blockers.append(
             f"consecutive_loss_breaker ({consec} >= {CONSECUTIVE_LOSS_MAX})"
+        )
+    # Signal-EHR live gate: auto-suspend live mode when 7d rolling EHR
+    # has drifted negative on a meaningful sample. Paper mode bypasses
+    # this — we want paper to keep generating predictions for monitoring
+    # even when the signal is weakened. Added 2026-04-21.
+    if (
+        trading_enabled
+        and signal_ehr_7d is not None
+        and signal_ehr_n >= SIGNAL_EHR_LIVE_GATE_MIN_SAMPLE
+        and signal_ehr_7d < SIGNAL_EHR_LIVE_GATE_THRESHOLD
+    ):
+        blockers.append(
+            f"signal_ehr_negative_7d ({signal_ehr_7d:+.4f} over "
+            f"{signal_ehr_n} bets, threshold >={SIGNAL_EHR_LIVE_GATE_THRESHOLD:+.2f})"
         )
     can_trade = len(blockers) == 0
 
@@ -444,6 +503,8 @@ def get_system_state(db, pipeline_name: str) -> SystemState:
         last_qualifying_signal_at=last_qualifying_at,
         orders_today=orders_today,
         qualifying_signals_today=qualifying_today,
+        signal_ehr_7d=signal_ehr_7d,
+        signal_ehr_n=signal_ehr_n,
         can_trade=can_trade,
         blockers=blockers,
         is_healthy=is_healthy,
