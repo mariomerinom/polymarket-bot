@@ -6,6 +6,7 @@
 2. **Always push after making changes.** A change that isn't on GitHub doesn't exist.
 3. **Expect CI conflicts on push.** Always `git pull --rebase` before pushing. If DBs conflict, code changes win — CI regenerates data.
 4. **The deployed system is canonical.** If a local query disagrees with live, live is right.
+5. **Source changes need an engine restart — automated via the post-merge hook.** See `docs/ops/DEPLOYMENT.md`. Python caches imports at process start; pushing code is not enough. The VPS-side `post-merge` hook auto-restarts botsy when `src/` or `config/` change. Data-only commits do not trigger restart. Check `logs/deploy_hook.log` on VPS to verify.
 
 ## Development Process
 
@@ -72,6 +73,7 @@ Low-risk experimentation pattern. Log what the alternative WOULD have done along
 
 - **Terminal cheatsheet:** `./tools/cheatsheet.sh skills` — all skills, hooks, MCP tools, architecture rules
 - **Engineering lessons:** `docs/ops/ENGINEERING_LESSONS.md` — 15 rules from production incidents
+- **Deployment & auto-restart hook:** `docs/ops/DEPLOYMENT.md` — how source changes reach the engine
 - **Shadow experiment guide:** `docs/core/SHADOW_FRAMEWORK.md` — pattern, storage options, promotion criteria
 - **Full doc map:** `docs/core/PRIMER.md` — system overview, repo map, all document locations
 - **Health check:** Use `/health-check` skill — checks CI, predictions, orders, circuit breaker, board state

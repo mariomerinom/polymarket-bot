@@ -1,0 +1,73 @@
+#!/bin/bash
+# post-merge git hook — auto-restart botsy when source/config changes land.
+#
+# WHY: Python caches imports at process start. When code lands via git pull
+# (either manual or via engine's own git_commit_loop), the running engine
+# keeps serving the OLD in-memory modules until restarted. On 2026-04-21 we
+# shipped a signal-EHR protective gate + shadow regime logging and had a
+# ~4h silent no-op window because the engine had cached the pre-deploy code.
+#
+# WHAT: After every merge, compare changed files. If any live-code paths
+# changed, restart the botsy systemd unit. Data/doc/test-only merges skip.
+#
+# INSTALL: tools/install_deploy_hook.sh (run once on VPS)
+# REMOVE:  rm .git/hooks/post-merge
+#
+# OUTPUT: writes to both stdout (visible to whoever ran the pull) and
+#         /home/botuser/polymarket-bot/logs/deploy_hook.log
+
+set -u
+
+HOOK_LOG="/home/botuser/polymarket-bot/logs/deploy_hook.log"
+
+log() {
+    local msg="[deploy-hook $(date -u +'%Y-%m-%dT%H:%M:%SZ')] $*"
+    echo "$msg"
+    echo "$msg" >> "$HOOK_LOG" 2>/dev/null || true
+}
+
+# Detect the just-merged range. $GIT_DIR/ORIG_HEAD is the pre-merge ref.
+OLD_HEAD="${1:-$(git rev-parse --verify --quiet ORIG_HEAD 2>/dev/null || echo '')}"
+NEW_HEAD="$(git rev-parse HEAD)"
+
+if [ -z "$OLD_HEAD" ] || [ "$OLD_HEAD" = "$NEW_HEAD" ]; then
+    log "no-op merge ($NEW_HEAD) — skipping restart"
+    exit 0
+fi
+
+# Files changed between old and new HEAD
+CHANGED="$(git diff --name-only "$OLD_HEAD" "$NEW_HEAD" 2>/dev/null)"
+if [ -z "$CHANGED" ]; then
+    log "no changed files between $OLD_HEAD..$NEW_HEAD — skipping restart"
+    exit 0
+fi
+
+# Paths that require an engine restart when modified.
+#   src/           any runtime Python
+#   config/        pipeline modes, bet sizes, etc.
+#   requirements*  dependency changes
+# Paths that do NOT require restart (engine re-reads them per cycle or
+# per request, or they are irrelevant to the running process):
+#   data/          databases — engine writes these, no re-read needed
+#   docs/          pure documentation
+#   tests/         not imported by engine
+#   .github/       CI only
+#   CLAUDE.md      documentation
+#   anything starting with . or README
+
+if echo "$CHANGED" | grep -qE '^(src/|config/|requirements)'; then
+    log "source changes detected ($OLD_HEAD..$NEW_HEAD):"
+    echo "$CHANGED" | grep -E '^(src/|config/|requirements)' | \
+        head -10 | sed 's/^/  /' | tee -a "$HOOK_LOG"
+    log "restarting botsy..."
+    if sudo -n /bin/systemctl restart botsy 2>&1 | tee -a "$HOOK_LOG"; then
+        log "botsy restart issued"
+    else
+        log "ERROR: sudo systemctl restart botsy failed — manual restart needed"
+        exit 0  # non-zero would abort the merge; we don't want that
+    fi
+else
+    log "no source changes in merge ($(echo "$CHANGED" | wc -l | tr -d ' ') file(s)) — skipping restart"
+fi
+
+exit 0
