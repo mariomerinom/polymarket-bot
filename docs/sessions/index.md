@@ -2,6 +2,7 @@
 
 Working session summaries — what was built, shipped, learned, and kicked forward.
 
+- [2026-04-20](2026-04-20.md) — FAK live pilot activated on btc_5m, ETH VWAP graduated, SOL relative regime shadow shipped, shadow framework formalized (4 commits)
 - [2026-04-18](2026-04-18.md) — btc_15m sunset (decision #7 executed), orphan alert made circuit-breaker-aware, Polymarket shadow resolver shipped
 - [2026-04-17](2026-04-17.md) — Kalshi paused (architectural strike-reachability bug), perp HIGH_VOL gate expanded, intraday range gate shipped for BTC+ETH 5m
 - [2026-04-16](2026-04-16.md) — Memory leak root-caused (glibc arenas), shadow maker Phase 1 shipped, EHR baseline (BTC +0.102 top 2%), consolidated 12-pipeline report
