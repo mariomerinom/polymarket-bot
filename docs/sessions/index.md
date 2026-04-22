@@ -2,6 +2,7 @@
 
 Working session summaries — what was built, shipped, learned, and kicked forward.
 
+- [2026-04-21](2026-04-21.md) — FAK pilot day-1 postmortem (−$159, 11% WR), signal-EHR live gate added (layer 4), auto-restart hook deployed, shadow regime extended to BTC/ETH spot (3 commits)
 - [2026-04-20](2026-04-20.md) — FAK live pilot activated on btc_5m, ETH VWAP graduated, SOL relative regime shadow shipped, shadow framework formalized (4 commits)
 - [2026-04-18](2026-04-18.md) — btc_15m sunset (decision #7 executed), orphan alert made circuit-breaker-aware, Polymarket shadow resolver shipped
 - [2026-04-17](2026-04-17.md) — Kalshi paused (architectural strike-reachability bug), perp HIGH_VOL gate expanded, intraday range gate shipped for BTC+ETH 5m
