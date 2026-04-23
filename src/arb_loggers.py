@@ -174,24 +174,34 @@ def log_divergences_for_cycle(db, pipeline_name: str, markets: list,
         _log.debug(f"arb_divergence.init_table failed: {e}")
         return 0
 
-    # Get candles: caller-provided > disk snapshot fallback
-    if candles is None:
-        candles = _get_candles_from_disk_snapshot(asset)
+    # Dual candle sources with different schemas:
+    #
+    # (a) caller-passed `candles` (Kraken/Coinbase via candle_fetch_fn in
+    #     the prediction pipeline): have `time` as HH:MM string but NO
+    #     `timestamp_ms`. Good for regime + realized_vol (which use
+    #     sequential closes, not absolute timestamps).
+    #
+    # (b) engine's persisted Bybit buffer (data/candle_buffer.json): has
+    #     `timestamp_ms` at 5m boundaries, exactly what _get_candle_open_at
+    #     needs for window-aligned open_spot lookup.
+    #
+    # Use both: (a) for stats, (b) for the open_spot alignment.
+    stats_candles = candles if candles else _get_candles_from_disk_snapshot(asset)
+    aligned_candles = _get_candles_from_disk_snapshot(asset)
 
     current_spot = None
     bybit_source = None
-    if candles:
+    if stats_candles:
         try:
-            # Last candle's close is the most recent price we have
-            current_spot = float(candles[-1].get("close"))
-            bybit_source = "last_candle"
+            current_spot = float(stats_candles[-1].get("close"))
+            bybit_source = "caller" if candles else "disk_snapshot"
         except Exception:
             pass
 
-    closes = [c.get("close") for c in candles if c.get("close") is not None]
+    closes = [c.get("close") for c in stats_candles if c.get("close") is not None]
     realized_vol = arb_divergence.compute_realized_vol(closes)
 
-    regime_label, regime_autocorr, regime_vol = _get_5m_regime(candles)
+    regime_label, regime_autocorr, regime_vol = _get_5m_regime(stats_candles)
     daily_regime_label, daily_range_zscore = _get_daily_regime(asset)
 
     now = datetime.now(timezone.utc)
@@ -253,8 +263,8 @@ def log_divergences_for_cycle(db, pipeline_name: str, markets: list,
             ttm_remaining = (window_close - now).total_seconds()
             window_has_opened = 1 if ttm_remaining < window_total else 0
 
-            # Open spot from the aligned Bybit 5m candle.
-            open_spot = _get_candle_open_at(candles, window_open)
+            # Open spot from the aligned Bybit 5m candle (has timestamp_ms).
+            open_spot = _get_candle_open_at(aligned_candles, window_open)
 
             # Compute fair_p
             fair_p = None
