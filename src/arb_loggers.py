@@ -77,35 +77,51 @@ def _get_clob_tokens(market_id: str):
         return None
 
 
-def _get_candle_open_at(candles: list, window_open: datetime) -> Optional[float]:
-    """Price at window_open from confirmed Bybit 5m candles.
+def _get_candle_open_at(candles: list, window_open: datetime,
+                        max_staleness_seconds: int = 15 * 60) -> Optional[float]:
+    """Approximate price at window_open from confirmed Bybit 5m candles.
 
-    The Bybit 5m candle with `timestamp_ms = window_open` starts at the
-    window open, but while the market is in-flight that candle is still
-    PENDING (not in the confirmed buffer / disk snapshot). We can only
-    see it after it confirms at window close — too late.
+    Ideal: the 5m candle starting at (window_open - 5min) has `close`
+    equal to price at window_open. In continuous trading, close of
+    candle N = open of candle N+1, minus sub-second microstructure noise.
 
-    Workaround: the candle IMMEDIATELY BEFORE (window_open - 5min) has
-    its `close` price AT window_open. In continuous trading the close
-    of candle N equals the open of candle N+1 (ignoring microstructure).
+    Reality: the disk snapshot has gaps — engine restarts drop the
+    then-pending candle, leaving missing slots. So exact-prior lookup
+    fails ~30% of the time.
 
-    So we look for the candle with `timestamp_ms = window_open - 5min`
-    and use its CLOSE as the open-of-window price.
+    Workaround: find the most recent confirmed candle with
+    `timestamp_ms <= window_open - 5min`, and use its close. Within
+    max_staleness_seconds of the target, accept it. This trades a bit
+    of price accuracy (a few minutes of staleness) for much higher
+    coverage — fine for Phase 0 observation.
 
-    Returns None if no aligned prior candle is in the buffer.
+    Returns None if no candle within the staleness window exists.
     """
     if not candles:
         return None
     target_ms = int(window_open.timestamp() * 1000)
-    # Look back 5 minutes (300_000 ms) — the candle starting there ends at target_ms
-    prior_ms = target_ms - 300_000
+    # Candles at or before window_open. We sort descending by timestamp
+    # and take the first whose timestamp is <= target_ms.
+    candidates = []
     for c in candles:
         cts = c.get("timestamp_ms")
         if cts is None:
             continue
-        if abs(int(cts) - prior_ms) < 60_000:
-            return float(c.get("close", 0)) or None
-    return None
+        cts_int = int(cts)
+        # The candle's CLOSE corresponds to (timestamp_ms + 300_000). We
+        # want candles whose close was at or before window_open.
+        if cts_int + 300_000 <= target_ms + 60_000:  # 60s tolerance
+            candidates.append((cts_int, c))
+    if not candidates:
+        return None
+    # Pick the one whose close is closest to (i.e., just before) window_open
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    latest_ts, latest_c = candidates[0]
+    # Staleness check: don't use a candle more than 15 min old
+    close_ms = latest_ts + 300_000
+    if target_ms - close_ms > max_staleness_seconds * 1000:
+        return None
+    return float(latest_c.get("close", 0)) or None
 
 
 def _get_daily_regime(asset: str):
