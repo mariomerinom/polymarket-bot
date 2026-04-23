@@ -136,7 +136,12 @@ def run_polymarket_pipeline(
     try:
         from arb_loggers import log_divergences_for_cycle
         if markets:
-            n_arb = log_divergences_for_cycle(db, pipeline_name, markets, cycle)
+            _arb_candles = None
+            if price_data and price_data.get("candles"):
+                _arb_candles = price_data["candles"]
+            n_arb = log_divergences_for_cycle(
+                db, pipeline_name, markets, cycle, candles=_arb_candles
+            )
             if n_arb:
                 print(f"    [arb_divergence] logged {n_arb} market(s)")
     except Exception as e:

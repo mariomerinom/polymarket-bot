@@ -28,50 +28,29 @@ _CANDLE_BUFFER_SYMBOLS = {
 }
 
 
-def _get_candle_buffer_candles(asset: str):
-    """Return the engine's rolling 5m candles for the asset. Empty on miss.
+def _get_candles_from_disk_snapshot(asset: str):
+    """Read the engine's persisted candle buffer from disk.
 
-    We import lazily because the engine constructs the buffer at boot;
-    importing at module load would fail in unit tests.
+    The engine saves `data/candle_buffer.json` every 60 seconds. For arb
+    logging (observational, not trading-path), up-to-60s staleness is
+    acceptable. Cleaner than reaching into engine module state.
+
+    Returns a list of candle dicts (oldest first). Empty on miss.
     """
     try:
-        # The engine stores the candle buffer as a global-ish singleton.
-        # Find it via the engine module if available.
-        import sys
-        engine_mod = sys.modules.get("botsy_engine")
-        if engine_mod is None:
+        import json
+        snap_path = Path(__file__).parent.parent / "data" / "candle_buffer.json"
+        if not snap_path.exists():
             return []
-        engine_obj = getattr(engine_mod, "_engine_singleton", None)
-        if engine_obj is None:
-            return []
+        snap = json.loads(snap_path.read_text())
         symbol = _CANDLE_BUFFER_SYMBOLS.get(asset)
         if symbol is None:
             return []
-        return engine_obj.candle_buffer.get_candles(symbol, "5")
+        # Key format: "{symbol}:{tf}" per candle_buffer.save_to_disk
+        bufs = snap.get("buffers", {})
+        return bufs.get(f"{symbol}:5", [])
     except Exception:
         return []
-
-
-def _get_pending_candle(asset: str):
-    """Return the engine's in-progress 5m candle (open, high, low, latest close).
-
-    The in-progress candle is the right source for `current_spot` — it
-    carries the live price updated by WS ticks. Returns None on miss.
-    """
-    try:
-        import sys
-        engine_mod = sys.modules.get("botsy_engine")
-        if engine_mod is None:
-            return None
-        engine_obj = getattr(engine_mod, "_engine_singleton", None)
-        if engine_obj is None:
-            return None
-        symbol = _CANDLE_BUFFER_SYMBOLS.get(asset)
-        if symbol is None:
-            return None
-        return engine_obj.candle_buffer._pending.get((symbol, "5"))
-    except Exception:
-        return None
 
 
 def _get_orderbook_mid(token_id: str):
@@ -167,7 +146,7 @@ def _get_5m_regime(candles: list):
 
 
 def log_divergences_for_cycle(db, pipeline_name: str, markets: list,
-                              cycle: int) -> int:
+                              cycle: int, candles: Optional[list] = None) -> int:
     """Iterate markets, log an arb_divergence row for each eligible one.
 
     Returns the number of rows inserted. Swallows all errors — this is a
@@ -179,6 +158,10 @@ def log_divergences_for_cycle(db, pipeline_name: str, markets: list,
         pipeline_name: e.g. "btc_5m", "eth_5m"
         markets: list of market dicts (id, question, end_date, price_yes, ...)
         cycle: current cycle number
+        candles: optional list of candle dicts to use. If None, fall back
+                 to reading the engine's persisted candle_buffer.json
+                 snapshot (up-to-60s stale, acceptable for observational
+                 logging).
     """
     if not markets:
         return 0
@@ -191,38 +174,17 @@ def log_divergences_for_cycle(db, pipeline_name: str, markets: list,
         _log.debug(f"arb_divergence.init_table failed: {e}")
         return 0
 
-    # Precompute shared state once per cycle
-    candles = _get_candle_buffer_candles(asset)
-    pending = _get_pending_candle(asset)
-
-    # Build a combined candle list that includes the pending candle. The
-    # in-progress 5m candle aligns to the just-started window; its `open`
-    # IS the window-open price we need for currently-in-flight markets.
-    candles_with_pending = list(candles) if candles else []
-    if pending is not None:
-        try:
-            # Only append if pending has a timestamp and it's newer than
-            # the last confirmed candle (avoid duplicates)
-            p_ts = pending.get("timestamp_ms")
-            last_ts = (candles_with_pending[-1].get("timestamp_ms")
-                       if candles_with_pending else None)
-            if p_ts and (last_ts is None or int(p_ts) > int(last_ts)):
-                candles_with_pending.append(pending)
-        except Exception:
-            pass
+    # Get candles: caller-provided > disk snapshot fallback
+    if candles is None:
+        candles = _get_candles_from_disk_snapshot(asset)
 
     current_spot = None
     bybit_source = None
-    if pending is not None:
+    if candles:
         try:
-            current_spot = float(pending.get("close") or pending.get("open"))
-            bybit_source = "pending"
-        except Exception:
-            pass
-    if current_spot is None and candles:
-        try:
+            # Last candle's close is the most recent price we have
             current_spot = float(candles[-1].get("close"))
-            bybit_source = "last_confirmed"
+            bybit_source = "last_candle"
         except Exception:
             pass
 
@@ -291,10 +253,8 @@ def log_divergences_for_cycle(db, pipeline_name: str, markets: list,
             ttm_remaining = (window_close - now).total_seconds()
             window_has_opened = 1 if ttm_remaining < window_total else 0
 
-            # Open spot from the aligned Bybit 5m candle. Check both
-            # confirmed candles AND the pending in-progress candle — for
-            # windows that just opened, the aligned candle is still pending.
-            open_spot = _get_candle_open_at(candles_with_pending, window_open)
+            # Open spot from the aligned Bybit 5m candle.
+            open_spot = _get_candle_open_at(candles, window_open)
 
             # Compute fair_p
             fair_p = None
