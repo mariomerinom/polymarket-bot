@@ -128,6 +128,20 @@ def run_polymarket_pipeline(
     except Exception as e:
         print(f"    [shadow] skipped: {e}")
 
+    # 6b. Arb divergence logger (Phase 0 of cross-venue arb plan,
+    # shipped 2026-04-23). Per-market Polymarket ↔ Bybit divergence
+    # observation. Zero trading. Wrapped in try/except so it cannot
+    # affect the hot path. See docs/plans/groovy-squishing-scott.md
+    # and optimizations.json::arb_divergence_logger for the plan.
+    try:
+        from arb_loggers import log_divergences_for_cycle
+        if markets:
+            n_arb = log_divergences_for_cycle(db, pipeline_name, markets, cycle)
+            if n_arb:
+                print(f"    [arb_divergence] logged {n_arb} market(s)")
+    except Exception as e:
+        print(f"    [arb_divergence] skipped: {e}")
+
     # 7. Trade execution — mode resolved per-pipeline, NOT from global
     if is_kill_switched():
         print(f"[{label} 3b/5] Trading KILLED — kill switch active")

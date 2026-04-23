@@ -611,6 +611,24 @@
       }
     },
     {
+      "name": "arb_divergence_logger",
+      "description": "Phase 0 of Polymarket ↔ Bybit cross-venue arbitrage (plan: docs/plans/groovy-squishing-scott.md, frame: docs/core/PIVOT_OPTIONS.md). Logs per-cycle divergence between Polymarket market mid-price on 'Up or Down' 5m/15m binary markets and the Bybit-derived fair probability (Φ-based intra-window conditional). Zero trading. Regime-aware logging (5m regime + daily regime stamped on every row). Decision gate requires BOTH ≥48h observation AND regime coverage (≥4 vol×trend regimes with ≥100 rows each + ≥2 daily-regime buckets) before Phase 1 consideration.",
+      "registered_at": "2026-04-23T20:00:00+00:00",
+      "pipeline": "btc_5m+eth_5m",
+      "status": "shadow",
+      "min_sample": 100000,
+      "revert_condition": "after regime coverage met: no regime shows ≥5 exploitable divergences/day AND persistence < 1 cycle — in that case the thesis is dead",
+      "baseline": {
+        "observation_period_start": "2026-04-23",
+        "market_classes_covered": ["5m", "15m"],
+        "note": "Longer-duration market classes (hourly/daily) deferred — current fetch_markets only ingests 5m/15m 'Up or Down' markets. If Phase 0 shows edge on 5m/15m, longer-duration will be added as a follow-up ingestion expansion."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
       "name": "signal_ehr_live_gate",
       "description": "Auto-suspend live mode when 7-day rolling signal EHR drifts below 0 on 50+ bets. Protective circuit breaker one abstraction layer above the 5-loss / $300-daily rails. Added 2026-04-21 after FAK pilot on btc_5m took −$159 on day 1 — the signal EHR had silently drifted from +0.035 to −0.082 over 48h and we didn't catch it before going live. Paper mode is unaffected (we want paper to keep generating predictions for monitoring). Implemented in src/system_state.py::get_system_state — a new blocker in state.blockers when the conditions hold.",
       "registered_at": "2026-04-21T19:30:00+00:00",
