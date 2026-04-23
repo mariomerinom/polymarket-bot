@@ -194,6 +194,23 @@ def log_divergences_for_cycle(db, pipeline_name: str, markets: list,
     # Precompute shared state once per cycle
     candles = _get_candle_buffer_candles(asset)
     pending = _get_pending_candle(asset)
+
+    # Build a combined candle list that includes the pending candle. The
+    # in-progress 5m candle aligns to the just-started window; its `open`
+    # IS the window-open price we need for currently-in-flight markets.
+    candles_with_pending = list(candles) if candles else []
+    if pending is not None:
+        try:
+            # Only append if pending has a timestamp and it's newer than
+            # the last confirmed candle (avoid duplicates)
+            p_ts = pending.get("timestamp_ms")
+            last_ts = (candles_with_pending[-1].get("timestamp_ms")
+                       if candles_with_pending else None)
+            if p_ts and (last_ts is None or int(p_ts) > int(last_ts)):
+                candles_with_pending.append(pending)
+        except Exception:
+            pass
+
     current_spot = None
     bybit_source = None
     if pending is not None:
@@ -274,8 +291,10 @@ def log_divergences_for_cycle(db, pipeline_name: str, markets: list,
             ttm_remaining = (window_close - now).total_seconds()
             window_has_opened = 1 if ttm_remaining < window_total else 0
 
-            # Open spot from the aligned Bybit 5m candle
-            open_spot = _get_candle_open_at(candles, window_open)
+            # Open spot from the aligned Bybit 5m candle. Check both
+            # confirmed candles AND the pending in-progress candle — for
+            # windows that just opened, the aligned candle is still pending.
+            open_spot = _get_candle_open_at(candles_with_pending, window_open)
 
             # Compute fair_p
             fair_p = None
