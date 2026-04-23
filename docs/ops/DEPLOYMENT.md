@@ -167,6 +167,18 @@ ssh root@134.209.196.239 "su - botuser -c 'cd /home/botuser/polymarket-bot && gi
 # The pull triggers the hook, which restarts botsy if source changed.
 ```
 
+**⚠️ `git reset --hard` bypasses hooks.** If you've been using reset-to-origin
+as a deploy step (e.g., after stashing local data-file changes), the hook
+will NOT fire. Use `git pull --rebase -X theirs` OR trigger the hook
+explicitly after the reset:
+
+```bash
+ssh root@VPS "su - botuser -c 'cd /home/botuser/polymarket-bot && bash tools/git-hooks/post-merge <old-sha>'"
+```
+
+where `<old-sha>` is the commit HEAD was at before the reset. The hook's
+stdout shows what it decided and whether it triggered a restart.
+
 ### Data/docs-only change
 
 No action needed. Commit, push. Engine pulls on its own cycle. No restart, no hook noise.
