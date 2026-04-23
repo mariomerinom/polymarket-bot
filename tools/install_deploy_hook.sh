@@ -13,7 +13,6 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK_SRC="$REPO_ROOT/tools/git-hooks/post-merge"
-HOOK_DEST="$REPO_ROOT/.git/hooks/post-merge"
 
 if [ ! -f "$HOOK_SRC" ]; then
     echo "ERROR: hook source not found at $HOOK_SRC"
@@ -25,15 +24,19 @@ if [ ! -x "$HOOK_SRC" ]; then
     chmod +x "$HOOK_SRC"
 fi
 
-# Backup existing hook if it's a real file (not a symlink)
-if [ -f "$HOOK_DEST" ] && [ ! -L "$HOOK_DEST" ]; then
-    backup="${HOOK_DEST}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
-    echo "Backing up existing non-symlink hook to $backup"
-    mv "$HOOK_DEST" "$backup"
-fi
-
-# Create / replace symlink
-ln -sf "$HOOK_SRC" "$HOOK_DEST"
+# Install the hook under BOTH post-merge and post-rewrite names so it
+# fires on `git pull` (merge) AND `git pull --rebase` / `git rebase`
+# (rewrite). The engine's git_commit_loop uses --rebase, so without the
+# rewrite hook the auto-restart never triggered during normal operation.
+for HOOK_NAME in post-merge post-rewrite; do
+    HOOK_DEST="$REPO_ROOT/.git/hooks/$HOOK_NAME"
+    if [ -f "$HOOK_DEST" ] && [ ! -L "$HOOK_DEST" ]; then
+        backup="${HOOK_DEST}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+        echo "Backing up existing non-symlink hook to $backup"
+        mv "$HOOK_DEST" "$backup"
+    fi
+    ln -sf "$HOOK_SRC" "$HOOK_DEST"
+done
 
 # Ensure logs/ exists and is writable
 mkdir -p "$REPO_ROOT/logs"
@@ -48,8 +51,8 @@ else
 fi
 
 echo ""
-echo "post-merge hook installed:"
-ls -la "$HOOK_DEST"
+echo "Hooks installed (both symlinks point at the same script):"
+ls -la "$REPO_ROOT/.git/hooks/post-merge" "$REPO_ROOT/.git/hooks/post-rewrite"
 echo ""
-echo "Next merge that touches src/ or config/ will auto-restart botsy."
+echo "Next merge OR rebase that touches src/ or config/ will auto-restart botsy."
 echo "Hook activity is logged to: $REPO_ROOT/logs/deploy_hook.log"

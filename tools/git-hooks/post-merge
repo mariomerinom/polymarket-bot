@@ -26,8 +26,17 @@ log() {
     echo "$msg" >> "$HOOK_LOG" 2>/dev/null || true
 }
 
-# Detect the just-merged range. $GIT_DIR/ORIG_HEAD is the pre-merge ref.
-OLD_HEAD="${1:-$(git rev-parse --verify --quiet ORIG_HEAD 2>/dev/null || echo '')}"
+# Detect the just-merged/rebased range. Preference order:
+#   1. Explicit arg $1 (for manual invocation)
+#   2. ORIG_HEAD (set by merge, pull, rebase)
+#   3. HEAD@{1} (reflog — previous HEAD, works for any operation)
+OLD_HEAD="${1:-}"
+if [ -z "$OLD_HEAD" ]; then
+    OLD_HEAD="$(git rev-parse --verify --quiet ORIG_HEAD 2>/dev/null || echo '')"
+fi
+if [ -z "$OLD_HEAD" ]; then
+    OLD_HEAD="$(git rev-parse --verify --quiet 'HEAD@{1}' 2>/dev/null || echo '')"
+fi
 NEW_HEAD="$(git rev-parse HEAD)"
 
 if [ -z "$OLD_HEAD" ] || [ "$OLD_HEAD" = "$NEW_HEAD" ]; then
