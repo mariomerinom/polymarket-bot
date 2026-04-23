@@ -75,6 +75,7 @@ Low-risk experimentation pattern. Log what the alternative WOULD have done along
 - **Engineering lessons:** `docs/ops/ENGINEERING_LESSONS.md` — 15 rules from production incidents
 - **Deployment & auto-restart hook:** `docs/ops/DEPLOYMENT.md` — how source changes reach the engine
 - **Shadow experiment guide:** `docs/core/SHADOW_FRAMEWORK.md` — pattern, storage options, promotion criteria
+- **Pivot options / strategic direction:** `docs/core/PIVOT_OPTIONS.md` — where the system can go when the current thesis decays
 - **Full doc map:** `docs/core/PRIMER.md` — system overview, repo map, all document locations
 - **Health check:** Use `/health-check` skill — checks CI, predictions, orders, circuit breaker, board state
 
