@@ -78,24 +78,33 @@ def _get_clob_tokens(market_id: str):
 
 
 def _get_candle_open_at(candles: list, window_open: datetime) -> Optional[float]:
-    """Find the candle whose timestamp matches the window open.
+    """Price at window_open from confirmed Bybit 5m candles.
 
-    Polymarket 5m markets align to clock minutes (e.g., open = :00, :05,
-    :10...). The Bybit 5m candle with the same start timestamp gives us
-    the "open price" reference for the Polymarket settlement.
+    The Bybit 5m candle with `timestamp_ms = window_open` starts at the
+    window open, but while the market is in-flight that candle is still
+    PENDING (not in the confirmed buffer / disk snapshot). We can only
+    see it after it confirms at window close — too late.
 
-    Returns the open price of that candle, or None if not found.
+    Workaround: the candle IMMEDIATELY BEFORE (window_open - 5min) has
+    its `close` price AT window_open. In continuous trading the close
+    of candle N equals the open of candle N+1 (ignoring microstructure).
+
+    So we look for the candle with `timestamp_ms = window_open - 5min`
+    and use its CLOSE as the open-of-window price.
+
+    Returns None if no aligned prior candle is in the buffer.
     """
     if not candles:
         return None
     target_ms = int(window_open.timestamp() * 1000)
+    # Look back 5 minutes (300_000 ms) — the candle starting there ends at target_ms
+    prior_ms = target_ms - 300_000
     for c in candles:
         cts = c.get("timestamp_ms")
         if cts is None:
             continue
-        # Tolerance of a few seconds for clock alignment
-        if abs(int(cts) - target_ms) < 60_000:
-            return float(c.get("open", 0)) or None
+        if abs(int(cts) - prior_ms) < 60_000:
+            return float(c.get("close", 0)) or None
     return None
 
 
