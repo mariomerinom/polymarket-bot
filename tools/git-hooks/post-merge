@@ -26,11 +26,22 @@ log() {
     echo "$msg" >> "$HOOK_LOG" 2>/dev/null || true
 }
 
-# Detect the just-merged/rebased range. Preference order:
-#   1. Explicit arg $1 (for manual invocation)
-#   2. ORIG_HEAD (set by merge, pull, rebase)
-#   3. HEAD@{1} (reflog — previous HEAD, works for any operation)
-OLD_HEAD="${1:-}"
+# Detect the just-merged/rebased range. The hook can be invoked in
+# several ways with different argument conventions:
+#   - post-merge:    $1 = is_squash flag (0 or 1) — NOT a SHA
+#   - post-rewrite:  $1 = operation name ("rebase" | "amend") — NOT a SHA
+#   - manual:        $1 = explicit OLD_HEAD SHA
+# So we only accept $1 if it looks like a git SHA. Otherwise we use the
+# reflog. ORIG_HEAD is set by merge/pull/rebase; HEAD@{1} is always the
+# previous HEAD. Prefer ORIG_HEAD when available (it's the explicit
+# pre-operation ref); fall back to HEAD@{1}.
+OLD_HEAD=""
+if [ -n "${1:-}" ]; then
+    # Accept only if $1 looks like a SHA (7+ hex chars) AND git knows it
+    if echo "$1" | grep -qE '^[0-9a-f]{7,40}$' && git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then
+        OLD_HEAD="$1"
+    fi
+fi
 if [ -z "$OLD_HEAD" ]; then
     OLD_HEAD="$(git rev-parse --verify --quiet ORIG_HEAD 2>/dev/null || echo '')"
 fi
