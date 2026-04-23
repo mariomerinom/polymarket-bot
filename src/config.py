@@ -326,6 +326,7 @@ API_TIMEOUT_GAMMA = 5           # Polymarket Gamma API
 API_TIMEOUT_BULK = 15           # Multi-interval rolling bias fetches
 API_TIMEOUT_KALSHI = 10
 API_TIMEOUT_BYBIT = 10
+API_TIMEOUT_LLM = 30            # DO Serverless Inference (LLM calls)
 DEFAULT_CANDLE_LIMIT = 20
 SHADOW_CANDLE_LIMIT = 30
 CONTEXT_LOOKBACK_MINUTES = 60

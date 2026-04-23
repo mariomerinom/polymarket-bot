@@ -791,6 +791,49 @@
       "post_stats": null,
       "closed_at": null,
       "close_reason": null
+    },
+    {
+      "name": "arb_llm_classifier",
+      "description": "LLM-based classifier for arb_divergence rows, called manually at Phase 0 decision gate. Per docs/plans/groovy-squishing-scott.md D1#1: aggregate divergence counts alone cannot distinguish (a) lag (tractable arb), (b) model_error (tractable model refinement), (c) adverse_selection (untradable), (d) other. The four classes have opposite Go/Abandon implications despite identical raw numbers. Module src/arb_classifier.py samples N high-edge rows and asks DO Serverless Inference to pick one class per row with rationale+confidence. Aggregate class distribution feeds Phase 0 Go/Abandon. Shadow: calibration logged via llm_calibration_log; comparison to ground truth at market resolution.",
+      "registered_at": "2026-04-23T20:30:00+00:00",
+      "pipeline": "btc_5m+eth_5m",
+      "status": "shadow",
+      "min_sample": 50,
+      "revert_condition": "on the first 50 classifications with ground-truth outcomes available at market resolution: if LLM-class vs actual-outcome agreement rate < 60% for the 'lag' class (LLM says lag => market should resolve consistent with bybit direction within the window), the classifier is noise — do not use for Phase 0 decision; rely on per-regime raw counts only",
+      "baseline": {
+        "trigger": "Phase 0 decision gate (≥48h + regime coverage met)",
+        "n_per_call": 50,
+        "min_edge_filter": 0.02,
+        "schema": ["class (lag|model_error|adverse_selection|other)", "rationale", "confidence (low|medium|high)"],
+        "cost_per_batch": "<$1 at llama3.3-70b pricing",
+        "no_bias_constraint": "schema explicitly excludes buy/sell/direction; classifier names CAUSE only, never action",
+        "note": "First real calibration happens when Phase 0 reaches the decision gate — shadow until then. Manual entry point: python3 -m arb_classifier --n 50 --min-edge 0.02."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "v4_decay_llm_diagnosis",
+      "description": "One-shot LLM diagnosis of V4 momentum decay. Per docs/plans/groovy-squishing-scott.md D1#2: assembles a deterministic bundle (per-day/per-regime win rates, regime timeline) from predictions.db over a user-specified window, sends to DO Serverless Inference with a structured-output schema, renders markdown to docs/analysis/. Schema requires onset_date_hypothesis, regime_correlation, news_correlation, decay_vs_reverting (decaying|reverting|ambiguous), confidence (low|medium|high), recommended_action (continue|restrict|pivot|wait). Output is a PRIOR to compare against independent quant analysis, NOT a source of truth. Feeds the 2026-04-28 pivot commitment decision.",
+      "registered_at": "2026-04-23T20:30:00+00:00",
+      "pipeline": "btc_5m",
+      "status": "one_shot_analysis",
+      "min_sample": 1,
+      "revert_condition": "n/a — one-shot analysis, not a live signal path; if the output disagrees sharply with independent quant read AND the quant read is later vindicated, the diagnosis is noise for this class of question and should not be re-run without prompt iteration",
+      "baseline": {
+        "trigger": "manual run before 2026-04-28 pivot decision",
+        "window_default": "2026-03-15 to 2026-04-23",
+        "min_conviction_default": 3,
+        "no_bias_constraint": "schema excludes buy/sell; LLM names onset + regime correlation + action class only",
+        "manual_entry": "python3 -m v4_diagnosis 2026-03-15 2026-04-23 --agent btc",
+        "output_location": "docs/analysis/v4_decay_diagnosis_{date}.md"
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
     }
   ]
 }
