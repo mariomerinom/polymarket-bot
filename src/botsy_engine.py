@@ -339,6 +339,16 @@ class BotsyEngine:
                                             self._maybe_run_daily_rollover(
                                                 asset, symbol, candle_ts
                                             )
+                                            # Multi-poll Phase A — fire shadow predictions
+                                            # at offsets T+30s..T+270s after close. Pure
+                                            # observation; no behavior change. Plan:
+                                            # docs/plans/multi_poll_predict_plan.md.
+                                            try:
+                                                self._spawn_multi_poll(
+                                                    asset, symbol, candle_ts
+                                                )
+                                            except Exception as e:
+                                                log(f"[multi_poll] spawn failed: {e}")
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
 
@@ -751,6 +761,48 @@ class BotsyEngine:
                 await asyncio.to_thread(self._git_commit_push)
             except Exception as e:
                 log(f"WARNING: git commit loop error: {e}")
+
+    def _spawn_multi_poll(self, asset: str, symbol: str, candle_ts_ms: int):
+        """Fire shadow predictions at fixed offsets after a 5m close.
+
+        Per docs/plans/multi_poll_predict_plan.md Phase A. Pure observation
+        — does not affect production prediction, conviction gating, or
+        trade execution. Logs to multi_poll_predictions table.
+
+        Spawns as a background asyncio.Task so the WS feed loop continues
+        processing other events while polls fire over the next 4.5 minutes.
+        Failures inside the task are caught + logged in schedule_polls
+        itself, so they cannot propagate to the WS handler.
+        """
+        from multi_poll_predict import schedule_polls
+
+        # Per-asset DB path. BTC writes alongside the main predictions
+        # table; ETH writes to its own DB. Multi-poll lives next to the
+        # asset's existing prediction data for join convenience at
+        # analysis time (Phase B).
+        if asset == "BTC":
+            db_path = str(DATA_DIR / "predictions.db")
+        elif asset == "ETH":
+            db_path = str(DATA_DIR / "predictions_eth.db")
+        else:
+            return  # Phase A scope: BTC + ETH 5m only
+
+        cycle_close_at = datetime.fromtimestamp(
+            candle_ts_ms / 1000, tz=timezone.utc
+        ).isoformat()
+        cycle = int(candle_ts_ms / 300_000)  # 5m cycle index
+
+        asyncio.create_task(
+            schedule_polls(
+                self,
+                db_path=db_path,
+                cycle=cycle,
+                cycle_close_at=cycle_close_at,
+                asset=asset,
+                symbol=symbol,
+                interval="5",
+            )
+        )
 
     def _maybe_run_daily_rollover(self, asset: str, symbol: str, candle_ts_ms: int):
         """Fire asset_daily computation when UTC date rolls over for `asset`.

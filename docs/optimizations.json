@@ -835,6 +835,30 @@
       "post_stats": null,
       "closed_at": null,
       "close_reason": null
+    },
+    {
+      "name": "multi_poll_predict_logger",
+      "description": "Phase A of in-cycle prediction-timing study. After each Bybit 5m candle close, fires 9 additional predict() calls at offsets T+30s through T+270s (every 30s) and logs each to multi_poll_predictions table. Pure shadow — no behavior change for capital, conviction gating, or trade execution. Plan: docs/plans/multi_poll_predict_plan.md. Triggered by signal_rehab_2026-04-28 finding that the Apr 5 dispatch refactor (f79e56f21) sharply reduced lab WR from ~60% to ~50% by removing ~2:30 of in-flight candle data that GHA scheduling delays had been picking up. This experiment makes the in-cycle information curve measurable so Phase B can decide whether a delayed (or regime-adaptive) dispatch policy recovers the lost edge.",
+      "registered_at": "2026-04-28T13:30:00+00:00",
+      "pipeline": "btc_5m+eth_5m",
+      "status": "shadow",
+      "min_sample": 100,
+      "revert_condition": "after 14 days of observation: if no offset shows ≥2pp WR over the immediate-dispatch (offset=0) baseline on N≥100 per cell across at least 4 (offset × regime) cells, the in-flight information edge is not recoverable as a time-based policy. Document and close as 'no edge'. Phase C does not ship.",
+      "baseline": {
+        "trigger": "automatic — fires every 5m bybit_spot close for BTCUSDT and ETHUSDT",
+        "poll_offsets_seconds": [30, 60, 90, 120, 150, 180, 210, 240, 270],
+        "expected_volume_per_day": "9 polls × ~10 active markets × 288 cycles = ~26k rows/day per asset",
+        "retention_days": 30,
+        "table": "multi_poll_predictions",
+        "no_capital_risk": "shadow only — does not feed conviction gates or trade execution",
+        "phase_b_decision": "after observation: tools/multi_poll_analysis.py computes WR per (offset × regime × asset) cell. Three outcomes: (1) single offset wins clearly → ship as new policy in Phase C; (2) regime-adaptive optimum → ship policy table; (3) no edge → close out, V4 chapter ends",
+        "phase_c_gating": "if Phase C ships, signal_ehr_live_gate still controls live capital. Multi-poll ships dispatch timing only.",
+        "post_incident_discipline": "RETENTION_DAYS=30 hardcoded in module from day 1. Lessons from 2026-04-24 disk-full incident: retention-in-code, not in a never-wired cron."
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
     }
   ]
 }
