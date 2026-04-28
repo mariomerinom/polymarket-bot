@@ -100,4 +100,35 @@ if [ -f "$SUMMARY_FILE" ]; then
     tail -n 500 "$SUMMARY_FILE" > "$SUMMARY_FILE.tmp" && mv "$SUMMARY_FILE.tmp" "$SUMMARY_FILE"
 fi
 
+# Out-of-band notification via healthchecks.io dead-man's-switch.
+# The URL is injected via the HEALTHCHECKS_URL env var (set in the
+# systemd unit override at /etc/systemd/system/botsy-health-check.
+# service.d/override.conf — NOT in git). If the URL is unset, this
+# whole block is a no-op so local development is unaffected.
+#
+# Pattern:
+#   OK/WARN → ping the base URL (success). healthchecks.io marks the
+#             check "up" and resets its grace timer.
+#   CRIT    → ping <URL>/fail. healthchecks.io triggers immediate
+#             notification (configured at the account level).
+#   silence → if 20+ min pass with no ping at all (engine dead, host
+#             dead, network dead), healthchecks.io alerts.
+#
+# curl is fire-and-forget — failures here MUST NOT change exit status
+# of the health check itself. Network blips shouldn't cause spurious
+# CRIT pings.
+if [ -n "${HEALTHCHECKS_URL:-}" ]; then
+    if [ "$worst" -eq 2 ]; then
+        ping_url="${HEALTHCHECKS_URL%/}/fail"
+    else
+        ping_url="${HEALTHCHECKS_URL%/}"
+    fi
+    # -fsS: silent except errors (visible in journal); -m 10: bound runtime.
+    # Append the summary as a tiny payload so the dashboard shows context.
+    curl -fsS -m 10 --retry 2 --retry-delay 1 \
+        --data-binary "$status ${notes[*]}" \
+        -H 'Content-Type: text/plain' \
+        "$ping_url" >/dev/null 2>&1 || true
+fi
+
 exit $worst
