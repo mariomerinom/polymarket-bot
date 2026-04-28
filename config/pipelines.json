@@ -2,9 +2,9 @@
   "_comment": "Pipeline control. mode: live | paper | paused. Commit + push for CI.",
   "pipelines": {
     "btc_5m": {
-      "mode": "live",
+      "mode": "paper",
       "bet_size": 25,
-      "notes": "LIVE FAK pilot 2026-04-19. Validating FAK fixes pre-FAK adverse selection (GTC+FOK era: 35% filled WR vs 95% unfill WR). Flat $25, $300 daily loss cap, 5-consecutive-loss breaker, kill switch active. Revert: flip mode to paper."
+      "notes": "Reverted live→paper 2026-04-28 per pre-registered sunset trigger (7d signal EHR < +0.02 by Apr 28). Paper retained — not paused — to keep the data stream alive for arb_divergence Phase 0 and any signal-rehab investigation (lab-vs-prod gap, regime-conditional WR, etc.). Live history: FAK pilot Apr 21 took −$159 on 9 fills; signal-EHR gate blocked live thereafter. See docs/core/PIVOT_OPTIONS.md and docs/analysis/ppf_2026-04-23.md."
     },
     "btc_15m": {
       "mode": "paused",
