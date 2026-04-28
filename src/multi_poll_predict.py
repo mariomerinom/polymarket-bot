@@ -187,20 +187,25 @@ def compute_poll_predictions(
     estimate = None
     regime_label = None
     try:
-        if asset == "BTC":
-            import predict as predict_module
-        elif asset == "ETH":
-            try:
-                import predict_eth as predict_module
-            except ImportError:
-                import predict as predict_module
-        else:
-            import predict as predict_module
+        # Asset-specific signal/regime function names. predict.py uses
+        # `compute_regime_from_candles` + `momentum_signal`; predict_eth.py
+        # uses `compute_regime_eth` + `momentum_signal_eth` (different
+        # vol thresholds calibrated to ETH).
+        if asset == "ETH":
+            from predict_eth import (
+                compute_regime_eth as regime_fn,
+                momentum_signal_eth as signal_fn,
+            )
+        else:  # BTC and any other asset fall through to the BTC functions
+            from predict import (
+                compute_regime_from_candles as regime_fn,
+                momentum_signal as signal_fn,
+            )
 
-        regime = predict_module.compute_regime_from_candles(candles)
+        regime = regime_fn(candles)
         regime_label = regime.get("label") if regime else None
 
-        signal = predict_module.momentum_signal(candles)
+        signal = signal_fn(candles)
         estimate = signal.get("estimate") if signal else None
     except Exception as e:
         _log.warning(
