@@ -891,15 +891,44 @@ class BotsyEngine:
             except Exception as e:
                 log(f"WARNING: WAL checkpoint failed for {db_path.name}: {e}")
 
+    def _git_head(self) -> str:
+        """Return current HEAD short SHA, or '?' on error."""
+        try:
+            r = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True, timeout=5, cwd=str(REPO_DIR),
+            )
+            return r.stdout.decode().strip() or "?"
+        except Exception:
+            return "?"
+
     def _git_commit_push(self):
         """Synchronous git add + commit + push.
 
-        Order: checkpoint WALs → add → diff check → commit → pull --rebase → push.
-        git pull --rebase refuses to run with ANY uncommitted changes
-        (staged OR unstaged), so we must commit first, then rebase.
+        Order: checkpoint WALs → add → diff check → commit → push → on push
+        fail, fetch+reset+cherry-pick (NOT pull --rebase, which silently
+        clobbered state in the 2026-04-28 incident).
+
+        Discipline (lessons from 2026-04-28):
+          - HEAD is logged before and after every state-changing step
+          - On unexpected divergence, write a marker file (do NOT try to
+            auto-recover) — next cycle bails until human inspects
+          - Never use -X theirs in retry; conflicts mean human attention
         """
         try:
             os.chdir(str(REPO_DIR))
+
+            head_at_start = self._git_head()
+
+            # If a marker file exists, a previous cycle bailed. Don't
+            # commit until a human acknowledges (delete the marker).
+            bail_marker = REPO_DIR / "data" / "GIT_COMMIT_BAIL"
+            if bail_marker.exists():
+                # Throttle the warning so we don't spam every cycle
+                if int(time.time()) % 1800 < 6:  # once per ~30 min
+                    log(f"WARNING: git commit loop is quiesced — "
+                        f"{bail_marker} exists. Inspect, then delete to resume.")
+                return
 
             # Flush WAL journals before snapshotting DBs
             self._checkpoint_all_dbs()
@@ -925,7 +954,7 @@ class BotsyEngine:
             if result.returncode == 0:
                 return  # Nothing to commit
 
-            # Commit FIRST (before pull — rebase needs clean working tree)
+            # Commit FIRST (before fetch — keeps the working tree clean)
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             msg = f"Auto: cycle update {ts}"
             result = subprocess.run(
@@ -936,27 +965,107 @@ class BotsyEngine:
                 log(f"WARNING: Commit failed: {result.stderr.decode()[:200]}")
                 return
 
-            # Push
+            head_after_commit = self._git_head()
+
+            # Push (first attempt)
             result = subprocess.run(
                 ["git", "push"],
                 capture_output=True, timeout=60,
             )
-            if result.returncode != 0:
-                log("WARNING: Push failed — retrying with pull --rebase")
-                retry_result = subprocess.run(
-                    ["git", "pull", "--rebase", "-X", "theirs"],
+            if result.returncode == 0:
+                log(f"Pushed {head_after_commit} (was {head_at_start})")
+                return
+
+            # Push failed — origin moved. Recover SAFELY:
+            #   1. fetch origin
+            #   2. compare: is local HEAD an ancestor of remote? If yes,
+            #      we're behind and just need to fast-forward; reset hard
+            #      to remote and re-apply our cycle commit on top.
+            #   3. else: we and remote both moved. Conflict territory —
+            #      do NOT auto-resolve. Write bail marker and quiesce.
+            log(f"WARNING: Push failed at HEAD={head_after_commit}. "
+                f"Investigating remote state.")
+            subprocess.run(
+                ["git", "fetch", "origin"],
+                capture_output=True, timeout=30,
+            )
+
+            our_commit = head_after_commit
+            # Drop our cycle commit so we can compare cleanly
+            subprocess.run(
+                ["git", "reset", "--soft", "HEAD~1"],
+                capture_output=True, timeout=10,
+            )
+            head_pre_reapply = self._git_head()
+
+            # Is HEAD now an ancestor of origin/main? If yes, fast-forward
+            # is safe — remote has commits we don't, but we have nothing
+            # they don't (other than the cycle commit we just unstacked).
+            ancestor_check = subprocess.run(
+                ["git", "merge-base", "--is-ancestor",
+                 "HEAD", "origin/main"],
+                capture_output=True, timeout=10,
+            )
+            if ancestor_check.returncode == 0:
+                # Safe path: reset to origin/main, redo commit, push.
+                # Our staged changes survive --soft reset.
+                subprocess.run(
+                    ["git", "reset", "--soft", "origin/main"],
+                    capture_output=True, timeout=10,
+                )
+                # Re-stage everything (data/ may have changed under us
+                # if origin commits touched data/, which auto-commits do)
+                subprocess.run(
+                    ["git", "add", "data/", "docs/daily/"],
+                    capture_output=True, timeout=10,
+                )
+                # Re-check if anything to commit
+                redo_check = subprocess.run(
+                    ["git", "diff", "--cached", "--quiet"],
+                    capture_output=True,
+                )
+                if redo_check.returncode == 0:
+                    log(f"Push retry: nothing left to commit after "
+                        f"fast-forward to origin/main "
+                        f"(was {our_commit}, now {self._git_head()})")
+                    return
+                redo = subprocess.run(
+                    ["git", "commit", "-m", msg],
                     capture_output=True, timeout=30,
                 )
-                if retry_result.returncode != 0:
-                    log(f"ERROR: Rebase conflict during retry — aborting")
-                    subprocess.run(["git", "rebase", "--abort"], capture_output=True, timeout=10)
+                if redo.returncode != 0:
+                    log(f"WARNING: redo commit failed: "
+                        f"{redo.stderr.decode()[:200]}")
                     return
-                subprocess.run(
+                redo_push = subprocess.run(
                     ["git", "push"],
                     capture_output=True, timeout=60,
                 )
-            else:
-                log("Pushed changes")
+                if redo_push.returncode == 0:
+                    log(f"Pushed after fast-forward: HEAD={self._git_head()} "
+                        f"(was {our_commit}, behind {head_pre_reapply})")
+                else:
+                    log(f"ERROR: redo push failed: "
+                        f"{redo_push.stderr.decode()[:200]}")
+                return
+
+            # Unsafe path: local and remote both diverged. Don't guess.
+            # Write a marker so the engine quiesces git_commit_loop until
+            # a human inspects. Code+data still flow inside the engine;
+            # only the commit loop is paused.
+            log(f"ERROR: local HEAD ({head_pre_reapply}) is NOT an "
+                f"ancestor of origin/main. Divergence detected. Writing "
+                f"bail marker {bail_marker}; auto-commit quiesced.")
+            try:
+                bail_marker.write_text(
+                    f"git divergence at {ts}\n"
+                    f"local HEAD: {head_pre_reapply}\n"
+                    f"unstacked cycle commit: {our_commit}\n"
+                    f"head_at_start_of_cycle: {head_at_start}\n"
+                    "delete this file after manual inspection to resume.\n"
+                )
+            except Exception as e:
+                log(f"WARNING: bail marker write failed: {e}")
 
         except Exception as e:
             log(f"WARNING: git commit/push failed: {e}")

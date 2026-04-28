@@ -94,119 +94,200 @@ class TestSupervise:
         assert "test boom" in captured.out
 
 
-# ── TestGitRebaseRecovery ─────────────────────────────────────────────────
+# ── TestGitCommitPushSafeRecovery ─────────────────────────────────────────
 
 
-class TestGitRebaseRecovery:
-    """_git_commit_push handles rebase failures safely."""
+class TestGitCommitPushSafeRecovery:
+    """_git_commit_push uses fetch + ancestor-check, NOT pull --rebase + abort.
+
+    Regression tests for the 2026-04-28 incident where the prior
+    implementation's `pull --rebase -X theirs` + `rebase --abort` recovery
+    silently discarded a freshly-pushed commit. The new implementation
+    is conservative: on push fail, fetch origin; if local is ancestor of
+    remote, fast-forward + redo cycle commit; if NOT, write a bail marker
+    and quiesce auto-commits until human inspection.
+    """
 
     def _make_engine(self):
         from botsy_engine import BotsyEngine
         with patch.object(BotsyEngine, "__init__", lambda self: None):
             engine = BotsyEngine()
+        # _git_head doesn't exist before __init__ is patched; provide a stub
+        engine._git_head = lambda: "abc1234"
         return engine
 
-    def test_rebase_failure_aborts_and_returns(self):
-        """When push fails and rebase fails, abort rebase and return.
+    def _setup_subprocess_mock(self, behavior):
+        """Build a subprocess.run mock from a behavior dict.
 
-        Actual code flow: add → diff → commit → push → (if push fails:
-        pull --rebase → if rebase fails: rebase --abort → return).
+        behavior keys are command-prefix tuples, values are dicts with
+        `returncode`, `stdout`, `stderr` (all optional). Default is rc=0.
         """
-        engine = self._make_engine()
-
         calls = []
 
-        def mock_subprocess_run(cmd, **kwargs):
+        def mock_run(cmd, **kwargs):
             calls.append(cmd)
             result = MagicMock()
             result.returncode = 0
-            result.stderr = b""
             result.stdout = b""
-            # diff --cached --quiet returns 1 → there ARE staged changes
+            result.stderr = b""
+            for prefix, spec in behavior.items():
+                if tuple(cmd[: len(prefix)]) == prefix:
+                    result.returncode = spec.get("returncode", 0)
+                    result.stdout = spec.get("stdout", b"")
+                    result.stderr = spec.get("stderr", b"")
+                    return result
+            return result
+
+        return mock_run, calls
+
+    def test_push_succeeds_first_try_no_recovery(self, tmp_path):
+        """Happy path: nothing fancy happens on a clean push."""
+        from botsy_engine import BotsyEngine
+
+        engine = self._make_engine()
+        engine._checkpoint_all_dbs = lambda: None
+
+        mock_run, calls = self._setup_subprocess_mock({
+            ("git", "diff", "--cached", "--quiet"): {"returncode": 1},
+        })
+
+        with patch("subprocess.run", side_effect=mock_run), \
+             patch("os.chdir"), \
+             patch("botsy_engine.REPO_DIR", tmp_path):
+            (tmp_path / "data").mkdir()
+            engine._git_commit_push()
+
+        # No fetch, no reset, no abort
+        assert not any(c[:2] == ["git", "fetch"] for c in calls)
+        assert not any(c[:2] == ["git", "reset"] for c in calls)
+        assert not any(c[:3] == ["git", "rebase", "--abort"] for c in calls)
+        # Did push exactly once
+        assert sum(1 for c in calls if c[:2] == ["git", "push"]) == 1
+
+    def test_push_fail_with_ancestor_does_safe_fast_forward(self, tmp_path):
+        """When local HEAD is ancestor of origin, fast-forward + redo commit + push."""
+        from botsy_engine import BotsyEngine
+
+        engine = self._make_engine()
+        engine._checkpoint_all_dbs = lambda: None
+
+        push_count = [0]
+
+        def mock_run(cmd, **kwargs):
+            calls.append(cmd)
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = b""
+            result.stderr = b""
             if cmd[:4] == ["git", "diff", "--cached", "--quiet"]:
+                # On second check (after soft reset), still has changes
                 result.returncode = 1
-            # push fails → triggers rebase path
             elif cmd[:2] == ["git", "push"]:
-                result.returncode = 1
-                result.stderr = b"rejected"
-            # rebase fails → triggers abort
-            elif cmd[:3] == ["git", "pull", "--rebase"]:
-                result.returncode = 1
-                result.stderr = b"CONFLICT (content): Merge conflict in data/predictions.db"
-            elif cmd[:3] == ["git", "rebase", "--abort"]:
+                push_count[0] += 1
+                # First push fails (origin moved), second push succeeds
+                result.returncode = 1 if push_count[0] == 1 else 0
+                if push_count[0] == 1:
+                    result.stderr = b"rejected: non-fast-forward"
+            elif cmd[:4] == ["git", "merge-base", "--is-ancestor", "HEAD"]:
+                # local is ancestor of origin/main → safe fast-forward
                 result.returncode = 0
             return result
 
-        with patch("subprocess.run", side_effect=mock_subprocess_run), \
-             patch("os.chdir"):
+        calls = []
+        with patch("subprocess.run", side_effect=mock_run), \
+             patch("os.chdir"), \
+             patch("botsy_engine.REPO_DIR", tmp_path):
+            (tmp_path / "data").mkdir()
             engine._git_commit_push()
 
-        # Should have called rebase --abort
-        abort_calls = [c for c in calls if c[:3] == ["git", "rebase", "--abort"]]
-        assert len(abort_calls) >= 1, f"Expected rebase --abort, got calls: {calls}"
+        # Saw fetch + soft reset + ancestor check
+        assert any(c[:2] == ["git", "fetch"] for c in calls)
+        assert any(
+            c[:3] == ["git", "reset", "--soft"] for c in calls
+        ), f"Expected soft reset, calls: {calls}"
+        assert any(
+            c[:4] == ["git", "merge-base", "--is-ancestor", "HEAD"]
+            for c in calls
+        )
+        # Two pushes total (first failed, second after fast-forward)
+        assert push_count[0] == 2
+        # NEVER called rebase --abort
+        assert not any(c[:3] == ["git", "rebase", "--abort"] for c in calls)
 
-    def test_rebase_success_continues_to_commit(self):
-        """When rebase succeeds (returncode 0), commit proceeds normally."""
+    def test_push_fail_with_divergence_writes_bail_marker(self, tmp_path):
+        """When local and origin both moved, write bail marker — don't auto-merge."""
+        from botsy_engine import BotsyEngine
+
         engine = self._make_engine()
+        engine._checkpoint_all_dbs = lambda: None
 
-        calls = []
-
-        def mock_subprocess_run(cmd, **kwargs):
+        def mock_run(cmd, **kwargs):
             calls.append(cmd)
             result = MagicMock()
             result.returncode = 0
-            result.stderr = b""
             result.stdout = b""
-            # git diff --cached --quiet returncode=1 means there ARE staged changes
+            result.stderr = b""
             if cmd[:4] == ["git", "diff", "--cached", "--quiet"]:
                 result.returncode = 1
-            return result
-
-        with patch("subprocess.run", side_effect=mock_subprocess_run), \
-             patch("os.chdir"):
-            engine._git_commit_push()
-
-        # Should have attempted commit (git commit -m ...)
-        commit_calls = [c for c in calls if len(c) >= 2 and c[1] == "commit"]
-        assert len(commit_calls) >= 1, f"Expected commit after successful rebase, got: {calls}"
-
-    def test_push_retry_rebase_failure_aborts(self):
-        """When push fails and the subsequent rebase also fails, abort and return.
-
-        Actual flow: add → diff(has changes) → commit(ok) → push(fail) →
-        pull --rebase(fail) → rebase --abort → return.
-        """
-        engine = self._make_engine()
-
-        calls = []
-
-        def mock_subprocess_run(cmd, **kwargs):
-            calls.append(cmd)
-            result = MagicMock()
-            result.returncode = 0
-            result.stderr = b""
-            result.stdout = b""
-
-            if cmd[:4] == ["git", "diff", "--cached", "--quiet"]:
-                result.returncode = 1  # has changes
             elif cmd[:2] == ["git", "push"]:
                 result.returncode = 1
                 result.stderr = b"rejected"
-            elif cmd[:3] == ["git", "pull", "--rebase"]:
+            elif cmd[:4] == ["git", "merge-base", "--is-ancestor", "HEAD"]:
+                # local NOT an ancestor → divergence
                 result.returncode = 1
-                result.stderr = b"CONFLICT"
-            elif cmd[:3] == ["git", "rebase", "--abort"]:
-                result.returncode = 0
-
             return result
 
-        with patch("subprocess.run", side_effect=mock_subprocess_run), \
-             patch("os.chdir"):
+        calls = []
+        bail_marker = tmp_path / "data" / "GIT_COMMIT_BAIL"
+        with patch("subprocess.run", side_effect=mock_run), \
+             patch("os.chdir"), \
+             patch("botsy_engine.REPO_DIR", tmp_path):
+            (tmp_path / "data").mkdir()
             engine._git_commit_push()
 
-        # Should have called rebase --abort
-        abort_calls = [c for c in calls if c[:3] == ["git", "rebase", "--abort"]]
-        assert len(abort_calls) >= 1, f"Expected rebase --abort on retry failure, got calls: {calls}"
+        # Marker must exist
+        assert bail_marker.exists(), \
+            f"Expected bail marker at {bail_marker}; calls: {calls}"
+        # Never tried to abort or auto-resolve
+        assert not any(c[:3] == ["git", "rebase", "--abort"] for c in calls)
+        # Marker content names the heads it bailed on
+        text = bail_marker.read_text()
+        assert "divergence" in text.lower()
+
+    def test_bail_marker_quiesces_subsequent_cycles(self, tmp_path):
+        """If a bail marker exists, _git_commit_push must short-circuit."""
+        from botsy_engine import BotsyEngine
+
+        engine = self._make_engine()
+        engine._checkpoint_all_dbs = lambda: None
+
+        bail_marker = tmp_path / "data" / "GIT_COMMIT_BAIL"
+        bail_marker.parent.mkdir(parents=True, exist_ok=True)
+        bail_marker.write_text("manual inspection pending")
+
+        calls = []
+
+        def mock_run(cmd, **kwargs):
+            calls.append(cmd)
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = b""
+            result.stderr = b""
+            return result
+
+        with patch("subprocess.run", side_effect=mock_run), \
+             patch("os.chdir"), \
+             patch("botsy_engine.REPO_DIR", tmp_path):
+            engine._git_commit_push()
+
+        # Engine should NOT have attempted any git state-changing op
+        for forbidden in (
+            ["git", "add"], ["git", "commit"], ["git", "push"],
+            ["git", "fetch"], ["git", "reset"],
+        ):
+            n = len(forbidden)
+            assert not any(c[:n] == forbidden for c in calls), \
+                f"Expected no {forbidden} while bailed; calls: {calls}"
 
 
 # ── TestGitCommitLoopResilience ───────────────────────────────────────────
