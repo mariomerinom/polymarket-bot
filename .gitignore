@@ -7,16 +7,27 @@ __pycache__/
 .DS_Store
 *.backup
 .claude/
-data/*_backup.db
-data/backtest_*.db
-data/v3.db
 
 # MCP config (local absolute paths)
 .mcp.json
 
-# SQLite WAL/SHM — transient, rebuilt on connection, must never be committed
+# SQLite WAL/SHM/journal — transient, rebuilt on connection, must never be committed
 *.db-wal
 *.db-shm
+*.db-journal
+
+# SQLite databases — 2026-04-28: removed from git tracking after history
+# rewrite reclaimed ~14 GB of bloat from binary auto-commits. The engine
+# continues to write these to data/ locally on the VPS; cross-machine
+# data sync is handled by tools/sync_data.sh (rsync from VPS) when an
+# analysis session needs current state. Loss is acceptable: code is
+# canonical in git, data is regenerable from the running engine.
+data/*.db
+data/*.db.corrupt-*
 
 # Bybit microstructure WS capture — large, gzipped hourly, retention handled out of band
 data/bybit_capture/
+
+# Engine health summary — local-only after 2026-04-28; healthchecks.io
+# pings carry the alarm signal out-of-band.
+data/engine_health.txt
