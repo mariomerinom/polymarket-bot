@@ -1,0 +1,13 @@
+[Unit]
+Description=Run botsy health check every 15 minutes
+Requires=botsy-health-check.service
+
+[Timer]
+# First run 1 minute after boot, then every 15 minutes
+OnBootSec=1min
+OnUnitActiveSec=15min
+AccuracySec=30s
+Unit=botsy-health-check.service
+
+[Install]
+WantedBy=timers.target

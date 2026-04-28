@@ -1,0 +1,13 @@
+[Unit]
+Description=Botsy engine health check (disk, uptime, DB freshness)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=botuser
+Group=botuser
+WorkingDirectory=/home/botuser/polymarket-bot
+ExecStart=/home/botuser/polymarket-bot/tools/check_engine_health.sh
+# Don't fail systemd unit on WARN/CRIT exits — we want the timer to keep
+# firing regardless of health state. Status surfaces via logs, not exit.
+SuccessExitStatus=0 1 2

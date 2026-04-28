@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BOTSY — Past, Present, Future</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #fafaf7;
+  --fg: #1a1a1a;
+  --muted: #666;
+  --accent: #8b5a3c;
+  --border: #d9d4ca;
+  --code-bg: #f0ece5;
+  --table-alt: #f4f0e8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1a1a;
+    --fg: #e8e4da;
+    --muted: #999;
+    --accent: #c89878;
+    --border: #3a3a3a;
+    --code-bg: #2a2a2a;
+    --table-alt: #222;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--fg);
+  background: var(--bg);
+  margin: 0;
+  padding: 1.5em 1em;
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+h1 {
+  font-size: 2em;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 0.3em;
+  margin-top: 0;
+}
+h2 {
+  font-size: 1.5em;
+  margin-top: 2em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.2em;
+}
+h3 { font-size: 1.2em; margin-top: 1.6em; }
+h4 { font-size: 1.05em; color: var(--muted); }
+p  { margin: 0.9em 0; }
+ul, ol { margin: 0.9em 0; padding-left: 1.6em; }
+li { margin: 0.3em 0; }
+code {
+  font-family: "SF Mono", "Monaco", "Menlo", "Consolas", monospace;
+  background: var(--code-bg);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-size: 0.88em;
+}
+blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 1.2em 0;
+  padding: 0.4em 1em;
+  color: var(--muted);
+  background: var(--code-bg);
+}
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2.5em 0;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.2em 0;
+  font-size: 0.95em;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.5em 0.75em;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: var(--code-bg);
+  font-weight: 600;
+}
+tr:nth-child(even) td { background: var(--table-alt); }
+em { color: var(--muted); }
+strong { color: var(--fg); }
+@media (max-width: 600px) {
+  body { font-size: 16px; padding: 1em 0.75em; }
+  h1 { font-size: 1.6em; }
+  h2 { font-size: 1.3em; }
+  table { font-size: 0.85em; }
+  th, td { padding: 0.35em 0.5em; }
+}
+</style>
+</head>
+<body>
+<h1>BOTSY — Past, Present, Future</h1>
+<p><strong>Date:</strong> 2026-04-23 (late afternoon UTC) <strong>Purpose:</strong> Step back from the weeds. Crystallize what we've learned, where we are, and where we can go — so tomorrow's direction decision is grounded rather than reactive. <strong>Read time:</strong> ~10 minutes.</p>
+<hr />
+<h2>Part 1 — PAST</h2>
+<h3>What we proved works</h3>
+<p>The infrastructure is real. Over ~15 months we built a system that is venue- and signal-agnostic, and every component below has been independently validated in production:</p>
+<ul>
+<li><strong>Engine on DigitalOcean AMS3</strong> — single async process, systemd-managed, uptime stable, memory leak patched, WS reconnects gracefully</li>
+<li><strong>Multi-pipeline dispatch</strong> — 12 pipelines share the engine; per-pipeline mode, breakers, and DB</li>
+<li><strong>Shadow experiment framework</strong> — log the alternative → compare → promote/revert. Documented, tested, reused 7× as of April</li>
+<li><strong>Strategy Lab always-fire</strong> — log every cycle's 27-param snapshot, discover edges post-hoc</li>
+<li><strong>Protection layers</strong> — kill switch, daily loss cap, consecutive loss breaker, signal-EHR live gate, edge cushion, intraday range gate</li>
+<li><strong>Deploy hook</strong> — auto-restart on source-change merges/rebases. Validated end-to-end today</li>
+<li><strong>Regime classification</strong> — absolute (vol × trend) and asset-relative (z-score). Bucketed and continuous variants</li>
+<li><strong>Consolidated + daily reporting</strong> — every pipeline, every day, single view</li>
+<li><strong>MCP tooling</strong> — structured queries that encode correct joins and P&amp;L formulas</li>
+</ul>
+<p>The point: none of this is speculative. It works. It is the portable asset.</p>
+<h3>What decayed or broke</h3>
+<p>The specific thesis we were betting on has deteriorated over the last two weeks, measured four independent ways:</p>
+<ul>
+<li><strong>Signal EHR drift</strong> — BTC 5m 7d EHR went from +0.035 to −0.086. Not single-day noise</li>
+<li><strong>Regime-level WR collapse</strong> — MEDIUM_VOL/NEUTRAL dropped from 65.9% WR to 40.4% WR on 57 bets in a week</li>
+<li><strong>Shadow Maker reversal</strong> — BTC shadow EHR swung +0.023 → −0.102 in 3 days; ETH swung through ±10pp with no durable sign</li>
+<li><strong>FAK pilot (Apr 21)</strong> — 90% fill rate (execution works), 11% filled WR (signal doesn't), net −$159</li>
+</ul>
+<p><strong>The diagnosis:</strong> 5m crypto price-direction on Polymarket is the single most-crowded algorithmic strategy in prediction markets. The ~2% of profitable Polymarket traders cited in the Akey et al. paper (2026) almost certainly trade different products — events, long-duration markets, market-making on illiquid contracts, cross-venue arbitrage. We were competing in the lane with the thickest adversaries.</p>
+<h3>Procedural lessons that cost real money</h3>
+<p>Four shadow experiments were promoted in April and reverted within days. The pattern in every case was <strong>thin-sample over-promotion</strong>:</p>
+<ol>
+<li><code>mr_shadow_extreme</code> — 50-bet floor met, promoted, reverted at 174 bets with post-WR 52.3% (baseline 69.7%)</li>
+<li><code>eth_mr_shadow_extreme</code> — same shape</li>
+<li><code>unified_extreme_estimate_shadow</code> — same shape, different entry path</li>
+<li><code>shadow_vwap_meanrev</code> — contaminated baseline (tracked aggregate WR, not VWAP-specific)</li>
+</ol>
+<p>The 50-bet minimum was honored in every case. It wasn't enough. The lesson: <strong>50-bet minimum is a necessary condition but not sufficient</strong> for conviction-structure changes or indicator-gated promotions. Two refinements the system now knows:</p>
+<ul>
+<li>For anything that changes how conviction is derived, the floor is 200+ bets</li>
+<li>The baseline must be computed from the SAME filter as the post-change cohort (no apples-to-oranges)</li>
+</ul>
+<p>And the broader principle: "derived from ≠ validated by." Every promotion needs to separate discovery from validation. In April we didn't, and it cost us.</p>
+<h3>The uncomfortable honest answer</h3>
+<p>When a signal needs six protection layers to avoid losing money, it may not be a signal. The gates worked, but they're not edge — they're the thing preventing edge-less trading from being catastrophic. Edge comes from having a reason to bet that outperforms random. That reason is, for the 5m crypto direction thesis, gone.</p>
+<hr />
+<h2>Part 2 — PRESENT</h2>
+<h3>As of 2026-04-23, late afternoon UTC</h3>
+<p><strong>Capital state:</strong> zero live exposure right now. Everything is paper. The btc_5m live rail is blocked by the signal-EHR gate that shipped Apr 21 and has held cleanly.</p>
+<p><strong>Engine state:</strong> healthy. Restarted at 20:47:49Z today by the deploy hook when LLM analysis modules landed. WS feeds connected, candle buffer seeded from disk snapshot, 6162 Polymarket tokens in cache.</p>
+<p><strong>Phase 0 arb logger:</strong> LIVE since 16:15Z today. <code>fair_p</code> populating on post-fix rows. Zero capital, zero trading — pure observation. Decision gate requires ≥48h AND regime coverage (≥4 of 6 vol×trend regimes with ≥100 rows + ≥2 daily-regime buckets). Earliest theoretical gate trigger: Apr 25. Realistic: Apr 27–30 depending on regime rotation.</p>
+<h3>What's running on pre-registered gates</h3>
+<p>Everything below self-measures against criteria set before it shipped:</p>
+<table>
+<thead><tr>
+<th>Gate / experiment</th>
+<th>Status</th>
+<th>Trigger</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>signal_ehr_live_gate</td>
+<td>active, holding</td>
+<td>daily</td>
+</tr>
+<tr>
+<td>intraday_range_gate</td>
+<td>active</td>
+<td>per-cycle</td>
+</tr>
+<tr>
+<td>highvol_non_trending_gate + eth_highvol_full_gate + highvol_full_gate_perps</td>
+<td>active</td>
+<td>per-cycle</td>
+</tr>
+<tr>
+<td>vwap_graduation_perps + vwap_graduation_eth_5m</td>
+<td>active</td>
+<td>per-cycle</td>
+</tr>
+<tr>
+<td>bybit_rehabilitation</td>
+<td>active, 56% WR on 73 bets (below 63% baseline)</td>
+<td>50+ bets</td>
+</tr>
+<tr>
+<td>shadow_maker_phase_1</td>
+<td>accumulating</td>
+<td>200 fills</td>
+</tr>
+<tr>
+<td>shadow_conviction_scorer</td>
+<td>accumulating</td>
+<td>200 per pipeline</td>
+</tr>
+<tr>
+<td>shadow_regime_relative_perps</td>
+<td>accumulating</td>
+<td>200 reclassified bets</td>
+</tr>
+<tr>
+<td>arb_divergence_logger (Phase 0)</td>
+<td>observing</td>
+<td>48h + regime cov</td>
+</tr>
+</tbody></table>
+<h3>Shipped today</h3>
+<ul>
+<li><code>src/arb_loggers.py</code> gap-tolerant candle lookup (5th fix round to get <code>fair_p</code> populating — now working)</li>
+<li><code>src/llm_inference.py</code> — DO Serverless Inference client with structured-output, retry, calibration log</li>
+<li><code>src/v4_diagnosis.py</code> — one-shot LLM diagnosis of V4 decay</li>
+<li><code>src/arb_classifier.py</code> — LLM classifier for arb_divergence rows at the Phase 0 decision gate</li>
+<li>31 new tests, all green. 828 passing across the full suite</li>
+<li><code>docs/plans/groovy-squishing-scott.md</code> rewritten as a decision register</li>
+<li><code>docs/ops/DO_INFERENCE_SETUP.md</code></li>
+<li><code>docs/core/PIVOT_OPTIONS.md</code> (written yesterday) documents the nine-option landscape</li>
+</ul>
+<h3>Hard calendar</h3>
+<table>
+<thead><tr>
+<th>Date</th>
+<th>Event</th>
+<th>Criterion</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><strong>Apr 25–27</strong></td>
+<td>Earliest Phase 0 decision-gate window</td>
+<td>48h + regime coverage met</td>
+</tr>
+<tr>
+<td><strong>Apr 28</strong></td>
+<td><strong>btc_5m sunset trigger</strong></td>
+<td>7d signal EHR ≥ +0.02 or flip to paused</td>
+</tr>
+<tr>
+<td><strong>Apr 28</strong></td>
+<td><strong>2-week pivot commitment deadline</strong></td>
+<td>Pick direction per <code>PIVOT_OPTIONS.md</code></td>
+</tr>
+</tbody></table>
+<p>Apr 28 is five days from now. Two distinct decisions on the same date.</p>
+<hr />
+<h2>Part 3 — FUTURE</h2>
+<h3>The question behind the decision</h3>
+<p>Everything below is a branch off one question: <strong>is the infrastructure an asset worth pointing at a different problem, or is the entire "algorithmic crypto prediction markets" hypothesis a dead end?</strong></p>
+<p>Four tracks that remain live. I'll lay each out honestly — including what makes it fail.</p>
+<h3>Track A — Stay on arb Phase 0 (current commitment)</h3>
+<p><strong>Thesis:</strong> cross-venue spread capture is a fixed-edge game. Alpha can decay; spread can't, as long as venues exist with different order flow. The infrastructure is already pointed at it — Phase 0 is live and observing.</p>
+<p><em><em>What happens if you do nothing but wait:</em></em></p>
+<ul>
+<li>Days 1–5: <code>arb_divergence</code> rows accumulate. By Apr 28 we probably have ~30k rows but maybe only 2–3 regimes represented</li>
+<li>At gate: arb_classifier samples 50 high-edge rows, asks the LLM to class each as lag / model_error / adverse_selection / other</li>
+<li>Go if ≥1 regime shows ≥50 persistent exploitable divergences/day AND ≥2 regimes show positive counts</li>
+<li>Abandon if no regime shows ≥5/day AND persistence &lt;1 cycle</li>
+</ul>
+<p><strong>Failure mode:</strong> Phase 0 runs through a single regime for all 7 days (pure chop, or pure trending) and we can't distinguish regime-specific edge from regime-dependent artifact. Then the decision defers, and we extend observation.</p>
+<p><strong>Cost to run:</strong> zero. Already running.</p>
+<h3>Track B — Parallel longer-duration Lab always-fire</h3>
+<p><strong>Thesis:</strong> "The 5m timeframe is the problem, not crypto." Hourly and daily Polymarket markets are less replicated; they integrate information over longer windows; they have different participant composition.</p>
+<p><em><em>What shipping looks like:</em></em></p>
+<ul>
+<li>~3–5 days of work: extend fetch_markets to ingest Polymarket daily/weekly crypto markets; add a lab-only conviction scorer that logs always-fire predictions; wait 2–3 weeks for data</li>
+<li>Does NOT conflict with Track A — they share no code paths and barely share DB tables</li>
+</ul>
+<p><strong>Failure mode:</strong> daily markets are also crowded. Signal is equally absent. Cheap to discover this because it's pure Lab (no capital).</p>
+<p><strong>Why it's on the list:</strong> it's the cheapest test of the "timeframe, not product" hypothesis. Answering that question matters because if <code>5m is the issue</code>, then arb is a workaround. If <code>crypto direction on Polymarket is the issue</code>, arb is the real answer.</p>
+<h3>Track C — Kalshi parser rebuild</h3>
+<p><strong>Thesis:</strong> Kalshi is paused because the market-question parser doesn't filter non-strike-reachable binaries. ~420 conv≥3 bets lost because the signal was applied to markets where Kalshi settlement was structurally not reachable. Fix the parser, and Kalshi re-opens as a genuinely less-crowded crypto prediction venue.</p>
+<p><em><em>What shipping looks like:</em></em></p>
+<ul>
+<li>~1–2 days of parser work (LLM-based parser per the D1#6 option, or regex rebuild)</li>
+<li>Relaunch paper for a week, measure</li>
+<li>Maker fees are a REBATE on Kalshi — if signal has even weak edge, the fee economics are favorable</li>
+</ul>
+<p><strong>Failure mode:</strong> Kalshi crypto liquidity is thin enough that even with a working parser, fills at size are rare. Historically true but worth re-testing.</p>
+<p><strong>What it unlocks if it works:</strong> Polymarket↔Kalshi binary-vs-binary arbitrage, which is cleaner than Polymarket↔Bybit because both sides are probability quotes. No fair-p model needed, no model risk, just spread capture after fees.</p>
+<h3>Track D — Infrastructure-as-research-platform (the honest sunset)</h3>
+<p><strong>Thesis:</strong> the trading edge we keep probing isn't here. The Strategy Lab + shadow framework + consolidated reporting is a legitimate research substrate. Generate structured signal data, publish findings, sell access, or use it to validate strategies we later port elsewhere.</p>
+<p><strong>Why this is on the list at all:</strong> because intellectual honesty. If Phase 0 and Phase B both show no edge, and we've now seen four decayed thesis cycles (V3 contrarian → V4 momentum → maker → arb), the pattern is not "wrong specific bet" — the pattern is "prediction-market algorithmic trading at retail scale is not a winning product." That would be disappointing but correct.</p>
+<p><strong>What it would look like:</strong> stop trading, keep the infrastructure running as a signal-data generator, publish Shadow Framework + regime classifier + MCP tooling as open source. Move personal compute-time to a different domain (sports models with domain expertise, or LLM-augmented event forecasting, or step away).</p>
+<p><strong>Why I'm mentioning it:</strong> the "don't sunk-cost into the 5th attempt" instinct is worth taking seriously if Phase 0 + Track B both return null. Not as a recommendation today — as a pre-registered option so we'd recognize it when it arrives.</p>
+<hr />
+<h2>A decision framework for tomorrow</h2>
+<p>A small grid. Every option below presupposes arb Phase 0 keeps running regardless.</p>
+<table>
+<thead><tr>
+<th>Additional track</th>
+<th>Work</th>
+<th>Informs</th>
+<th>Compatible with Phase 0?</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>None (wait on Phase 0 alone)</td>
+<td>0h</td>
+<td>Phase 0 gate only</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Track B (longer-duration Lab)</td>
+<td>3–5h + 2–3 weeks observation</td>
+<td>"timeframe vs product" hypothesis</td>
+<td>✓ (no shared code path)</td>
+</tr>
+<tr>
+<td>Track C (Kalshi parser)</td>
+<td>1–2d</td>
+<td>opens second arb venue if Phase 0 shows edge</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Run D1#2 (V4 diagnosis)</td>
+<td>~10 min + $0.01</td>
+<td>onset date + regime correlation of V4 decay</td>
+<td>✓</td>
+</tr>
+</tbody></table>
+<p><strong>The "do one cheap thing + wait" version:</strong> run V4 diagnosis tomorrow (10 minutes, one API key away), let Phase 0 accumulate for 4 more days, make the Apr 28 call with two data points instead of one.</p>
+<p><strong>The "commit to a second track" version:</strong> pick Track B or Track C and ship it alongside Phase 0. Do not ship both — "don't explore 3+ pivots" is a real rule; 2 tracks is fine, 3 is where dilution starts to bite.</p>
+<p><strong>The hard version:</strong> accept that the 5m crypto direction chapter is closed, decide between arb-as-primary and infrastructure-as-platform, and stop hedging.</p>
+<h2>A quiet question worth sitting with</h2>
+<p>Why do you want to keep trading this specific product?</p>
+<p>If the answer is "because the infrastructure is built and I want to use it," Track B or Track C keep that alignment without forcing a new thesis.</p>
+<p>If the answer is "because I want to prove the 5m crypto thesis works after all," the data is telling you it doesn't. Four consecutive signal attempts on this timeframe (V3 contrarian, V4 momentum, maker shadow, FAK pilot) have landed in the same place.</p>
+<p>If the answer is "because making money algorithmically on prediction markets is the goal and this is the highest-leverage stack I have," Track D is the intellectually honest response if Phase 0 also fails. It's not failure — it's redirecting a real asset at a real problem.</p>
+<p>None of these are wrong. They're just different questions. Knowing which one you're answering is tomorrow's work.</p>
+<hr />
+<h2>Checklist for tomorrow</h2>
+<p>Before deciding:</p>
+<ul>
+<li>☐ Read this document again, slowly</li>
+<li>☐ Check Phase 0 divergence count: <code>sqlite3 data/predictions.db "SELECT COUNT(*), SUM(CASE WHEN fair_p IS NOT NULL THEN 1 ELSE 0 END), SUM(CASE WHEN would_arb_edge &gt; 0 THEN 1 ELSE 0 END) FROM arb_divergence"</code></li>
+<li>☐ Optional (if DO_INFERENCE_API_KEY is set): run <code>python3 -m v4_diagnosis 2026-03-15 2026-04-23 --agent btc</code> and read the resulting file in <code>docs/analysis/</code></li>
+<li>☐ Ask yourself: which of the four questions in the "quiet question" section am I actually answering?</li>
+<li>☐ If adding a second track: Track B or Track C (not both)</li>
+<li>☐ If not: stay on Phase 0, decide again on Apr 28</li>
+</ul>
+<p>The 2026-04-28 decision is in five days. It doesn't have to be made tomorrow — only committed to.</p>
+<hr />
+<p><em>Written 2026-04-23 in the shadow of Phase 0 going live and the 2026-04-28 pivot deadline. Honest because that's the only kind of pre-decision writing worth reading.</em></p>
+</body>
+</html>

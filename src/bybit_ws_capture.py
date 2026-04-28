@@ -61,6 +61,13 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parent.parent
 CAPTURE_DIR = ROOT / "data" / "bybit_capture"
 
+# Retention discipline. The 2026-04-24 incident: 16 days of capture grew
+# to 3.5 GB on a 24 GB disk that hit 100% full, crashlooping the engine
+# for 5 days. The docstring above had always called for "a cron or manual
+# policy" — never wired. We now self-prune at every hourly rotation.
+# 7 days = ~1 GB at current sizing, well within disk headroom.
+RETENTION_DAYS = 7
+
 # Topics we subscribe to. Keep this list small — each topic is a
 # separate file stream and adds to reconnect risk.
 TOPICS = [
@@ -73,6 +80,40 @@ TOPICS = [
 ]
 
 WS_URI = "wss://stream.bybit.com/v5/public/linear"
+
+
+def _purge_old_capture_files(
+    topic_dir: Path, retention_days: int = RETENTION_DAYS
+) -> int:
+    """Delete capture files older than retention_days. Idempotent.
+
+    Called from RotatingJSONLWriter._open_for_hour at every rotation, so
+    the cost is one cheap directory scan per topic per hour. Both the
+    uncompressed `.jsonl` (current/in-flight) and the rotated `.jsonl.gz`
+    files in topic_dir are eligible — mtime drives the decision, not the
+    extension.
+
+    Returns the number of files deleted. Errors on individual files are
+    logged and skipped (a parallel rotation/race is harmless).
+
+    Without this, capture grows unbounded — see 2026-04-24 incident.
+    """
+    if not topic_dir.exists():
+        return 0
+    cutoff = time.time() - (retention_days * 86400)
+    purged = 0
+    for f in topic_dir.iterdir():
+        if not f.is_file():
+            continue
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+                purged += 1
+        except FileNotFoundError:
+            pass  # race with a concurrent rotation; harmless
+        except Exception as e:
+            _log(f"[CAPTURE] purge failed for {f}: {e}")
+    return purged
 
 
 def _log(msg: str) -> None:
@@ -125,6 +166,18 @@ class RotatingJSONLWriter:
         self._fh = path.open("a", encoding="utf-8")
         self._current_hour = hour_key
         self._current_path = path
+
+        # Retention sweep at every rotation. One cheap dir listing per
+        # topic per hour. Closes the unbounded-growth bug from 2026-04-24.
+        try:
+            n = _purge_old_capture_files(self.topic_dir)
+            if n:
+                _log(
+                    f"[CAPTURE] purged {n} files >{RETENTION_DAYS}d old "
+                    f"in {self.topic_dir.name}"
+                )
+        except Exception as e:
+            _log(f"[CAPTURE] retention sweep failed: {e}")
 
     def write(self, obj: dict) -> None:
         hour = self._hour_key()
