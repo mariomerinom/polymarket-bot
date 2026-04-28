@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signal Rehabilitation Analysis — 2026-04-28 13:30 UTC</title><style>
+:root { color-scheme: light dark;
+  --bg:#fafaf7; --fg:#1a1a1a; --muted:#666; --accent:#8b5a3c;
+  --border:#d9d4ca; --code-bg:#f0ece5; --table-alt:#f4f0e8; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#1a1a1a; --fg:#e8e4da; --muted:#999; --accent:#c89878;
+    --border:#3a3a3a; --code-bg:#2a2a2a; --table-alt:#222; } }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 17px; line-height: 1.65; color: var(--fg); background: var(--bg);
+  margin: 0 auto; max-width: 760px; padding: 1.5em 1em; }
+h1 { font-size: 2em; border-bottom: 2px solid var(--accent); padding-bottom: 0.3em; margin-top: 0; }
+h2 { font-size: 1.5em; margin-top: 2em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+h3 { font-size: 1.2em; margin-top: 1.6em; }
+h4 { font-size: 1.05em; color: var(--muted); }
+p, ul, ol { margin: 0.9em 0; }
+ul, ol { padding-left: 1.6em; }
+li { margin: 0.3em 0; }
+code { font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.88em; }
+blockquote { border-left: 3px solid var(--accent); margin: 1.2em 0;
+  padding: 0.4em 1em; color: var(--muted); background: var(--code-bg); }
+hr { border: none; border-top: 1px solid var(--border); margin: 2.5em 0; }
+table { border-collapse: collapse; width: 100%; margin: 1.2em 0; font-size: 0.95em; }
+th, td { border: 1px solid var(--border); padding: 0.5em 0.75em; text-align: left; vertical-align: top; }
+th { background: var(--code-bg); font-weight: 600; }
+tr:nth-child(even) td { background: var(--table-alt); }
+em { color: var(--muted); }
+strong { color: var(--fg); }
+details { margin: 1em 0; }
+summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+@media (max-width: 600px) {
+  body { font-size: 16px; padding: 1em 0.75em; }
+  h1 { font-size: 1.6em; } h2 { font-size: 1.3em; }
+  table { font-size: 0.85em; } th, td { padding: 0.35em 0.5em; } }
+</style></head>
+<body>
+<h1>Signal Rehabilitation Analysis — 2026-04-28 13:30 UTC</h1>
+<p>Five hypotheses about the V4 momentum decay, measured against predictions.db (BTC) and predictions_eth.db (ETH). All numbers are conviction&gt;=3 unless noted (production cohort).</p>
+<p><strong>Strong era:</strong> 2026-03-29 → 2026-04-06 <strong>Decay era:</strong> 2026-04-07 → 2026-04-24</p>
+<hr />
+<h2>H1 — Lab-to-production translation lying?</h2>
+<p><em>If aggregate (all-conviction) WR stays stable while conv≥3 WR drops, the signal still has edge — adverse selection is eating production fills.</em></p>
+<h3>BTC (momentum_rule)</h3>
+<table>
+<thead><tr>
+<th>week</th>
+<th>lab N</th>
+<th>lab WR%</th>
+<th>prod N</th>
+<th>prod WR%</th>
+<th>gap (pp)</th>
+</tr></thead><tbody>
+<tr>
+<td>2026-03-23</td>
+<td>262</td>
+<td>59.2</td>
+<td>16</td>
+<td>68.8</td>
+<td>9.6</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>1781</td>
+<td>60.3</td>
+<td>171</td>
+<td>68.4</td>
+<td>8.1</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>1215</td>
+<td>49.4</td>
+<td>159</td>
+<td>49.7</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>2026-04-13</td>
+<td>843</td>
+<td>49.0</td>
+<td>53</td>
+<td>41.5</td>
+<td>-7.5</td>
+</tr>
+<tr>
+<td>2026-04-20</td>
+<td>644</td>
+<td>50.3</td>
+<td>38</td>
+<td>42.1</td>
+<td>-8.2</td>
+</tr>
+</tbody></table>
+<h3>ETH (momentum_eth)</h3>
+<table>
+<thead><tr>
+<th>week</th>
+<th>lab N</th>
+<th>lab WR%</th>
+<th>prod N</th>
+<th>prod WR%</th>
+<th>gap (pp)</th>
+</tr></thead><tbody>
+<tr>
+<td>2026-03-30</td>
+<td>1137</td>
+<td>58.4</td>
+<td>102</td>
+<td>72.5</td>
+<td>14.1</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>1834</td>
+<td>47.4</td>
+<td>262</td>
+<td>48.9</td>
+<td>1.5</td>
+</tr>
+<tr>
+<td>2026-04-13</td>
+<td>1422</td>
+<td>47.8</td>
+<td>152</td>
+<td>46.1</td>
+<td>-1.7</td>
+</tr>
+<tr>
+<td>2026-04-20</td>
+<td>685</td>
+<td>48.3</td>
+<td>86</td>
+<td>48.8</td>
+<td>0.5</td>
+</tr>
+</tbody></table>
+<p><strong>How to read:</strong> if <code>lab WR%</code> stays roughly constant week-over-week while <code>prod WR%</code> declines, H1 is supported — the signal hasn't decayed, just our subset of it that fires conviction&gt;=3 has gotten worse. If both decline together, the signal itself is the problem.</p>
+<hr />
+<h2>H2 — Regime mix shift</h2>
+<p><em>Per-regime WR by week + regime share of all predictions. If a regime's WR is stable but its share grew (or another regime's share grew where WR was always bad), the signal is fine — the market shifted under it.</em></p>
+<h3>BTC</h3>
+<table>
+<thead><tr>
+<th>week</th>
+<th>regime</th>
+<th>bets (conv≥3)</th>
+<th>WR%</th>
+<th>regime share</th>
+</tr></thead><tbody>
+<tr>
+<td>2026-03-23</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>2</td>
+<td>100.0</td>
+<td>5.3%</td>
+</tr>
+<tr>
+<td>2026-03-23</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>12</td>
+<td>75.0</td>
+<td>44.7%</td>
+</tr>
+<tr>
+<td>2026-03-23</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>2</td>
+<td>0.0</td>
+<td>8.0%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>HIGH_VOL / NEUTRAL</td>
+<td>8</td>
+<td>62.5</td>
+<td>13.8%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>19</td>
+<td>78.9</td>
+<td>4.8%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>LOW_VOL / NEUTRAL</td>
+<td>29</td>
+<td>51.7</td>
+<td>9.9%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>LOW_VOL / TRENDING</td>
+<td>40</td>
+<td>65.0</td>
+<td>7.2%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>37</td>
+<td>78.4</td>
+<td>16.8%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>38</td>
+<td>71.1</td>
+<td>7.4%</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>HIGH_VOL / NEUTRAL</td>
+<td>93</td>
+<td>48.4</td>
+<td>49.3%</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>8</td>
+<td>37.5</td>
+<td>1.6%</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>54</td>
+<td>53.7</td>
+<td>41.6%</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>4</td>
+<td>50.0</td>
+<td>1.1%</td>
+</tr>
+<tr>
+<td>2026-04-13</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>12</td>
+<td>50.0</td>
+<td>4.2%</td>
+</tr>
+<tr>
+<td>2026-04-13</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>41</td>
+<td>39.0</td>
+<td>43.7%</td>
+</tr>
+<tr>
+<td>2026-04-20</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>5</td>
+<td>20.0</td>
+<td>9.4%</td>
+</tr>
+<tr>
+<td>2026-04-20</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>29</td>
+<td>51.7</td>
+<td>27.8%</td>
+</tr>
+<tr>
+<td>2026-04-20</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>4</td>
+<td>0.0</td>
+<td>1.7%</td>
+</tr>
+</tbody></table>
+<h3>ETH</h3>
+<table>
+<thead><tr>
+<th>week</th>
+<th>regime</th>
+<th>bets (conv≥3)</th>
+<th>WR%</th>
+<th>regime share</th>
+</tr></thead><tbody>
+<tr>
+<td>2026-03-30</td>
+<td>HIGH_VOL / NEUTRAL</td>
+<td>6</td>
+<td>83.3</td>
+<td>9.6%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>3</td>
+<td>100.0</td>
+<td>1.3%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>LOW_VOL / NEUTRAL</td>
+<td>52</td>
+<td>69.2</td>
+<td>27.8%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>LOW_VOL / TRENDING</td>
+<td>12</td>
+<td>83.3</td>
+<td>4.7%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>10</td>
+<td>70.0</td>
+<td>9.8%</td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>19</td>
+<td>68.4</td>
+<td>7.8%</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>HIGH_VOL / NEUTRAL</td>
+<td>22</td>
+<td>27.3</td>
+<td>14.3%</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>18</td>
+<td>33.3</td>
+<td>7.2%</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>LOW_VOL / NEUTRAL</td>
+<td>31</td>
+<td>48.4</td>
+<td>11.2%</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>LOW_VOL / TRENDING</td>
+<td>1</td>
+<td>100.0</td>
+<td>0.1%</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>154</td>
+<td>52.6</td>
+<td>48.7%</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>36</td>
+<td>52.8</td>
+<td>7.7%</td>
+</tr>
+<tr>
+<td>2026-04-13</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>19</td>
+<td>31.6</td>
+<td>7.0%</td>
+</tr>
+<tr>
+<td>2026-04-13</td>
+<td>LOW_VOL / NEUTRAL</td>
+<td>7</td>
+<td>28.6</td>
+<td>2.9%</td>
+</tr>
+<tr>
+<td>2026-04-13</td>
+<td>LOW_VOL / TRENDING</td>
+<td>2</td>
+<td>50.0</td>
+<td>0.2%</td>
+</tr>
+<tr>
+<td>2026-04-13</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>124</td>
+<td>49.2</td>
+<td>57.5%</td>
+</tr>
+<tr>
+<td>2026-04-20</td>
+<td>LOW_VOL / NEUTRAL</td>
+<td>4</td>
+<td>75.0</td>
+<td>3.5%</td>
+</tr>
+<tr>
+<td>2026-04-20</td>
+<td>MEDIUM_VOL / MEAN_REVERTING</td>
+<td>3</td>
+<td>66.7</td>
+<td>15.1%</td>
+</tr>
+<tr>
+<td>2026-04-20</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>77</td>
+<td>48.1</td>
+<td>72.1%</td>
+</tr>
+<tr>
+<td>2026-04-20</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>2</td>
+<td>0.0</td>
+<td>1.2%</td>
+</tr>
+</tbody></table>
+<hr />
+<h2>H3 — Cell decay (estimate × regime)</h2>
+<p><em>Strong-era WR vs decay-era WR per (estimate_bucket × regime) cell. Cells where decay-era WR stayed &gt;55% on N&gt;=20 are listed as <code>survivors</code> — production-restriction targets.</em></p>
+<h3>BTC survivors (decay-era N≥20, WR≥55%)</h3>
+<p><strong>No BTC cells survived</strong> the decay-era N≥20 + WR≥55% bar. Restriction-based rehabilitation has no target for BTC based on (estimate × regime) alone.</p>
+<h3>ETH survivors (decay-era N≥20, WR≥55%)</h3>
+<p><strong>No ETH cells survived</strong> the bar.</p>
+<h3>BTC: full table (all cells)</h3>
+<details><summary>expand</summary>
+<table>
+<thead><tr>
+<th>estimate</th>
+<th>regime</th>
+<th>strong N</th>
+<th>strong WR%</th>
+<th>decay N</th>
+<th>decay WR%</th>
+<th>delta (pp)</th>
+</tr></thead><tbody>
+<tr>
+<td>0.4-0.5</td>
+<td>HIGH_VOL / NEUTRAL</td>
+<td>7</td>
+<td>42.9</td>
+<td>28</td>
+<td>46.4</td>
+<td>3.5</td>
+</tr>
+<tr>
+<td>0.4-0.5</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>2</td>
+<td>100.0</td>
+<td>11</td>
+<td>45.5</td>
+<td>-54.5</td>
+</tr>
+<tr>
+<td>0.4-0.5</td>
+<td>LOW_VOL / TRENDING</td>
+<td>9</td>
+<td>77.8</td>
+<td>0</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>0.4-0.5</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>3</td>
+<td>66.7</td>
+<td>2</td>
+<td>0.0</td>
+<td>-66.7</td>
+</tr>
+<tr>
+<td>0.5-0.6</td>
+<td>HIGH_VOL / NEUTRAL</td>
+<td>7</td>
+<td>71.4</td>
+<td>40</td>
+<td>47.5</td>
+<td>-23.9</td>
+</tr>
+<tr>
+<td>0.5-0.6</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>3</td>
+<td>100.0</td>
+<td>10</td>
+<td>40.0</td>
+<td>-60.0</td>
+</tr>
+<tr>
+<td>0.5-0.6</td>
+<td>LOW_VOL / NEUTRAL</td>
+<td>23</td>
+<td>47.8</td>
+<td>0</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>0.5-0.6</td>
+<td>LOW_VOL / TRENDING</td>
+<td>17</td>
+<td>70.6</td>
+<td>0</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>0.5-0.6</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>11</td>
+<td>63.6</td>
+<td>95</td>
+<td>50.5</td>
+<td>-13.1</td>
+</tr>
+<tr>
+<td>0.5-0.6</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>11</td>
+<td>72.7</td>
+<td>5</td>
+<td>20.0</td>
+<td>-52.7</td>
+</tr>
+<tr>
+<td>0.6-0.7</td>
+<td>HIGH_VOL / NEUTRAL</td>
+<td>7</td>
+<td>57.1</td>
+<td>5</td>
+<td>40.0</td>
+<td>-17.1</td>
+</tr>
+<tr>
+<td>0.6-0.7</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>10</td>
+<td>80.0</td>
+<td>1</td>
+<td>0.0</td>
+<td>-80.0</td>
+</tr>
+<tr>
+<td>0.6-0.7</td>
+<td>LOW_VOL / NEUTRAL</td>
+<td>6</td>
+<td>66.7</td>
+<td>0</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>0.6-0.7</td>
+<td>LOW_VOL / TRENDING</td>
+<td>12</td>
+<td>50.0</td>
+<td>0</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>0.6-0.7</td>
+<td>MEDIUM_VOL / NEUTRAL</td>
+<td>38</td>
+<td>81.6</td>
+<td>29</td>
+<td>41.4</td>
+<td>-40.2</td>
+</tr>
+<tr>
+<td>0.6-0.7</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>17</td>
+<td>64.7</td>
+<td>0</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>&lt;0.4</td>
+<td>HIGH_VOL / NEUTRAL</td>
+<td>3</td>
+<td>66.7</td>
+<td>4</td>
+<td>50.0</td>
+<td>-16.7</td>
+</tr>
+<tr>
+<td>&lt;0.4</td>
+<td>HIGH_VOL / TRENDING</td>
+<td>7</td>
+<td>71.4</td>
+<td>2</td>
+<td>0.0</td>
+<td>-71.4</td>
+</tr>
+<tr>
+<td>&lt;0.4</td>
+<td>LOW_VOL / TRENDING</td>
+<td>2</td>
+<td>50.0</td>
+<td>0</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>&lt;0.4</td>
+<td>MEDIUM_VOL / TRENDING</td>
+<td>9</td>
+<td>66.7</td>
+<td>1</td>
+<td>100.0</td>
+<td>33.3</td>
+</tr>
+</tbody></table>
+</details>
+<hr />
+<h2>H4 — Cross-asset asynchrony (BTC vs ETH)</h2>
+<p><em>Per-week conviction&gt;=3 WR for both assets, side by side. If one kept its edge while the other lost it, capital should follow the live signal.</em></p>
+<table>
+<thead><tr>
+<th>week</th>
+<th>BTC N</th>
+<th>BTC WR%</th>
+<th>ETH N</th>
+<th>ETH WR%</th>
+<th>ETH-BTC (pp)</th>
+</tr></thead><tbody>
+<tr>
+<td>2026-03-23</td>
+<td>16</td>
+<td>68.8</td>
+<td>0</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2026-03-30</td>
+<td>171</td>
+<td>68.4</td>
+<td>102</td>
+<td>72.5</td>
+<td>4.1</td>
+</tr>
+<tr>
+<td>2026-04-06</td>
+<td>159</td>
+<td>49.7</td>
+<td>262</td>
+<td>48.9</td>
+<td>-0.8</td>
+</tr>
+<tr>
+<td>2026-04-13</td>
+<td>53</td>
+<td>41.5</td>
+<td>152</td>
+<td>46.1</td>
+<td>4.6</td>
+</tr>
+<tr>
+<td>2026-04-20</td>
+<td>38</td>
+<td>42.1</td>
+<td>86</td>
+<td>48.8</td>
+<td>6.7</td>
+</tr>
+</tbody></table>
+<hr />
+<h2>H5 — Timing shift</h2>
+<p><em>Median seconds past each 5-minute boundary for prediction writes, sampled randomly from each era. If decay-era predictions are systematically later within the cycle, slower dispatch could be missing fast price moves.</em></p>
+<table>
+<thead><tr>
+<th>era</th>
+<th>n</th>
+<th>median (s)</th>
+<th>p90 (s)</th>
+<th>p99 (s)</th>
+</tr></thead><tbody>
+<tr>
+<td>strong</td>
+<td>200</td>
+<td>136</td>
+<td>263</td>
+<td>298</td>
+</tr>
+<tr>
+<td>decay</td>
+<td>200</td>
+<td>6</td>
+<td>14</td>
+<td>46</td>
+</tr>
+</tbody></table>
+<hr />
+<h2>How to use this</h2>
+<ol>
+<li>Read H1 first. It either explains everything (signal still good, execution broken) or rules out the cheap fix.</li>
+<li>If H1 doesn't explain it, look at H2. Stable regime-WR + shifted regime mix is also recoverable — just restrict trading to the regimes that work.</li>
+<li>H3 is the granular rehab list. Surviving cells with N≥20 are concrete production-restriction candidates.</li>
+<li>H4 tells you whether the answer is asset-specific. ETH 5m had a positive 7d signal EHR going into the outage; that may persist.</li>
+<li>H5 is a sanity check — if timing shifted dramatically, fix that before anything else.</li>
+</ol>
+<p><em>Note: pre-Apr-24 data only. The 2026-04-24/28 disk-full outage produced no predictions during that window. Apr 28 onward is fresh data accumulating from the recovered engine.</em></p>
+<hr />
+<h2>Synthesis — what the data is actually saying</h2>
+<p>Reading H1 + H2 + H5 together, the decay has a clear narrative.</p>
+<h3>The signal really did decay around 2026-04-06</h3>
+<p>H1 BTC: lab WR (always-fire) dropped from ~60% (Mar 23-30) to ~50% (Apr 6 onward). H1 ETH: same pattern, 58% → 47%. <strong>This is genuine signal decay, not just an execution problem.</strong> Both assets, same week, same magnitude.</p>
+<p>H2 confirms: even within MEDIUM_VOL/NEUTRAL — the dominant regime — WR collapsed from 75-78% in March to 39-52% in April. Per-regime WR fell. So it's not pure regime-mix shift either.</p>
+<h3>But the conviction filter ALSO inverted</h3>
+<p>The lab→prod gap shows what conviction was <em>adding</em> on top of base WR:</p>
+<table>
+<thead><tr>
+<th>Week</th>
+<th>BTC gap (pp)</th>
+<th>Reading</th>
+</tr></thead><tbody>
+<tr>
+<td>Mar 23</td>
+<td>+9.6</td>
+<td>conviction filter added 10pp</td>
+</tr>
+<tr>
+<td>Mar 30</td>
+<td>+8.1</td>
+<td>still adding</td>
+</tr>
+<tr>
+<td>Apr 6</td>
+<td>+0.3</td>
+<td>filter stopped helping</td>
+</tr>
+<tr>
+<td>Apr 13</td>
+<td>−7.5</td>
+<td>filter is now picking losers</td>
+</tr>
+<tr>
+<td>Apr 20</td>
+<td>−8.2</td>
+<td>same</td>
+</tr>
+</tbody></table>
+<p>Pre-Apr-6 the conviction filter was a real edge generator. Post-Apr-6 it became <em>anti-selective</em> — picking the worse trades from a coin-flip pool. <strong>Two losses in one: the signal decayed AND the filter inverted.</strong></p>
+<p>ETH didn't suffer the filter inversion (gap stayed near zero). Only BTC's filter went bad.</p>
+<h3>H5 is the smoking gun</h3>
+<p>The most concrete finding in this whole analysis:</p>
+<table>
+<thead><tr>
+<th>Era</th>
+<th>Median seconds-past-5min</th>
+</tr></thead><tbody>
+<tr>
+<td>Strong (Mar 29 – Apr 5)</td>
+<td><strong>136-152 seconds</strong></td>
+</tr>
+<tr>
+<td>Decay (Apr 6 onward)</td>
+<td><strong>3-14 seconds</strong></td>
+</tr>
+</tbody></table>
+<p>Inflection date: <strong>2026-04-06</strong>. Sharp, single-day cliff. Verified via per-day query: average offset went 152s → 3s between Apr 5 and Apr 6.</p>
+<p>What this means: pre-Apr-6 the prediction fired ~2:30 INTO each 5-minute cycle, with ~2:30 of new candle data already accumulated. Post-Apr-6 it fires ~6 seconds after the close, with ~5 minutes of upcoming candle to be wrong about.</p>
+<p><strong>The strong-era system was effectively cheating</strong> — using mid-cycle in-flight price action as an information edge on the upcoming candle's direction. The Apr 6 refactor moved dispatch from timer-based to event-driven, which removed the cheat and exposed the bare signal — which turns out to be near-coin-flip.</p>
+<h3>Apr 6 commit constellation</h3>
+<p>Five non-trivial commits landed on Apr 5-6 that could have caused the inflection:</p>
+<ul>
+<li><code>7bc10f747</code> Harden engine crash resilience: supervisor, rebase recovery, error isolation</li>
+<li><code>1b3cddf84</code> Pipeline isolation + unification: eliminate TRADING_ENABLED global mutation</li>
+<li><code>d741d5115</code> FOK execution layer: replace GTC with Fill-Or-Kill orders</li>
+<li><code>750c6a14e</code> Unify all Polymarket pipelines on FOK execution infrastructure</li>
+<li><code>8766763fc</code> Add implementation plan: event-driven trade execution</li>
+</ul>
+<p>The pipeline isolation refactor (<code>1b3cddf84</code>) and the FOK unification (<code>750c6a14e</code>) are the two most likely candidates for changing dispatch timing. A 30-minute commit-by-commit walk would identify the exact one.</p>
+<h3>Rehabilitation paths — ranked by promise</h3>
+<p><strong>1. Re-introduce the mid-cycle information edge — IF intentionally desired.</strong> The strong-era system worked because it had ~2:30 of in-flight candle data when predicting. That's not technically "cheating" — it's "using the information available at decision time." The Apr 6 refactor wasn't wrong; it just removed a hidden source of edge. Putting it back means deliberately running predictions on partial-candle data, which has its own fragility risks but is at least a known recoverable mechanism.</p>
+<p><strong>2. Audit the conviction filter for the inversion.</strong> The BTC lab→prod gap going from +9 to −8 in three weeks is suspicious of <em>something we shipped</em> picking the wrong things. Walk through the gates added between Apr 6 and Apr 13 (intraday_range_gate, highvol_non_trending_gate, dynamic_estimates revert, etc.). One or more is probably anti-selective in its current form.</p>
+<p><strong>3. Restrict to ETH-only.</strong> ETH outperforms BTC by 4-7pp every decay-era week. The conviction filter on ETH didn't invert. ETH 5m is the last pipeline with a positive 7d signal EHR per <code>PIVOT_OPTIONS.md</code>. The asset asymmetry is small but real.</p>
+<p><strong>4. H3 says no easy slice survives.</strong> Zero (estimate × regime) cells held the ≥55% WR / N≥20 bar. So "just trade this one regime" is not an option — the rehab paths above are about <em>mechanism</em>, not <em>slice restriction</em>.</p>
+<h3>What this means for the pivot decision</h3>
+<p>Yesterday's framing was "is V4 dying or is execution broken?" The honest answer is <strong>both, partially, and there's a third thing nobody named.</strong> The third thing is the timing refactor. None of the three are mutually exclusive.</p>
+<p>The cheap probe: walk Apr 5-6 commits in 30 minutes, identify the exact dispatch-timing change, decide whether to revert or keep. That single answer either:</p>
+<ul>
+<li>Reverts the WR back to ~60% lab (signal works again, decay was self-inflicted) → <strong>rehabilitation succeeded</strong></li>
+<li>Or doesn't (signal decayed for other reasons) → V4 chapter properly closed, pivot to arb / longer-duration / Kalshi without the lingering "did we shoot ourselves" doubt</li>
+</ul>
+<p>Either outcome is decision-grade. <strong>This is the highest-leverage 30 minutes of work on the table right now.</strong></p>
+</body></html>
