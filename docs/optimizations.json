@@ -619,9 +619,10 @@
       "min_sample": 100000,
       "revert_condition": "after regime coverage met: no regime shows ≥5 exploitable divergences/day AND persistence < 1 cycle — in that case the thesis is dead",
       "baseline": {
-        "observation_period_start": "2026-04-23",
+        "observation_period_start": "2026-04-28",
+        "previous_start_attempt": "2026-04-23 — invalidated by 2026-04-24/28 disk-full outage; only ~4.5h of data accumulated before engine died",
         "market_classes_covered": ["5m", "15m"],
-        "note": "Longer-duration market classes (hourly/daily) deferred — current fetch_markets only ingests 5m/15m 'Up or Down' markets. If Phase 0 shows edge on 5m/15m, longer-duration will be added as a follow-up ingestion expansion."
+        "note": "Longer-duration market classes (hourly/daily) deferred — current fetch_markets only ingests 5m/15m 'Up or Down' markets. If Phase 0 shows edge on 5m/15m, longer-duration will be added as a follow-up ingestion expansion. Phase 0 clock effectively reset 2026-04-28; see docs/ops/postmortem_2026-04-28_disk_full.md."
       },
       "latest_check": null,
       "post_stats": null,
