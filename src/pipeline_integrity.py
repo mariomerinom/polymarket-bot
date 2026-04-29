@@ -239,9 +239,22 @@ def _check_db_health(db) -> dict:
     return {"check_name": "db_health", "status": "OK", "detail": ""}
 
 
-def _check_expired_would_win(db, pipeline) -> dict:
-    """Check for expired orders that would have won."""
+def _check_expired_would_win(
+    db, pipeline, today_date: Optional[str] = None
+) -> dict:
+    """Check for expired orders that would have won — TODAY only.
+
+    2026-04-29 fix: prior version had no date filter and re-flagged the
+    same 11 expired orders from the pre-FAK GTC era (Apr 2-5) on every
+    daily run forever. The check is per-cycle / per-day, so the right
+    scope is "did anything go wrong today" — not "is there ANY expired
+    order in history that would have won."
+
+    `today_date` defaults to current UTC date; injectable for tests.
+    """
     result = {"check_name": "expired_would_win", "status": "OK", "detail": ""}
+    if today_date is None:
+        today_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Check if both tables exist
     tables = {r[0] for r in db.execute(
@@ -255,14 +268,17 @@ def _check_expired_would_win(db, pipeline) -> dict:
             SELECT COUNT(*) FROM orders o
             JOIN markets m ON o.market_id = m.id
             WHERE o.status = 'expired' AND m.resolved = 1
+            AND date(o.placed_at) = ?
             AND ((o.direction = 'UP' AND m.outcome = 1)
                  OR (o.direction = 'DOWN' AND m.outcome = 0))
-        """).fetchone()
+        """, (today_date,)).fetchone()
 
         count = rows[0] if rows else 0
         if count > 0:
             result["status"] = "WARN"
-            result["detail"] = f"{count} expired order(s) would have won"
+            result["detail"] = (
+                f"{count} expired order(s) placed today would have won"
+            )
     except sqlite3.OperationalError:
         pass  # Missing columns — skip gracefully
 

@@ -293,23 +293,64 @@ class TestExpiredWouldWin:
     def test_no_expired(self):
         from pipeline_integrity import _check_expired_would_win
         db = _make_db()
-        result = _check_expired_would_win(db, "btc_5m")
+        result = _check_expired_would_win(db, "btc_5m", today_date="2026-04-29")
         assert result["status"] == "OK"
         db.close()
 
-    def test_detects_missed_win(self):
+    def test_detects_missed_win_placed_today(self):
+        """An expired order placed TODAY that would have won → WARN."""
         from pipeline_integrity import _check_expired_would_win
         db = _make_db()
         db.execute(
             "INSERT INTO markets (id, resolved, outcome) VALUES ('m1', 1, 1)"
         )
         db.execute(
-            "INSERT INTO orders (market_id, direction, status, cycle) "
-            "VALUES ('m1', 'UP', 'expired', 1)"
+            "INSERT INTO orders (market_id, direction, status, cycle, placed_at) "
+            "VALUES ('m1', 'UP', 'expired', 1, '2026-04-29T15:00:00+00:00')"
         )
-        result = _check_expired_would_win(db, "btc_5m")
+        result = _check_expired_would_win(db, "btc_5m", today_date="2026-04-29")
         assert result["status"] == "WARN"
         assert "1 expired" in result["detail"]
+        db.close()
+
+    def test_ignores_old_expired_orders(self):
+        """REGRESSION: expired orders from prior days must NOT trigger today's
+        alert. Pre-fix behavior: the query had no date filter, so the same
+        11 GTC-era expired orders from 2026-04-02/04/05 re-fired the alarm
+        every single day forever. Fixed 2026-04-29 (commit TBD).
+        """
+        from pipeline_integrity import _check_expired_would_win
+        db = _make_db()
+        db.execute(
+            "INSERT INTO markets (id, resolved, outcome) VALUES ('m1', 1, 1)"
+        )
+        # Two old expired-would-win orders (legacy GTC era)
+        db.execute(
+            "INSERT INTO orders (market_id, direction, status, cycle, placed_at) "
+            "VALUES ('m1', 'UP', 'expired', 1, '2026-04-02T15:00:00+00:00')"
+        )
+        db.execute(
+            "INSERT INTO orders (market_id, direction, status, cycle, placed_at) "
+            "VALUES ('m1', 'UP', 'expired', 1, '2026-04-05T15:00:00+00:00')"
+        )
+        result = _check_expired_would_win(db, "btc_5m", today_date="2026-04-29")
+        assert result["status"] == "OK", \
+            f"Old expired orders should NOT trigger today's alert; got {result}"
+        db.close()
+
+    def test_today_filter_excludes_yesterday(self):
+        """Boundary: an expired order placed yesterday must not count."""
+        from pipeline_integrity import _check_expired_would_win
+        db = _make_db()
+        db.execute(
+            "INSERT INTO markets (id, resolved, outcome) VALUES ('m1', 1, 1)"
+        )
+        db.execute(
+            "INSERT INTO orders (market_id, direction, status, cycle, placed_at) "
+            "VALUES ('m1', 'UP', 'expired', 1, '2026-04-28T23:59:59+00:00')"
+        )
+        result = _check_expired_would_win(db, "btc_5m", today_date="2026-04-29")
+        assert result["status"] == "OK"
         db.close()
 
 
