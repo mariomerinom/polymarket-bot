@@ -1604,16 +1604,28 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 lines.append("")
 
             lines.extend([
-                "| Offset | Regime | Dir resolved | WR |",
-                "|-------:|--------|-------------:|---:|",
+                "| Offset | Regime | Dir resolved | WR | Realistic n | Realistic P&L | EV/bet |",
+                "|-------:|--------|-------------:|---:|------------:|--------------:|-------:|",
             ])
             for c in mp["cells"]:
                 wr_str = f"{c['wr_pct']}%" if c["wr_pct"] is not None else "—"
+                rn = c.get("realistic_n", 0)
+                rpnl = c.get("realistic_pnl")
+                rev = c.get("realistic_ev_per_bet")
+                rpnl_str = f"${rpnl:+,.2f}" if rpnl is not None else "—"
+                rev_str = f"${rev:+.2f}" if rev is not None else "—"
                 lines.append(
                     f"| T+{c['offset_seconds']}s | {c['regime']} | "
-                    f"{c['dir_resolved']} | {wr_str} |"
+                    f"{c['dir_resolved']} | {wr_str} | {rn} | {rpnl_str} | {rev_str} |"
                 )
-            lines.extend(["", ""])
+            lines.extend([
+                "",
+                "*Realistic P&L: $25 bet, entry at orderbook best_ask "
+                "(or 1−best_bid for NO side) captured at poll time, less "
+                "2% taker fee. Replaces the prior fictional $0.50 "
+                "entry assumption.*",
+                "", "",
+            ])
 
         if not shadow:
             continue
@@ -2026,6 +2038,73 @@ def analyze_ehr(db, date_str):
     return result
 
 
+def _realistic_pnl_for_cell(db, date_str, offset_seconds, regime,
+                             bet_size=25.0, fee_rate=0.02):
+    """Compute realistic-entry P&L for one (offset × regime) cell.
+
+    Replaces the fictional $0.50 entry assumption with the live YES-token
+    best_ask captured at poll time. This is the layer-2 fidelity step
+    discussed 2026-04-30: lab-WR alone overestimates edge because the
+    market has often already moved against the signal by the time the
+    quote firms up.
+
+    For each directional poll with orderbook context:
+      estimate > 0.5  →  BUY YES at mkt_best_ask
+                          (or fall back to mkt_mid if best_ask is NULL)
+      estimate < 0.5  →  BUY NO at (1 - mkt_best_bid)
+                          (NO best_ask = 1 - YES best_bid)
+      Win:  shares × $1 - bet_size, less fees
+      Lose: -bet_size
+
+    Returns None if no polls in this cell have orderbook context.
+    """
+    rows = db.execute(
+        """
+        SELECT mpp.estimate, mpp.mkt_mid, mpp.mkt_best_bid, mpp.mkt_best_ask,
+               m.outcome
+        FROM multi_poll_predictions mpp
+        JOIN markets m ON mpp.market_id = m.id
+        WHERE date(mpp.predicted_at) = ?
+          AND mpp.offset_seconds = ?
+          AND mpp.regime = ?
+          AND mpp.estimate IS NOT NULL AND mpp.estimate != 0.5
+          AND m.resolved = 1
+        """,
+        (date_str, offset_seconds, regime),
+    ).fetchall()
+
+    n = 0
+    pnl = 0.0
+    for est, mid, bid, ask, outcome in rows:
+        # Determine entry price for the side we'd take
+        if est > 0.5:
+            entry = ask if ask is not None else mid
+        else:
+            entry = (1.0 - bid) if bid is not None else (
+                (1.0 - mid) if mid is not None else None
+            )
+        if entry is None or entry <= 0 or entry >= 1:
+            continue
+        n += 1
+        won = (
+            (est > 0.5 and outcome == 1)
+            or (est < 0.5 and outcome == 0)
+        )
+        if won:
+            shares = bet_size / entry
+            gross_profit = shares * 1.0 - bet_size
+            net = gross_profit - bet_size * fee_rate
+            pnl += net
+        else:
+            pnl -= bet_size
+
+    return {
+        "n_with_orderbook": n,
+        "realistic_pnl": round(pnl, 2),
+        "ev_per_bet": round(pnl / n, 2) if n else None,
+    }
+
+
 def analyze_multi_poll(db, date_str):
     """Multi-poll Phase A daily snapshot — per-(offset × regime) WR.
 
@@ -2033,6 +2112,11 @@ def analyze_multi_poll(db, date_str):
     resolved + WR for each (offset_seconds × regime) cell with N >= 20
     on the given date. Also surfaces the BEST cell across regimes for
     the canonical T+180 offset, which Phase B will likely select.
+
+    Each cell now also includes realistic-entry P&L: hypothetical $25
+    bets at the actual orderbook best_ask captured at poll time, less
+    a 2% taker fee. realistic_pnl is None when no polls in the cell
+    have orderbook context (e.g. pre-2026-04-30 data).
 
     Returns None if the table doesn't exist or has no rows for the date
     (e.g. recovered DB with no fresh data).
@@ -2077,12 +2161,17 @@ def analyze_multi_poll(db, date_str):
                 round(100.0 * dir_wins / dir_resolved, 1)
                 if dir_resolved else None
             )
+            realistic = _realistic_pnl_for_cell(db, date_str, off, regime)
             cells.append({
                 "offset_seconds": off,
                 "regime": regime,
                 "dir_resolved": dir_resolved,
                 "dir_wins": dir_wins,
                 "wr_pct": wr,
+                "realistic_n": realistic["n_with_orderbook"],
+                "realistic_pnl": realistic["realistic_pnl"]
+                                 if realistic["n_with_orderbook"] else None,
+                "realistic_ev_per_bet": realistic["ev_per_bet"],
             })
 
         # Best cell at canonical T+180 offset (Phase B's likely target).

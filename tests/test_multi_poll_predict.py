@@ -121,6 +121,102 @@ class TestLogPoll:
         assert row[7] == 0.025
         assert row[8] == 1  # default success
 
+    def test_log_poll_with_orderbook_fields(self, tmp_path):
+        """Realistic-shadow extension (2026-04-30): log orderbook context
+        at poll time so Phase B can compute realistic-entry P&L."""
+        import multi_poll_predict
+
+        db = sqlite3.connect(str(tmp_path / "t.db"))
+        multi_poll_predict.init_table(db)
+        multi_poll_predict.log_poll(
+            db,
+            cycle=1,
+            cycle_close_at="2026-04-30T12:00:00+00:00",
+            offset_seconds=180,
+            market_id="0xabc",
+            asset="BTC",
+            estimate=0.65,
+            regime_label="MEDIUM_VOL / NEUTRAL",
+            spot_at_poll=78400.0,
+            mkt_mid=0.52,
+            mkt_best_bid=0.51,
+            mkt_best_ask=0.53,
+            mkt_spread=0.02,
+            orderbook_age_ms=250,
+        )
+        row = db.execute(
+            "SELECT mkt_mid, mkt_best_bid, mkt_best_ask, mkt_spread, "
+            "orderbook_age_ms FROM multi_poll_predictions"
+        ).fetchone()
+        assert row == (0.52, 0.51, 0.53, 0.02, 250)
+
+    def test_log_poll_orderbook_optional(self, tmp_path):
+        """When orderbook unavailable, columns must be NULL — never block
+        the row write. Mirrors arb_divergence pattern."""
+        import multi_poll_predict
+
+        db = sqlite3.connect(str(tmp_path / "t.db"))
+        multi_poll_predict.init_table(db)
+        multi_poll_predict.log_poll(
+            db,
+            cycle=1,
+            cycle_close_at="2026-04-30T12:00:00+00:00",
+            offset_seconds=180,
+            market_id="0xabc",
+            asset="BTC",
+            estimate=0.65,
+            regime_label="MEDIUM_VOL / NEUTRAL",
+            spot_at_poll=78400.0,
+            # No orderbook fields supplied
+        )
+        row = db.execute(
+            "SELECT estimate, mkt_mid, mkt_best_ask FROM multi_poll_predictions"
+        ).fetchone()
+        assert row == (0.65, None, None)  # signal stored, orderbook NULL
+
+    def test_init_table_migration_adds_orderbook_columns(self, tmp_path):
+        """Pre-existing tables (from before 2026-04-30) get the new
+        orderbook columns added via ALTER TABLE on next init_table call."""
+        db = sqlite3.connect(str(tmp_path / "t.db"))
+        # Simulate a pre-2026-04-30 table missing the new columns
+        db.execute("""
+            CREATE TABLE multi_poll_predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cycle INTEGER,
+                cycle_close_at TEXT NOT NULL,
+                offset_seconds INTEGER NOT NULL,
+                predicted_at TEXT NOT NULL,
+                market_id TEXT NOT NULL,
+                asset TEXT,
+                estimate REAL,
+                regime TEXT,
+                spot_at_poll REAL,
+                in_flight_return_pct REAL,
+                poll_succeeded INTEGER DEFAULT 1,
+                market_resolved INTEGER,
+                market_outcome INTEGER,
+                won INTEGER
+            )
+        """)
+        db.commit()
+
+        import multi_poll_predict
+        multi_poll_predict.init_table(db)
+
+        cols = {
+            r[1]
+            for r in db.execute(
+                "PRAGMA table_info(multi_poll_predictions)"
+            ).fetchall()
+        }
+        assert "mkt_mid" in cols
+        assert "mkt_best_bid" in cols
+        assert "mkt_best_ask" in cols
+        assert "mkt_spread" in cols
+        assert "orderbook_age_ms" in cols
+        # And idempotent: second call shouldn't error
+        multi_poll_predict.init_table(db)
+
     def test_log_poll_failure_marks_succeeded_zero(self, tmp_path):
         import multi_poll_predict
 

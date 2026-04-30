@@ -56,7 +56,12 @@ CREATE TABLE IF NOT EXISTS multi_poll_predictions (
     poll_succeeded INTEGER DEFAULT 1,
     market_resolved INTEGER,
     market_outcome INTEGER,
-    won INTEGER
+    won INTEGER,
+    mkt_mid REAL,
+    mkt_best_bid REAL,
+    mkt_best_ask REAL,
+    mkt_spread REAL,
+    orderbook_age_ms INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_mpp_cycle ON multi_poll_predictions(cycle);
 CREATE INDEX IF NOT EXISTS idx_mpp_offset
@@ -65,13 +70,41 @@ CREATE INDEX IF NOT EXISTS idx_mpp_market_time
     ON multi_poll_predictions(market_id, predicted_at);
 """
 
+# Columns added 2026-04-30 to capture realistic-entry orderbook context
+# at poll time. Previously polls only logged the SIGNAL; now they also
+# log the price the signal would have transacted against. Phase B's
+# realistic-entry P&L analysis depends on these.
+_MIGRATION_COLUMNS = [
+    ("mkt_mid", "REAL"),
+    ("mkt_best_bid", "REAL"),
+    ("mkt_best_ask", "REAL"),
+    ("mkt_spread", "REAL"),
+    ("orderbook_age_ms", "INTEGER"),
+]
+
 
 def init_table(db) -> None:
-    """Create multi_poll_predictions table + indexes if not present."""
+    """Create multi_poll_predictions table + indexes if not present.
+
+    Idempotent. Also runs forward-migration for the 5 orderbook columns
+    added 2026-04-30 — pre-existing rows on the VPS keep NULL values for
+    those columns, new rows are written with full context.
+    """
     for stmt in SCHEMA_SQL.strip().split(";"):
         s = stmt.strip()
         if s:
             db.execute(s)
+    # Forward-migration: add columns to pre-existing tables. SQLite has
+    # no "ADD COLUMN IF NOT EXISTS"; we rely on try/except matching the
+    # codebase pattern (see src/fill_diagnostic.py:117).
+    for col_name, col_type in _MIGRATION_COLUMNS:
+        try:
+            db.execute(
+                f"ALTER TABLE multi_poll_predictions "
+                f"ADD COLUMN {col_name} {col_type}"
+            )
+        except Exception:
+            pass  # column already exists
     db.commit()
 
 
@@ -124,16 +157,28 @@ def log_poll(
     in_flight_return_pct: Optional[float] = None,
     poll_succeeded: bool = True,
     predicted_at: Optional[str] = None,
+    mkt_mid: Optional[float] = None,
+    mkt_best_bid: Optional[float] = None,
+    mkt_best_ask: Optional[float] = None,
+    mkt_spread: Optional[float] = None,
+    orderbook_age_ms: Optional[int] = None,
 ) -> None:
-    """Write a single poll row. Pure DB call, no signal computation."""
+    """Write a single poll row. Pure DB call, no signal computation.
+
+    Orderbook fields (mkt_*, orderbook_age_ms) are optional — write
+    NULL when the orderbook cache has no fresh entry for the market's
+    YES token. Phase B's realistic-entry analysis filters those out.
+    """
     if predicted_at is None:
         predicted_at = datetime.now(timezone.utc).isoformat()
     db.execute(
         """INSERT INTO multi_poll_predictions
            (cycle, cycle_close_at, offset_seconds, predicted_at,
             market_id, asset, estimate, regime, spot_at_poll,
-            in_flight_return_pct, poll_succeeded)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            in_flight_return_pct, poll_succeeded,
+            mkt_mid, mkt_best_bid, mkt_best_ask, mkt_spread,
+            orderbook_age_ms)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             cycle,
             cycle_close_at,
@@ -146,6 +191,11 @@ def log_poll(
             spot_at_poll,
             in_flight_return_pct,
             1 if poll_succeeded else 0,
+            mkt_mid,
+            mkt_best_bid,
+            mkt_best_ask,
+            mkt_spread,
+            orderbook_age_ms,
         ),
     )
     db.commit()
@@ -229,6 +279,40 @@ def compute_poll_predictions(
 
 
 # ── Async orchestrator ─────────────────────────────────────────────
+
+def _get_market_orderbook(market_id: str):
+    """Return (mid, best_bid, best_ask, spread, age_ms) for the YES token
+    of a Polymarket market, or all-None on miss.
+
+    Mirrors src/arb_loggers.py::_get_orderbook_mid + _get_clob_tokens.
+    Pulled out so tests can monkey-patch a single function.
+    """
+    try:
+        from clob_depth import get_clob_tokens_safe
+        tokens = get_clob_tokens_safe(market_id)
+    except Exception:
+        return None, None, None, None, None
+    if not tokens:
+        return None, None, None, None, None
+    yes_token = tokens.get("yes")
+    if not yes_token:
+        return None, None, None, None, None
+    try:
+        from orderbook_cache import OrderbookCache
+        cache = OrderbookCache.load()
+        entry = cache.get_fresh_entry(yes_token)
+        if entry is None:
+            return None, None, None, None, None
+        return (
+            entry.mid,
+            entry.best_bid,
+            entry.best_ask,
+            entry.spread,
+            entry.age_ms,
+        )
+    except Exception:
+        return None, None, None, None, None
+
 
 def _get_active_market_ids(db_path: str, limit: int = 50) -> list[tuple]:
     """Read currently unresolved markets, return list of (id, asset)."""
@@ -361,6 +445,22 @@ async def schedule_polls(
                 ok = False
 
             for market_id, _market_asset in active:
+                # Capture orderbook context per market at THIS poll moment.
+                # Realistic-entry P&L analysis (Phase B) needs the YES token's
+                # best_ask at the time the signal would have triggered an
+                # order. Failures fall through to NULL columns; the analyzer
+                # filters those out.
+                try:
+                    mkt_mid, mkt_bid, mkt_ask, mkt_spread, ob_age = (
+                        _get_market_orderbook(market_id)
+                    )
+                except Exception as e:
+                    _log.warning(
+                        "schedule_polls: orderbook read failed for %s: %s",
+                        market_id, e,
+                    )
+                    mkt_mid = mkt_bid = mkt_ask = mkt_spread = ob_age = None
+
                 try:
                     log_poll(
                         db,
@@ -376,6 +476,11 @@ async def schedule_polls(
                             "in_flight_return_pct"
                         ],
                         poll_succeeded=ok,
+                        mkt_mid=mkt_mid,
+                        mkt_best_bid=mkt_bid,
+                        mkt_best_ask=mkt_ask,
+                        mkt_spread=mkt_spread,
+                        orderbook_age_ms=ob_age,
                     )
                 except Exception as e:
                     _log.warning(

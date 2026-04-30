@@ -546,7 +546,11 @@ def test_circuit_breaker_warning_at_60pct():
 
 
 def _make_multi_poll_db(tmpdir):
-    """Create a DB with multi_poll_predictions + markets, schema-matched."""
+    """Create a DB with multi_poll_predictions + markets, schema-matched.
+
+    Mirrors production schema including the 2026-04-30 orderbook columns
+    (mkt_mid, mkt_best_bid, mkt_best_ask, mkt_spread, orderbook_age_ms).
+    """
     db_path = os.path.join(tmpdir, "mp.db")
     db = sqlite3.connect(db_path)
     db.executescript("""
@@ -572,7 +576,12 @@ def _make_multi_poll_db(tmpdir):
             poll_succeeded INTEGER DEFAULT 1,
             market_resolved INTEGER,
             market_outcome INTEGER,
-            won INTEGER
+            won INTEGER,
+            mkt_mid REAL,
+            mkt_best_bid REAL,
+            mkt_best_ask REAL,
+            mkt_spread REAL,
+            orderbook_age_ms INTEGER
         );
     """)
     return db_path, db
@@ -676,6 +685,127 @@ def test_analyze_multi_poll_filters_by_date():
         assert len(result["cells"]) == 1
         assert result["cells"][0]["dir_resolved"] == 30
         assert result["cells"][0]["dir_wins"] == 30
+        db.close()
+
+
+def test_realistic_pnl_buy_yes_win():
+    """BUY YES at best_ask 0.55, $25 bet, market resolves YES.
+    Shares = 25/0.55 = 45.45, gross profit = 45.45 - 25 = 20.45,
+    fee = 0.5, net = +19.95."""
+    from daily_report import _realistic_pnl_for_cell
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, db = _make_multi_poll_db(tmpdir)
+        db.execute("INSERT INTO markets (id, resolved, outcome) VALUES ('m1', 1, 1)")
+        db.execute(
+            "INSERT INTO multi_poll_predictions "
+            "(cycle, cycle_close_at, offset_seconds, predicted_at, "
+            "market_id, asset, estimate, regime, "
+            "mkt_mid, mkt_best_bid, mkt_best_ask) "
+            "VALUES (1, '2026-04-30T12:00:00', 180, '2026-04-30T12:03:00', "
+            "'m1', 'BTC', 0.65, 'MEDIUM_VOL / NEUTRAL', 0.54, 0.53, 0.55)"
+        )
+        db.commit()
+        result = _realistic_pnl_for_cell(db, "2026-04-30", 180, "MEDIUM_VOL / NEUTRAL")
+        assert result["n_with_orderbook"] == 1
+        assert abs(result["realistic_pnl"] - 19.95) < 0.01
+        db.close()
+
+
+def test_realistic_pnl_buy_yes_lose():
+    """BUY YES, market resolves NO. Loss = -$25."""
+    from daily_report import _realistic_pnl_for_cell
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, db = _make_multi_poll_db(tmpdir)
+        db.execute("INSERT INTO markets (id, resolved, outcome) VALUES ('m1', 1, 0)")
+        db.execute(
+            "INSERT INTO multi_poll_predictions "
+            "(cycle, cycle_close_at, offset_seconds, predicted_at, "
+            "market_id, asset, estimate, regime, "
+            "mkt_mid, mkt_best_bid, mkt_best_ask) "
+            "VALUES (1, '2026-04-30T12:00:00', 180, '2026-04-30T12:03:00', "
+            "'m1', 'BTC', 0.65, 'MEDIUM_VOL / NEUTRAL', 0.54, 0.53, 0.55)"
+        )
+        db.commit()
+        result = _realistic_pnl_for_cell(db, "2026-04-30", 180, "MEDIUM_VOL / NEUTRAL")
+        assert result["n_with_orderbook"] == 1
+        assert result["realistic_pnl"] == -25.00
+        db.close()
+
+
+def test_realistic_pnl_buy_no_uses_complement_of_best_bid():
+    """estimate < 0.5 → BUY NO at (1 - best_bid). market resolves NO → win."""
+    from daily_report import _realistic_pnl_for_cell
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, db = _make_multi_poll_db(tmpdir)
+        db.execute("INSERT INTO markets (id, resolved, outcome) VALUES ('m1', 1, 0)")
+        db.execute(
+            "INSERT INTO multi_poll_predictions "
+            "(cycle, cycle_close_at, offset_seconds, predicted_at, "
+            "market_id, asset, estimate, regime, "
+            "mkt_mid, mkt_best_bid, mkt_best_ask) "
+            "VALUES (1, '2026-04-30T12:00:00', 180, '2026-04-30T12:03:00', "
+            "'m1', 'BTC', 0.35, 'MEDIUM_VOL / NEUTRAL', 0.46, 0.45, 0.47)"
+        )
+        db.commit()
+        result = _realistic_pnl_for_cell(db, "2026-04-30", 180, "MEDIUM_VOL / NEUTRAL")
+        assert result["n_with_orderbook"] == 1
+        # NO entry = 1 - 0.45 = 0.55 → same math as buy_yes_win → +19.95
+        assert abs(result["realistic_pnl"] - 19.95) < 0.01
+        db.close()
+
+
+def test_realistic_pnl_skips_polls_without_orderbook():
+    """Rows with NULL orderbook fields don't count toward realistic_n."""
+    from daily_report import _realistic_pnl_for_cell
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, db = _make_multi_poll_db(tmpdir)
+        db.execute("INSERT INTO markets (id, resolved, outcome) VALUES ('m1', 1, 1)")
+        db.execute(
+            "INSERT INTO multi_poll_predictions "
+            "(cycle, cycle_close_at, offset_seconds, predicted_at, "
+            "market_id, asset, estimate, regime) "
+            "VALUES (1, '2026-04-30T12:00:00', 180, '2026-04-30T12:03:00', "
+            "'m1', 'BTC', 0.65, 'MEDIUM_VOL / NEUTRAL')"
+        )
+        db.commit()
+        result = _realistic_pnl_for_cell(db, "2026-04-30", 180, "MEDIUM_VOL / NEUTRAL")
+        assert result["n_with_orderbook"] == 0
+        db.close()
+
+
+def test_analyze_multi_poll_includes_realistic_fields():
+    """Cells include realistic_pnl + realistic_ev_per_bet when orderbook present.
+
+    25 polls, 16 wins, all at best_ask=0.55:
+      Per win: 25/0.55 shares × $1 - $25 - 2%×$25 = +$19.95...
+      Per loss: -$25
+      Total: 16 × 19.9545 + 9 × -25 = +94.27."""
+    from daily_report import analyze_multi_poll
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, db = _make_multi_poll_db(tmpdir)
+        for i in range(25):
+            mid = f"m{i}"
+            outcome = 1 if i < 16 else 0
+            db.execute(
+                "INSERT INTO markets (id, resolved, outcome) VALUES (?, 1, ?)",
+                (mid, outcome),
+            )
+            db.execute(
+                "INSERT INTO multi_poll_predictions "
+                "(cycle, cycle_close_at, offset_seconds, predicted_at, "
+                "market_id, asset, estimate, regime, "
+                "mkt_mid, mkt_best_bid, mkt_best_ask) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (i, "2026-04-30T12:00:00", 180,
+                 "2026-04-30T12:03:00", mid, "BTC", 0.65,
+                 "MEDIUM_VOL / NEUTRAL", 0.54, 0.53, 0.55),
+            )
+        db.commit()
+        result = analyze_multi_poll(db, "2026-04-30")
+        c = result["cells"][0]
+        assert c["realistic_n"] == 25
+        assert abs(c["realistic_pnl"] - 94.27) < 0.05
+        assert abs(c["realistic_ev_per_bet"] - 3.77) < 0.05
         db.close()
 
 
