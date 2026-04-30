@@ -1583,6 +1583,38 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 lines.append(f"| Shadow maker EHR | {sm['shadow_ehr']:+.4f} |")
             lines.extend(["", ""])
 
+        # Multi-poll Phase A — per-(offset × regime) WR snapshot.
+        # Plan: docs/plans/multi_poll_predict_plan.md.
+        mp = data.get("multi_poll")
+        if mp:
+            lines.extend([
+                f"## Multi-Poll Phase A ({label})",
+                "",
+                "*Shadow — directional WR by (offset × regime), N≥20.*",
+                "",
+                f"Total polls today: {mp['total_polls']:,}",
+                "",
+            ])
+            if mp.get("best_t180"):
+                b = mp["best_t180"]
+                lines.append(
+                    f"**Best cell at T+180s:** {b['regime']} — "
+                    f"{b['wr_pct']}% WR on {b['dir_resolved']} directional resolved"
+                )
+                lines.append("")
+
+            lines.extend([
+                "| Offset | Regime | Dir resolved | WR |",
+                "|-------:|--------|-------------:|---:|",
+            ])
+            for c in mp["cells"]:
+                wr_str = f"{c['wr_pct']}%" if c["wr_pct"] is not None else "—"
+                lines.append(
+                    f"| T+{c['offset_seconds']}s | {c['regime']} | "
+                    f"{c['dir_resolved']} | {wr_str} |"
+                )
+            lines.extend(["", ""])
+
         if not shadow:
             continue
 
@@ -1994,6 +2026,91 @@ def analyze_ehr(db, date_str):
     return result
 
 
+def analyze_multi_poll(db, date_str):
+    """Multi-poll Phase A daily snapshot — per-(offset × regime) WR.
+
+    Reads multi_poll_predictions JOINed to markets. Reports directional
+    resolved + WR for each (offset_seconds × regime) cell with N >= 20
+    on the given date. Also surfaces the BEST cell across regimes for
+    the canonical T+180 offset, which Phase B will likely select.
+
+    Returns None if the table doesn't exist or has no rows for the date
+    (e.g. recovered DB with no fresh data).
+
+    See docs/plans/multi_poll_predict_plan.md for the experiment design.
+    """
+    try:
+        tables = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name='multi_poll_predictions'"
+        ).fetchone()
+        if not tables:
+            return None
+
+        rows = db.execute(
+            """
+            SELECT mpp.offset_seconds AS off,
+                   mpp.regime AS regime,
+                   SUM(CASE WHEN mpp.estimate != 0.5 AND m.resolved = 1
+                            THEN 1 ELSE 0 END) AS dir_resolved,
+                   SUM(CASE WHEN mpp.estimate != 0.5 AND m.resolved = 1 AND
+                            ((mpp.estimate > 0.5 AND m.outcome = 1) OR
+                             (mpp.estimate < 0.5 AND m.outcome = 0))
+                            THEN 1 ELSE 0 END) AS dir_wins
+            FROM multi_poll_predictions mpp
+            LEFT JOIN markets m ON mpp.market_id = m.id
+            WHERE date(mpp.predicted_at) = ?
+            GROUP BY mpp.offset_seconds, mpp.regime
+            HAVING dir_resolved >= 20
+            ORDER BY mpp.regime, mpp.offset_seconds
+            """,
+            (date_str,),
+        ).fetchall()
+
+        if not rows:
+            return None
+
+        cells = []
+        for r in rows:
+            off, regime, dir_resolved, dir_wins = r
+            wr = (
+                round(100.0 * dir_wins / dir_resolved, 1)
+                if dir_resolved else None
+            )
+            cells.append({
+                "offset_seconds": off,
+                "regime": regime,
+                "dir_resolved": dir_resolved,
+                "dir_wins": dir_wins,
+                "wr_pct": wr,
+            })
+
+        # Best cell at canonical T+180 offset (Phase B's likely target).
+        # Among cells with N>=50 at offset=180, pick highest WR.
+        t180 = [c for c in cells if c["offset_seconds"] == 180
+                and c["dir_resolved"] >= 50]
+        best_t180 = (
+            max(t180, key=lambda c: c["wr_pct"]) if t180 else None
+        )
+
+        # Total polls today (for context — across all offsets/regimes).
+        total_row = db.execute(
+            "SELECT COUNT(*) FROM multi_poll_predictions "
+            "WHERE date(predicted_at) = ?",
+            (date_str,),
+        ).fetchone()
+        total_polls = total_row[0] if total_row else 0
+
+        return {
+            "cells": cells,
+            "best_t180": best_t180,
+            "total_polls": total_polls,
+        }
+    except Exception as e:
+        print(f"  [multi_poll] analyze failed: {e}")
+        return None
+
+
 def analyze_shadow_maker(db, date_str):
     """Shadow maker Phase 1 metrics for daily report (AC-SM-4, AC-SM-5).
 
@@ -2119,6 +2236,7 @@ def analyze_pipeline(db_path, date_str):
         shadow_conviction = analyze_shadow_conviction(resolved)
         ehr = analyze_ehr(db, date_str)
         shadow_maker_data = analyze_shadow_maker(db, date_str)
+        multi_poll_data = analyze_multi_poll(db, date_str)
     finally:
         db.close()
         CONVICTION_BETS = old_bets
@@ -2160,6 +2278,7 @@ def analyze_pipeline(db_path, date_str):
         "bybit_positions": bybit_positions,
         "ehr": ehr,
         "shadow_maker": shadow_maker_data,
+        "multi_poll": multi_poll_data,
     }
 
 

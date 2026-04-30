@@ -540,3 +540,176 @@ def test_circuit_breaker_warning_at_60pct():
         alerts = generate_alerts(summary, [], orders=result)
         assert any("breaker" in a.lower() and "%" in a for a in alerts), f"Expected warning, got {alerts}"
         assert not any("TRIPPED" in a for a in alerts), "Should be warning, not tripped"
+
+
+# ── Multi-poll Phase A daily section ────────────────────────────────
+
+
+def _make_multi_poll_db(tmpdir):
+    """Create a DB with multi_poll_predictions + markets, schema-matched."""
+    db_path = os.path.join(tmpdir, "mp.db")
+    db = sqlite3.connect(db_path)
+    db.executescript("""
+        CREATE TABLE markets (
+            id TEXT PRIMARY KEY,
+            question TEXT,
+            end_date TEXT,
+            resolved INTEGER DEFAULT 0,
+            outcome INTEGER
+        );
+        CREATE TABLE multi_poll_predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cycle INTEGER,
+            cycle_close_at TEXT NOT NULL,
+            offset_seconds INTEGER NOT NULL,
+            predicted_at TEXT NOT NULL,
+            market_id TEXT NOT NULL,
+            asset TEXT,
+            estimate REAL,
+            regime TEXT,
+            spot_at_poll REAL,
+            in_flight_return_pct REAL,
+            poll_succeeded INTEGER DEFAULT 1,
+            market_resolved INTEGER,
+            market_outcome INTEGER,
+            won INTEGER
+        );
+    """)
+    return db_path, db
+
+
+def test_analyze_multi_poll_returns_none_when_table_missing():
+    from daily_report import analyze_multi_poll
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = sqlite3.connect(os.path.join(tmpdir, "empty.db"))
+        assert analyze_multi_poll(db, "2026-04-29") is None
+        db.close()
+
+
+def test_analyze_multi_poll_returns_none_when_no_rows_for_date():
+    from daily_report import analyze_multi_poll
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, db = _make_multi_poll_db(tmpdir)
+        # No rows inserted at all
+        assert analyze_multi_poll(db, "2026-04-29") is None
+        db.close()
+
+
+def test_analyze_multi_poll_returns_cells_with_wr():
+    """Insert 25 directional polls in a single (offset, regime) cell,
+    16 wins. Should return one cell with WR=64.0%."""
+    from daily_report import analyze_multi_poll
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, db = _make_multi_poll_db(tmpdir)
+        # 25 markets, all resolved: 16 won (estimate>0.5 + outcome=1),
+        # 9 lost (estimate>0.5 + outcome=0)
+        for i in range(25):
+            mid = f"m{i}"
+            outcome = 1 if i < 16 else 0
+            db.execute(
+                "INSERT INTO markets (id, resolved, outcome) "
+                "VALUES (?, 1, ?)", (mid, outcome),
+            )
+            db.execute(
+                "INSERT INTO multi_poll_predictions "
+                "(cycle, cycle_close_at, offset_seconds, predicted_at, "
+                "market_id, asset, estimate, regime) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (i, "2026-04-29T12:00:00", 180,
+                 "2026-04-29T12:03:00", mid, "BTC", 0.65,
+                 "MEDIUM_VOL / NEUTRAL"),
+            )
+        db.commit()
+
+        result = analyze_multi_poll(db, "2026-04-29")
+        assert result is not None
+        assert len(result["cells"]) == 1
+        c = result["cells"][0]
+        assert c["offset_seconds"] == 180
+        assert c["regime"] == "MEDIUM_VOL / NEUTRAL"
+        assert c["dir_resolved"] == 25
+        assert c["dir_wins"] == 16
+        assert c["wr_pct"] == 64.0
+        db.close()
+
+
+def test_analyze_multi_poll_filters_by_date():
+    """Rows from a different date must not be counted."""
+    from daily_report import analyze_multi_poll
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, db = _make_multi_poll_db(tmpdir)
+        # 30 polls on 2026-04-29 (today)
+        for i in range(30):
+            db.execute(
+                "INSERT INTO markets (id, resolved, outcome) "
+                "VALUES (?, 1, 1)", (f"m{i}",),
+            )
+            db.execute(
+                "INSERT INTO multi_poll_predictions "
+                "(cycle, cycle_close_at, offset_seconds, predicted_at, "
+                "market_id, asset, estimate, regime) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (i, "2026-04-29T12:00:00", 180,
+                 "2026-04-29T12:03:00", f"m{i}", "BTC", 0.65,
+                 "MEDIUM_VOL / NEUTRAL"),
+            )
+        # 30 polls on 2026-04-30 (different date)
+        for i in range(30, 60):
+            db.execute(
+                "INSERT INTO markets (id, resolved, outcome) "
+                "VALUES (?, 1, 0)", (f"m{i}",),
+            )
+            db.execute(
+                "INSERT INTO multi_poll_predictions "
+                "(cycle, cycle_close_at, offset_seconds, predicted_at, "
+                "market_id, asset, estimate, regime) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (i, "2026-04-30T12:00:00", 180,
+                 "2026-04-30T12:03:00", f"m{i}", "BTC", 0.65,
+                 "MEDIUM_VOL / NEUTRAL"),
+            )
+        db.commit()
+
+        # Only 2026-04-29 should be returned (all 30 wins)
+        result = analyze_multi_poll(db, "2026-04-29")
+        assert result is not None
+        assert len(result["cells"]) == 1
+        assert result["cells"][0]["dir_resolved"] == 30
+        assert result["cells"][0]["dir_wins"] == 30
+        db.close()
+
+
+def test_analyze_multi_poll_finds_best_t180():
+    """When multiple regimes have T+180 data, best_t180 picks the highest WR."""
+    from daily_report import analyze_multi_poll
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, db = _make_multi_poll_db(tmpdir)
+
+        def _add_cell(regime, n_wins, n_total, offset=180):
+            for i in range(n_total):
+                mid = f"{regime[:5]}_{offset}_{i}"
+                outcome = 1 if i < n_wins else 0
+                db.execute(
+                    "INSERT INTO markets (id, resolved, outcome) "
+                    "VALUES (?, 1, ?)", (mid, outcome),
+                )
+                db.execute(
+                    "INSERT INTO multi_poll_predictions "
+                    "(cycle, cycle_close_at, offset_seconds, predicted_at, "
+                    "market_id, asset, estimate, regime) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (i, "2026-04-29T12:00:00", offset,
+                     "2026-04-29T12:03:00", mid, "BTC", 0.65, regime),
+                )
+
+        # HIGH_VOL/NEUTRAL: 70/100 wins → 70% WR (best)
+        _add_cell("HIGH_VOL / NEUTRAL", 70, 100)
+        # MEDIUM_VOL/NEUTRAL: 60/100 wins → 60% WR
+        _add_cell("MEDIUM_VOL / NEUTRAL", 60, 100)
+        db.commit()
+
+        result = analyze_multi_poll(db, "2026-04-29")
+        assert result["best_t180"] is not None
+        assert result["best_t180"]["regime"] == "HIGH_VOL / NEUTRAL"
+        assert result["best_t180"]["wr_pct"] == 70.0
+        db.close()
