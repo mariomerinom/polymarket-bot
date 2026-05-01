@@ -103,9 +103,9 @@ class TestGitCommitPushSafeRecovery:
     Regression tests for the 2026-04-28 incident where the prior
     implementation's `pull --rebase -X theirs` + `rebase --abort` recovery
     silently discarded a freshly-pushed commit. The new implementation
-    is conservative: before committing, fetch origin; if local is ancestor of
-    remote, hard fast-forward before staging runtime files; if NOT, write a
-    bail marker and quiesce auto-commits until human inspection.
+    is conservative: on push fail, fetch origin; if local is ancestor of
+    remote, fast-forward + redo cycle commit; if NOT, write a bail marker
+    and quiesce auto-commits until human inspection.
     """
 
     def _make_engine(self):
@@ -157,23 +157,21 @@ class TestGitCommitPushSafeRecovery:
             (tmp_path / "data").mkdir()
             engine._git_commit_push()
 
-        # Fetch preflight is expected; no reset or abort on already-current HEAD.
-        assert any(c[:2] == ["git", "fetch"] for c in calls)
+        # No fetch, no reset, no abort
+        assert not any(c[:2] == ["git", "fetch"] for c in calls)
         assert not any(c[:2] == ["git", "reset"] for c in calls)
         assert not any(c[:3] == ["git", "rebase", "--abort"] for c in calls)
         # Did push exactly once
         assert sum(1 for c in calls if c[:2] == ["git", "push"]) == 1
 
-    def test_behind_origin_hard_fast_forwards_before_commit(self, tmp_path):
-        """When local HEAD is behind origin, hard reset before staging data.
-
-        This prevents the auto-commit loop from committing source/doc deletions
-        from an old VPS worktree after a human source push lands upstream.
-        """
+    def test_push_fail_with_ancestor_does_safe_fast_forward(self, tmp_path):
+        """When local HEAD is ancestor of origin, fast-forward + redo commit + push."""
         from botsy_engine import BotsyEngine
 
         engine = self._make_engine()
         engine._checkpoint_all_dbs = lambda: None
+
+        push_count = [0]
 
         def mock_run(cmd, **kwargs):
             calls.append(cmd)
@@ -181,14 +179,15 @@ class TestGitCommitPushSafeRecovery:
             result.returncode = 0
             result.stdout = b""
             result.stderr = b""
-            if cmd[:3] == ["git", "rev-parse", "--short"]:
-                result.stdout = b"localold\n"
-            elif cmd[:3] == ["git", "rev-parse", "HEAD"]:
-                result.stdout = b"localoldsha\n"
-            elif cmd[:3] == ["git", "rev-parse", "origin/main"]:
-                result.stdout = b"remotenewsha\n"
-            elif cmd[:4] == ["git", "diff", "--cached", "--quiet"]:
+            if cmd[:4] == ["git", "diff", "--cached", "--quiet"]:
+                # On second check (after soft reset), still has changes
                 result.returncode = 1
+            elif cmd[:2] == ["git", "push"]:
+                push_count[0] += 1
+                # First push fails (origin moved), second push succeeds
+                result.returncode = 1 if push_count[0] == 1 else 0
+                if push_count[0] == 1:
+                    result.stderr = b"rejected: non-fast-forward"
             elif cmd[:4] == ["git", "merge-base", "--is-ancestor", "HEAD"]:
                 # local is ancestor of origin/main → safe fast-forward
                 result.returncode = 0
@@ -204,28 +203,18 @@ class TestGitCommitPushSafeRecovery:
         # Saw fetch + soft reset + ancestor check
         assert any(c[:2] == ["git", "fetch"] for c in calls)
         assert any(
-            c[:3] == ["git", "reset", "--hard"] and c[3] == "origin/main"
-            for c in calls
-        ), f"Expected hard reset to origin/main, calls: {calls}"
+            c[:3] == ["git", "reset", "--soft"] for c in calls
+        ), f"Expected soft reset, calls: {calls}"
         assert any(
             c[:4] == ["git", "merge-base", "--is-ancestor", "HEAD"]
             for c in calls
         )
-        # Runtime paths are staged only after the hard fast-forward.
-        reset_i = next(
-            i for i, c in enumerate(calls)
-            if c[:3] == ["git", "reset", "--hard"]
-        )
-        add_i = next(
-            i for i, c in enumerate(calls)
-            if c[:2] == ["git", "add"]
-        )
-        assert reset_i < add_i
-        # NEVER called rebase --abort or soft-reset-to-origin.
+        # Two pushes total (first failed, second after fast-forward)
+        assert push_count[0] == 2
+        # NEVER called rebase --abort
         assert not any(c[:3] == ["git", "rebase", "--abort"] for c in calls)
-        assert not any(c[:3] == ["git", "reset", "--soft"] for c in calls)
 
-    def test_precommit_divergence_writes_bail_marker(self, tmp_path):
+    def test_push_fail_with_divergence_writes_bail_marker(self, tmp_path):
         """When local and origin both moved, write bail marker — don't auto-merge."""
         from botsy_engine import BotsyEngine
 
@@ -238,11 +227,13 @@ class TestGitCommitPushSafeRecovery:
             result.returncode = 0
             result.stdout = b""
             result.stderr = b""
-            if cmd[:4] == ["git", "merge-base", "--is-ancestor", "HEAD"]:
-                # local NOT an ancestor → divergence
+            if cmd[:4] == ["git", "diff", "--cached", "--quiet"]:
                 result.returncode = 1
-            elif cmd[:4] == ["git", "merge-base", "--is-ancestor", "origin/main"]:
-                # origin/main NOT an ancestor either → true divergence
+            elif cmd[:2] == ["git", "push"]:
+                result.returncode = 1
+                result.stderr = b"rejected"
+            elif cmd[:4] == ["git", "merge-base", "--is-ancestor", "HEAD"]:
+                # local NOT an ancestor → divergence
                 result.returncode = 1
             return result
 
@@ -257,11 +248,8 @@ class TestGitCommitPushSafeRecovery:
         # Marker must exist
         assert bail_marker.exists(), \
             f"Expected bail marker at {bail_marker}; calls: {calls}"
-        # Never tried to abort, stage, commit, push, or auto-resolve
+        # Never tried to abort or auto-resolve
         assert not any(c[:3] == ["git", "rebase", "--abort"] for c in calls)
-        assert not any(c[:2] == ["git", "add"] for c in calls)
-        assert not any(c[:2] == ["git", "commit"] for c in calls)
-        assert not any(c[:2] == ["git", "push"] for c in calls)
         # Marker content names the heads it bailed on
         text = bail_marker.read_text()
         assert "divergence" in text.lower()

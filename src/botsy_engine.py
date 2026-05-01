@@ -902,29 +902,18 @@ class BotsyEngine:
         except Exception:
             return "?"
 
-    def _git_rev_parse(self, ref: str) -> str:
-        """Return full SHA for a git ref, or '?' on error."""
-        try:
-            r = subprocess.run(
-                ["git", "rev-parse", ref],
-                capture_output=True, timeout=5, cwd=str(REPO_DIR),
-            )
-            return r.stdout.decode().strip() or "?"
-        except Exception:
-            return "?"
-
     def _git_commit_push(self):
         """Synchronous git add + commit + push.
 
-        Order: fetch → hard fast-forward if safely behind origin →
-        checkpoint WALs → add runtime files only → diff check → commit → push.
+        Order: checkpoint WALs → add → diff check → commit → push → on push
+        fail, fetch+reset+cherry-pick (NOT pull --rebase, which silently
+        clobbered state in the 2026-04-28 incident).
 
         Discipline (lessons from 2026-04-28):
           - HEAD is logged before and after every state-changing step
-          - If local and origin diverge, write a marker file (do NOT try to
+          - On unexpected divergence, write a marker file (do NOT try to
             auto-recover) — next cycle bails until human inspects
-          - Never soft-reset to origin/main; it preserves the old index and
-            can commit source/doc deletions from a stale VPS worktree
+          - Never use -X theirs in retry; conflicts mean human attention
         """
         try:
             os.chdir(str(REPO_DIR))
@@ -940,67 +929,6 @@ class BotsyEngine:
                     log(f"WARNING: git commit loop is quiesced — "
                         f"{bail_marker} exists. Inspect, then delete to resume.")
                 return
-
-            subprocess.run(
-                ["git", "fetch", "origin"],
-                capture_output=True, timeout=30,
-            )
-
-            ancestor_check = subprocess.run(
-                ["git", "merge-base", "--is-ancestor",
-                 "HEAD", "origin/main"],
-                capture_output=True, timeout=10,
-            )
-            if ancestor_check.returncode != 0:
-                ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                origin_ancestor = subprocess.run(
-                    ["git", "merge-base", "--is-ancestor",
-                     "origin/main", "HEAD"],
-                    capture_output=True, timeout=10,
-                )
-                if origin_ancestor.returncode == 0:
-                    # Local-only commits are unusual on the VPS, but can
-                    # happen if a previous push timed out after succeeding.
-                    # Try the push once; if it fails, bail instead of merging.
-                    result = subprocess.run(
-                        ["git", "push"],
-                        capture_output=True, timeout=60,
-                    )
-                    if result.returncode == 0:
-                        log(f"Pushed local-ahead HEAD={self._git_head()}")
-                        return
-
-                head_now = self._git_head()
-                log(f"ERROR: local HEAD ({head_now}) and origin/main "
-                    f"diverged before auto-commit. Writing bail marker "
-                    f"{bail_marker}; auto-commit quiesced.")
-                try:
-                    bail_marker.write_text(
-                        f"git divergence at {ts}\n"
-                        f"local HEAD: {head_now}\n"
-                        f"origin/main: {self._git_rev_parse('origin/main')}\n"
-                        "delete this file after manual inspection to resume.\n"
-                    )
-                except Exception as e:
-                    log(f"WARNING: bail marker write failed: {e}")
-                return
-
-            head_full = self._git_rev_parse("HEAD")
-            origin_full = self._git_rev_parse("origin/main")
-            if head_full != origin_full:
-                # Critical safety point: hard reset before staging data. A
-                # soft reset keeps the old index/worktree and can turn newly
-                # pushed source/docs into staged deletions in the cycle commit.
-                result = subprocess.run(
-                    ["git", "reset", "--hard", "origin/main"],
-                    capture_output=True, timeout=30,
-                )
-                if result.returncode != 0:
-                    log(f"WARNING: fast-forward reset failed: "
-                        f"{result.stderr.decode()[:200]}")
-                    return
-                log(f"Fast-forwarded auto-commit checkout "
-                    f"{head_at_start} → {self._git_head()}")
 
             # Flush WAL journals before snapshotting DBs
             self._checkpoint_all_dbs()
@@ -1048,17 +976,91 @@ class BotsyEngine:
                 log(f"Pushed {head_after_commit} (was {head_at_start})")
                 return
 
-            # Push failed after preflight. Do not rewrite history or retry
-            # with a soft reset; a newer origin commit may contain source
-            # changes. Quiesce so a human can inspect.
-            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            log(f"ERROR: push failed after commit HEAD={head_after_commit}. "
-                f"Writing bail marker {bail_marker}; auto-commit quiesced.")
+            # Push failed — origin moved. Recover SAFELY:
+            #   1. fetch origin
+            #   2. compare: is local HEAD an ancestor of remote? If yes,
+            #      we're behind and just need to fast-forward; reset hard
+            #      to remote and re-apply our cycle commit on top.
+            #   3. else: we and remote both moved. Conflict territory —
+            #      do NOT auto-resolve. Write bail marker and quiesce.
+            log(f"WARNING: Push failed at HEAD={head_after_commit}. "
+                f"Investigating remote state.")
+            subprocess.run(
+                ["git", "fetch", "origin"],
+                capture_output=True, timeout=30,
+            )
+
+            our_commit = head_after_commit
+            # Drop our cycle commit so we can compare cleanly
+            subprocess.run(
+                ["git", "reset", "--soft", "HEAD~1"],
+                capture_output=True, timeout=10,
+            )
+            head_pre_reapply = self._git_head()
+
+            # Is HEAD now an ancestor of origin/main? If yes, fast-forward
+            # is safe — remote has commits we don't, but we have nothing
+            # they don't (other than the cycle commit we just unstacked).
+            ancestor_check = subprocess.run(
+                ["git", "merge-base", "--is-ancestor",
+                 "HEAD", "origin/main"],
+                capture_output=True, timeout=10,
+            )
+            if ancestor_check.returncode == 0:
+                # Safe path: reset to origin/main, redo commit, push.
+                # Our staged changes survive --soft reset.
+                subprocess.run(
+                    ["git", "reset", "--soft", "origin/main"],
+                    capture_output=True, timeout=10,
+                )
+                # Re-stage everything (data/ may have changed under us
+                # if origin commits touched data/, which auto-commits do)
+                subprocess.run(
+                    ["git", "add", "data/", "docs/daily/"],
+                    capture_output=True, timeout=10,
+                )
+                # Re-check if anything to commit
+                redo_check = subprocess.run(
+                    ["git", "diff", "--cached", "--quiet"],
+                    capture_output=True,
+                )
+                if redo_check.returncode == 0:
+                    log(f"Push retry: nothing left to commit after "
+                        f"fast-forward to origin/main "
+                        f"(was {our_commit}, now {self._git_head()})")
+                    return
+                redo = subprocess.run(
+                    ["git", "commit", "-m", msg],
+                    capture_output=True, timeout=30,
+                )
+                if redo.returncode != 0:
+                    log(f"WARNING: redo commit failed: "
+                        f"{redo.stderr.decode()[:200]}")
+                    return
+                redo_push = subprocess.run(
+                    ["git", "push"],
+                    capture_output=True, timeout=60,
+                )
+                if redo_push.returncode == 0:
+                    log(f"Pushed after fast-forward: HEAD={self._git_head()} "
+                        f"(was {our_commit}, behind {head_pre_reapply})")
+                else:
+                    log(f"ERROR: redo push failed: "
+                        f"{redo_push.stderr.decode()[:200]}")
+                return
+
+            # Unsafe path: local and remote both diverged. Don't guess.
+            # Write a marker so the engine quiesces git_commit_loop until
+            # a human inspects. Code+data still flow inside the engine;
+            # only the commit loop is paused.
+            log(f"ERROR: local HEAD ({head_pre_reapply}) is NOT an "
+                f"ancestor of origin/main. Divergence detected. Writing "
+                f"bail marker {bail_marker}; auto-commit quiesced.")
             try:
                 bail_marker.write_text(
-                    f"git push failure at {ts}\n"
-                    f"local HEAD: {head_after_commit}\n"
-                    f"origin/main: {self._git_rev_parse('origin/main')}\n"
+                    f"git divergence at {ts}\n"
+                    f"local HEAD: {head_pre_reapply}\n"
+                    f"unstacked cycle commit: {our_commit}\n"
                     f"head_at_start_of_cycle: {head_at_start}\n"
                     "delete this file after manual inspection to resume.\n"
                 )
