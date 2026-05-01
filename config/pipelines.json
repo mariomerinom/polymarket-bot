@@ -17,9 +17,9 @@
       "notes": "Paper — reverted 2026-04-05. Adverse selection: unfilled winners."
     },
     "kalshi": {
-      "mode": "paper",
-      "bet_size": 25,
-      "notes": "Paper restarted 2026-05-01 after strike-aware parser/reachability gate. Pre-parser history is contaminated and excluded from edge claims: 420/420 conv>=3 resolved bets were on NO-won markets (0 YES wins). Forward validation tracked as kalshi_strike_aware_parser; live trading out of scope until 200 parser-versioned resolved predictions clear the gate."
+      "mode": "paused",
+      "bet_size": null,
+      "notes": "PAUSED 2026-04-17: architectural bug — BTC momentum signal applied to per-strike binary markets without checking strike reachability. 420/420 conv>=3 resolved bets on NO-won markets (0 YES wins). Needs market-question parser to map momentum→YES/NO per market. See GitHub issue."
     },
     "bybit": {
       "mode": "paper",

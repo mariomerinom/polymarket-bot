@@ -11,13 +11,12 @@ import hashlib
 import hmac
 import json
 import os
-import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
-from config import API_TIMEOUT_KALSHI, DB_BUSY_TIMEOUT_MS
+from config import DB_BUSY_TIMEOUT_MS
 
 KALSHI_BASE_URL = os.getenv(
     "KALSHI_BASE_URL",
@@ -25,13 +24,6 @@ KALSHI_BASE_URL = os.getenv(
 )
 
 DB_PATH_KALSHI = Path(__file__).parent.parent / "data" / "predictions_kalshi.db"
-
-
-def _ensure_column(db, table, column, definition):
-    """SQLite-compatible additive schema migration."""
-    cols = {r[1] for r in db.execute(f"PRAGMA table_info({table})").fetchall()}
-    if column not in cols:
-        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def init_db_kalshi():
@@ -51,17 +43,11 @@ def init_db_kalshi():
             volume REAL,
             price_yes REAL,
             price_no REAL,
-            strike REAL,
-            timeframe TEXT,
-            market_type TEXT,
             fetched_at TEXT,
             resolved INTEGER DEFAULT 0,
             outcome INTEGER DEFAULT NULL
         )
     """)
-    _ensure_column(db, "markets", "strike", "REAL")
-    _ensure_column(db, "markets", "timeframe", "TEXT")
-    _ensure_column(db, "markets", "market_type", "TEXT")
     db.execute("""
         CREATE TABLE IF NOT EXISTS predictions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,63 +102,23 @@ def _sign_request(method, path, body=""):
 
 # ── Market discovery ──
 
-def parse_btc_strike_market(ticker, question="", expiry=None):
-    """
-    Parse Kalshi BTC above-strike contract semantics.
-
-    Supported primary format: BTCUSD-YYMMDDHHMM-STRIKE.
-    Question fallback supports "above $84,000" style text.
-    """
-    strike = None
-    expiry_iso = expiry
-
-    match = re.match(r"^BTCUSD-(\d{10})-(\d+(?:\.\d+)?)$", ticker or "")
-    if match:
-        expiry_digits, strike_raw = match.groups()
-        try:
-            expiry_dt = datetime.strptime(expiry_digits, "%y%m%d%H%M").replace(tzinfo=timezone.utc)
-            expiry_iso = expiry_dt.isoformat()
-            strike = float(strike_raw)
-        except ValueError:
-            pass
-
-    q = question or ""
-    if strike is None:
-        q_match = re.search(r"\babove\s+\$?([0-9][0-9,]*(?:\.\d+)?)", q, re.IGNORECASE)
-        if q_match:
-            strike = float(q_match.group(1).replace(",", ""))
-
-    if strike is None or ("above" not in q.lower() and not (ticker or "").startswith("BTCUSD-")):
-        return {"market_type": "unsupported", "strike": None, "expiry": expiry_iso}
-
-    return {
-        "market_type": "btc_above_strike",
-        "strike": strike,
-        "expiry": expiry_iso,
-    }
-
-
 def _infer_timeframe(expiry_str):
-    """Deprecated compatibility wrapper. Do not infer product class from time left."""
-    return "unknown"
-
-
-def _normalize_timeframe(raw):
-    """Normalize explicit Kalshi timeframe/duration fields."""
-    if raw is None:
+    """Infer timeframe from expiry timestamp. Returns 5m/15m/1h/daily/weekly."""
+    try:
+        expiry_dt = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+        delta = (expiry_dt - datetime.now(timezone.utc)).total_seconds()
+        if delta < 600:
+            return "5m"
+        elif delta < 1800:
+            return "15m"
+        elif delta < 3600:
+            return "1h"
+        elif delta < 86400:
+            return "daily"
+        else:
+            return "weekly"
+    except Exception:
         return "unknown"
-    tf = str(raw).lower().replace("_", "").replace("-", "")
-    mapping = {
-        "15m": "15m",
-        "15min": "15m",
-        "15minute": "15m",
-        "15minutes": "15m",
-        "1h": "1h",
-        "60m": "1h",
-        "hour": "1h",
-        "hourly": "1h",
-    }
-    return mapping.get(tf, "unknown")
 
 
 def _mock_markets():
@@ -238,37 +184,32 @@ def fetch_active_kalshi_markets(mock_mode=None):
             resp.raise_for_status()
             raw_markets = resp.json().get("markets", [])
         except Exception as e:
-            raise RuntimeError(f"Kalshi API error: {e}") from e
+            print(f"  [kalshi] API error: {e} — falling back to mock")
+            raw_markets = _mock_markets()
 
-    # Map to standard schema and filter to explicit 15m/1h strike contracts.
+    # Map to standard schema and filter to 15m/1h
     markets = []
     for m in raw_markets:
         expiry = m.get("expiry", "")
-        tf = _normalize_timeframe(m.get("timeframe") or m.get("duration") or m.get("period"))
+        tf = m.get("timeframe") or _infer_timeframe(expiry)
         if tf not in ("15m", "1h"):
             continue
 
         # Get orderbook mid for price_yes
         ticker = m.get("ticker", m.get("id", ""))
-        question = m.get("subtitle", f"Kalshi BTC {tf} — {ticker}")
-        parsed = parse_btc_strike_market(ticker, question, expiry)
-        if parsed["market_type"] != "btc_above_strike":
-            continue
-
         ob = fetch_kalshi_orderbook(ticker, mock_mode=mock_mode)
         mid = ob.get("mid", 0.5) if ob else 0.5
 
         markets.append({
             "id": ticker,
-            "question": question,
+            "question": m.get("subtitle", f"Kalshi BTC {tf} — {ticker}"),
             "category": "cryptocurrency",
-            "end_date": parsed["expiry"] or expiry,
+            "end_date": expiry,
             "volume": m.get("volume", 0),
             "price_yes": round(mid, 3),
             "price_no": round(1.0 - mid, 3),
-            "strike": parsed["strike"],
+            "strike": m.get("strike"),
             "timeframe": tf,
-            "market_type": parsed["market_type"],
         })
 
     markets.sort(key=lambda m: m["end_date"])
@@ -321,22 +262,16 @@ def store_markets_kalshi(db, markets):
     """Upsert Kalshi markets into the database."""
     for m in markets:
         db.execute("""
-            INSERT INTO markets
-            (id, question, category, end_date, volume, price_yes, price_no,
-             strike, timeframe, market_type, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO markets (id, question, category, end_date, volume, price_yes, price_no, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 volume = excluded.volume,
                 price_yes = excluded.price_yes,
                 price_no = excluded.price_no,
-                strike = excluded.strike,
-                timeframe = excluded.timeframe,
-                market_type = excluded.market_type,
                 fetched_at = excluded.fetched_at
         """, (
             m["id"], m["question"], m["category"], m["end_date"],
             m["volume"], m["price_yes"], m["price_no"],
-            m.get("strike"), m.get("timeframe"), m.get("market_type"),
             datetime.now(timezone.utc).isoformat()
         ))
     db.commit()

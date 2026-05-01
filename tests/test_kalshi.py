@@ -8,8 +8,6 @@ without requiring Kalshi API credentials (mock mode).
 import os
 import sys
 import sqlite3
-from datetime import datetime, timezone, timedelta
-from unittest.mock import Mock
 
 import pytest
 
@@ -32,10 +30,6 @@ class TestKalshiMarkets:
             table_names = {t[0] for t in tables}
             assert "markets" in table_names
             assert "predictions" in table_names
-            cols = {
-                r[1] for r in db.execute("PRAGMA table_info(markets)").fetchall()
-            }
-            assert {"strike", "timeframe", "market_type"}.issubset(cols)
             db.close()
         finally:
             kalshi_markets.DB_PATH_KALSHI = original
@@ -50,10 +44,7 @@ class TestKalshiMarkets:
         """All mock markets have required fields."""
         from kalshi_markets import fetch_active_kalshi_markets
         markets = fetch_active_kalshi_markets(mock_mode=True)
-        required = {
-            "id", "question", "end_date", "price_yes", "category",
-            "strike", "timeframe", "market_type",
-        }
+        required = {"id", "question", "end_date", "price_yes", "category"}
         for m in markets:
             assert required.issubset(m.keys()), f"Missing keys: {required - m.keys()}"
 
@@ -75,12 +66,6 @@ class TestKalshiMarkets:
             kalshi_markets.store_markets_kalshi(db, markets)
             count = db.execute("SELECT COUNT(*) FROM markets").fetchone()[0]
             assert count == len(markets)
-            row = db.execute(
-                "SELECT strike, timeframe, market_type FROM markets LIMIT 1"
-            ).fetchone()
-            assert row["strike"] is not None
-            assert row["timeframe"] in ("15m", "1h")
-            assert row["market_type"] == "btc_above_strike"
             db.close()
         finally:
             kalshi_markets.DB_PATH_KALSHI = original
@@ -93,59 +78,6 @@ class TestKalshiMarkets:
         assert 0 < ob["bid"] < ob["ask"] < 1
         assert ob["bid"] < ob["mid"] < ob["ask"]
         assert ob["spread"] > 0
-
-    def test_parse_btc_strike_market_from_ticker(self):
-        """Parser extracts BTC strike market semantics from Kalshi ticker."""
-        from kalshi_markets import parse_btc_strike_market
-
-        parsed = parse_btc_strike_market(
-            "BTCUSD-2605021315-84000",
-            "Will BTC be above $84,000 at 13:15 UTC?",
-            None,
-        )
-        assert parsed["market_type"] == "btc_above_strike"
-        assert parsed["strike"] == 84000.0
-        assert parsed["expiry"].startswith("2026-05-02T13:15")
-
-    def test_parse_btc_strike_market_from_question_fallback(self):
-        """Parser falls back to question text for strike when ticker lacks it."""
-        from kalshi_markets import parse_btc_strike_market
-
-        parsed = parse_btc_strike_market(
-            "CUSTOM-BTC-MARKET",
-            "Will BTC be above $84,500 at 14:30 UTC?",
-            "2026-05-02T14:30:00+00:00",
-        )
-        assert parsed["market_type"] == "btc_above_strike"
-        assert parsed["strike"] == 84500.0
-        assert parsed["expiry"] == "2026-05-02T14:30:00+00:00"
-
-    def test_parse_btc_strike_market_rejects_unsupported_question(self):
-        """Unsupported Kalshi market text is not treated as a BTC strike market."""
-        from kalshi_markets import parse_btc_strike_market
-
-        parsed = parse_btc_strike_market(
-            "CUSTOM-BTC-MARKET",
-            "Will Bitcoin trade sideways today?",
-            "2026-05-02T14:30:00+00:00",
-        )
-        assert parsed["market_type"] == "unsupported"
-        assert parsed["strike"] is None
-
-    def test_live_api_errors_do_not_fall_back_to_mock(self, monkeypatch):
-        """Credentials-on API failures must not silently produce mock markets."""
-        import kalshi_markets
-
-        monkeypatch.setenv("KALSHI_API_KEY", "key")
-        monkeypatch.setenv("KALSHI_API_SECRET", "secret")
-        monkeypatch.setattr(
-            kalshi_markets.requests,
-            "get",
-            Mock(side_effect=TimeoutError("boom")),
-        )
-
-        with pytest.raises(RuntimeError, match="Kalshi API error"):
-            kalshi_markets.fetch_active_kalshi_markets(mock_mode=False)
 
 
 class TestKalshiData:
@@ -358,15 +290,6 @@ class TestKalshiConviction:
         from ci_run_kalshi import store_prediction_kalshi
         return store_prediction_kalshi(
             db, "test-market-1", signal, regime, cycle=1,
-            kalshi_meta={
-                "parser_version": "kalshi_strike_v1",
-                "strike": 84000.0,
-                "current_btc": 83950.0,
-                "minutes_to_expiry": 15.0,
-                "required_move_pct": 0.000596,
-                "selected_side": "YES" if signal.get("direction") == "UP" else "NO",
-                "skip_reason": None,
-            },
         )
 
     @pytest.fixture
@@ -433,125 +356,6 @@ class TestKalshiConviction:
         regime = self._make_regime("LOW_VOL / NEUTRAL")
         result = self._store(kalshi_db, signal, regime)
         assert result["conviction_score"] == 2
-
-
-class TestKalshiStrikeAwareMapping:
-    """Tests for strike-aware Kalshi side selection."""
-
-    def _signal(self, direction="UP", estimate=0.62, streak=3):
-        return {
-            "should_trade": True,
-            "direction": direction,
-            "streak": streak,
-            "confidence": "medium",
-            "estimate": estimate,
-            "reason": "momentum",
-        }
-
-    def _regime(self):
-        return {
-            "label": "MEDIUM_VOL / TRENDING",
-            "volatility": "MEDIUM_VOL",
-            "autocorrelation": 0.3,
-            "is_mean_reverting": False,
-        }
-
-    def _market(self, strike, expiry=None, price_yes=0.52):
-        if expiry is None:
-            expiry = datetime.now(timezone.utc) + timedelta(minutes=15)
-        return {
-            "id": f"BTCUSD-{expiry.strftime('%y%m%d%H%M')}-{int(strike)}",
-            "question": f"Will BTC be above ${strike:,.0f} at {expiry.strftime('%H:%M')} UTC?",
-            "end_date": expiry.isoformat(),
-            "price_yes": price_yes,
-            "strike": float(strike),
-            "timeframe": "15m",
-            "market_type": "btc_above_strike",
-        }
-
-    def test_far_below_strike_up_momentum_skips_yes_conv3(self):
-        """BTC far below strike + UP momentum must not become a YES conv>=3."""
-        from ci_run_kalshi import build_strike_aware_signal
-
-        signal, meta = build_strike_aware_signal(
-            self._market(84000),
-            self._signal(direction="UP", estimate=0.63),
-            current_btc=72000,
-        )
-        assert signal["should_trade"] is False
-        assert signal["estimate"] == 0.5
-        assert meta["selected_side"] == "SKIP"
-        assert meta["skip_reason"] == "strike_unreachable"
-
-    def test_near_strike_up_momentum_can_buy_yes(self):
-        """BTC near strike + UP momentum can map to YES when reachability passes."""
-        from ci_run_kalshi import build_strike_aware_signal
-
-        signal, meta = build_strike_aware_signal(
-            self._market(84000),
-            self._signal(direction="UP", estimate=0.62),
-            current_btc=83950,
-        )
-        assert signal["should_trade"] is True
-        assert signal["estimate"] > 0.5
-        assert meta["selected_side"] == "YES"
-        assert meta["required_move_pct"] > 0
-
-    def test_above_strike_down_momentum_maps_to_no(self):
-        """BTC above strike + DOWN momentum maps to NO with estimate below 0.5."""
-        from ci_run_kalshi import build_strike_aware_signal
-
-        signal, meta = build_strike_aware_signal(
-            self._market(84000),
-            self._signal(direction="DOWN", estimate=0.38),
-            current_btc=84100,
-        )
-        assert signal["should_trade"] is True
-        assert signal["estimate"] < 0.5
-        assert meta["selected_side"] == "NO"
-        assert meta["required_move_pct"] < 0
-
-    def test_skipped_prediction_reasoning_preserves_model_direction(self, tmp_path):
-        """Skipped rows must not infer direction from market price."""
-        import json
-        import kalshi_markets
-        from ci_run_kalshi import store_prediction_kalshi, build_strike_aware_signal
-
-        original = kalshi_markets.DB_PATH_KALSHI
-        kalshi_markets.DB_PATH_KALSHI = tmp_path / "test_kalshi.db"
-        try:
-            db = kalshi_markets.init_db_kalshi()
-            market = self._market(84000, price_yes=0.57)
-            kalshi_markets.store_markets_kalshi(db, [{
-                **market,
-                "category": "crypto",
-                "volume": 1000,
-                "price_no": 0.43,
-            }])
-            signal, meta = build_strike_aware_signal(
-                market,
-                self._signal(direction="UP", estimate=0.63),
-                current_btc=72000,
-            )
-            result = store_prediction_kalshi(
-                db,
-                market["id"],
-                signal,
-                self._regime(),
-                cycle=1,
-                mkt_price=market["price_yes"],
-                kalshi_meta=meta,
-            )
-            assert result["conviction_score"] == 0
-            assert result["estimate"] == 0.5
-            row = db.execute("SELECT reasoning FROM predictions").fetchone()
-            reasoning = json.loads(row["reasoning"])
-            assert reasoning["signal"]["direction"] == "UP"
-            assert reasoning["selected_side"] == "SKIP"
-            assert reasoning["skip_reason"] == "strike_unreachable"
-            db.close()
-        finally:
-            kalshi_markets.DB_PATH_KALSHI = original
 
 
 # TestKalshiNavBar removed — dashboard retired 2026-04-08
