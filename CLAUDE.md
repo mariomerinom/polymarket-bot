@@ -1,12 +1,12 @@
 # Project Rules
 
-## GitHub Is the Source of Truth
+## GitHub Is the Source of Truth (for code, not data)
 
-1. **Always `git pull` before reading any data file.** The engine auto-commits every ~5 minutes — local state is stale by default.
-2. **Always push after making changes.** A change that isn't on GitHub doesn't exist.
-3. **Expect CI conflicts on push.** Always `git pull --rebase` before pushing. If DBs conflict, code changes win — CI regenerates data.
-4. **The deployed system is canonical.** If a local query disagrees with live, live is right.
-5. **Source changes need an engine restart — automated via the post-merge hook.** See `docs/ops/DEPLOYMENT.md`. Python caches imports at process start; pushing code is not enough. The VPS-side `post-merge` hook auto-restarts botsy when `src/` or `config/` change. Data-only commits do not trigger restart. Check `logs/deploy_hook.log` on VPS to verify.
+1. **Code: GitHub canonical.** Always `git pull --rebase` before pushing. The deployed system is canonical for runtime state — if a local query disagrees with live, live is right.
+2. **Data: VPS canonical.** As of 2026-04-28, `data/*.db` files are no longer tracked in git (history rewrite reclaimed ~16 GB of binary auto-commit bloat). The engine writes DBs to the VPS only. Pull fresh state to local for analysis with **`tools/sync_data.sh`** (rsync from VPS over SSH). `engine_health.txt` is the single auto-committed data artifact (out-of-band monitoring).
+3. **Always push after making changes.** A change that isn't on GitHub doesn't exist.
+4. **Source changes need an engine restart — automated via the post-merge hook.** See `docs/ops/DEPLOYMENT.md`. Python caches imports at process start; pushing code is not enough. The VPS-side `post-merge` hook auto-restarts botsy when `src/` or `config/` change. Data-only commits do not trigger restart. Check `logs/deploy_hook.log` on VPS to verify.
+5. **Never `git reset --hard` on a tracking flip without backing up `data/` first.** A target HEAD that doesn't track the formerly-tracked DBs will DELETE them from the working tree on reset. See `docs/ops/postmortem_2026-04-28_data_loss_during_rewrite.md` for the canonical incident.
 
 ## Development Process
 

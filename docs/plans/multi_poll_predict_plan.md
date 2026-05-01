@@ -230,3 +230,79 @@ If no edge:   No Phase C. Result registered. Pivot decision proceeds.
 - Order-flow-based stopping rules (e.g., "fire when book imbalance exceeds X"). That's a Phase 2 design once we know whether time-based offset alone has edge.
 - Per-market-class poll schedules. All markets in scope are 5m direction binaries.
 - Live capital exposure increase. Phase A is shadow only. Phase C ships behind the existing signal-EHR gate, so even if we activate a new dispatch policy, the gate still must clear before live trades can fire.
+
+---
+
+## Addendum — what actually shipped vs the original plan
+
+This plan was approved 2026-04-28. Phase A shipped that day. Several follow-ups landed between then and 2026-05-01 in response to data and bugs surfaced along the way.
+
+### 2026-04-28 — Phase A as planned
+
+- `src/multi_poll_predict.py` with `schedule_polls`, `compute_poll_predictions`, `init_table`, `purge_old_polls`, retention discipline (RETENTION_DAYS=30 in code, not in an unwired cron)
+- `tests/test_multi_poll_predict.py` — 10 tests, TDD-first
+- `src/botsy_engine.py` — `_spawn_multi_poll` helper called from `bybit_spot_feed` after the daily-rollover hook on BTC/ETH 5m closes
+- `docs/optimizations.json` — registered as `multi_poll_predict_logger` with explicit pre-registered revert criteria
+
+**Same-day fix:** `predict_eth` exposes `compute_regime_eth` + `momentum_signal_eth`, not the BTC names. First deploy logged warnings; commit `db72769eb` corrected the function-name lookup. ETH polls then began producing valid signal data.
+
+### 2026-04-30 — daily-report integration (the gap user surfaced)
+
+The original plan called for a daily-report section showing per-offset WR distribution. That wasn't shipped on 2026-04-28 — only the writer was. Shipped 2026-04-30:
+
+- `analyze_multi_poll(db, date_str)` in `src/daily_report.py` — JOINs `multi_poll_predictions` to `markets`, returns per-(offset × regime) cells with N≥20 directional resolved + WR, identifies `best_t180` cell across regimes, surfaces total-polls-today
+- Render section per pipeline (mirrors Shadow Maker pattern)
+- 5 new tests pinning the analyzer
+- Surfaced data shows HIGH_VOL/NEUTRAL at 65-69% WR (currently gate-blocked) and MEDIUM_VOL/TRENDING at 60-61% WR (currently lost money in production). Concrete daily evidence for the H1/H2 findings from the signal_rehab investigation.
+
+### 2026-04-30 — realistic-shadow extension (the next-step-toward-production move)
+
+Plan called for picking an offset at Phase B and shipping as paper pipeline at Phase C. User pushback 2026-04-30 introduced a stricter intermediate stage: **realistic-entry P&L**. Reasoning: original lab WR (54-69%) used a fictional $0.50 entry assumption. Real Polymarket prices for fresh directional binaries are typically 0.52-0.55, which cuts EV by 30-50%. Phase B's real question is "does the lab edge survive realistic execution?"
+
+Shipped:
+
+- 5 new columns in `multi_poll_predictions`: `mkt_mid`, `mkt_best_bid`, `mkt_best_ask`, `mkt_spread`, `orderbook_age_ms`
+- Idempotent forward-migration via `ALTER TABLE ADD COLUMN` (mirrors `fill_diagnostic.py:117` pattern)
+- `_get_market_orderbook(market_id, db_path)` helper — reads `OrderbookCache.get_fresh_entry()` for the YES token
+- `schedule_polls` reads orderbook per market per poll, passes to `log_poll`
+- `_realistic_pnl_for_cell(db, date_str, offset, regime)` in `daily_report.py` — for each directional poll with orderbook context: BUY YES at best_ask if estimate>0.5, BUY NO at (1-best_bid) if estimate<0.5, $25 bet, 2% taker fee, fall back to mid when ask is NULL
+- Daily report Multi-Poll Phase A section gains 3 columns: Realistic n, Realistic P&L, EV/bet
+- 8 new tests pinning the math + migration
+
+### 2026-05-01 — orderbook fallback (bug fix)
+
+Realistic-shadow's first daily report (2026-05-01 morning) showed `realistic_n=0` across every cell. 25,695 post-deploy rows, zero with orderbook context.
+
+Root cause: Polymarket WS feed subscribes to ~50 tokens; multi-poll polls every active market (often >50). Cache entries for non-subscribed tokens are stale (sometimes weeks old); `get_fresh_entry()` correctly returned None.
+
+Fix mirrored `arb_loggers.py` two-tier lookup pattern:
+
+1. **Tier 1 — live WS cache.** Best granularity (real bid/ask/spread + sub-second age). Covers ~50 tokens.
+2. **Tier 2 — gamma snapshot fallback.** Query `markets.price_yes` from the per-pipeline DB. Covers every market in the gamma fetch (every 5 min). Returns `(price_yes, None, None, None, None)` — only mid is known; bid/ask/spread stay NULL. Analyzer's existing mid-fallback handles this transparently.
+
+Trade-off accepted: tier-2 mids are 5-min-old gamma snapshots, less precise than live WS. Better than zero data — measurement fidelity question, not a correctness one.
+
+Tests: 2 new fallback tests. Full suite at 863.
+
+### What did NOT ship (and why)
+
+**Paper pipeline as next staging step.** User asked 2026-04-30 what a paper pipeline would look like. Answered with full design. Then explicitly pushed back on shipping it before realistic-shadow has matured, because:
+
+- Always-fire shadow gives broader coverage faster (all 9 offsets in parallel) than paper at one offset
+- The four April reverts were paper-pipeline reverts — adding another paper pipeline ships the exact shape that produced the lessons
+- No live target exists today (all 12 pipelines paper); paper-as-staging-step assumes a live deployment we haven't decided to make
+- Marginal info vs realistic shadow is small (mostly real-time gate interaction)
+- Pipelines persist; shadow experiments retire
+
+**Decision: realistic-shadow lands clean evidence first, then the case for paper-pipeline gets re-evaluated with stronger priors.** Earliest re-evaluation: ~2026-05-07.
+
+### Phase B promotion criteria (refined 2026-04-30)
+
+Original criteria (lab WR only) remain a backstop. Primary criteria are now realistic-entry:
+
+- ≥7 days of orderbook-enriched observation (data accumulating from 2026-04-30 16:24Z; first clean full day is 2026-05-01)
+- ≥100 directional polls per (offset × regime) cell with non-null orderbook context
+- Realistic-entry WR ≥55% on ≥2 regimes
+- Realistic EV/bet > 0 sustained across observation window
+
+Earliest defensible decision: **2026-05-07**.
