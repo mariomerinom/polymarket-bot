@@ -310,6 +310,66 @@ class TestStrategyLabDB:
         assert row[4] == "UP"          # direction
         db.close()
 
+    def test_write_prediction_stores_reliability_metadata_columns(self):
+        """Lab rows carry deploy/timing fields so reports can partition results."""
+        from strategy_lab import _init_db, _write_prediction
+        db = sqlite3.connect(":memory:")
+        _init_db(db)
+        sig = StrategySignal(direction="UP", estimate=0.58, conviction=3,
+                             reason="test", metadata={"k": "v"})
+        _write_prediction(
+            db, "test_strat", "btc_5m", "BTCUSDT", sig,
+            "MEDIUM_VOL / TRENDING", 80000.0,
+            datetime(2026, 4, 11, 12, 1, tzinfo=timezone.utc),
+            cycle_close_at=datetime(2026, 4, 11, 12, 0, tzinfo=timezone.utc),
+            offset_seconds=60,
+            source_interval="5",
+            deploy_epoch="test-epoch",
+            engine_commit="abc1234",
+        )
+        row = db.execute("""
+            SELECT schema_version, engine_commit, deploy_epoch, cycle_close_at,
+                   offset_seconds, source_interval, synthetic_pnl
+            FROM lab_predictions
+        """).fetchone()
+        assert row[0] == 2
+        assert row[1] == "abc1234"
+        assert row[2] == "test-epoch"
+        assert row[3] == "2026-04-11T12:00:00+00:00"
+        assert row[4] == 60
+        assert row[5] == "5"
+        assert row[6] is None
+        db.close()
+
+    def test_write_prediction_backfills_reliability_metadata_into_json(self):
+        """Metadata JSON includes the same reliability keys for param sweeps."""
+        from strategy_lab import _init_db, _write_prediction
+        db = sqlite3.connect(":memory:")
+        _init_db(db)
+        sig = StrategySignal(direction="UP", estimate=0.58, conviction=3,
+                             reason="test", metadata={})
+        _write_prediction(
+            db, "test_strat", "btc_5m", "BTCUSDT", sig, "", 80000.0,
+            datetime(2026, 4, 11, 12, 1, tzinfo=timezone.utc),
+            cycle_close_at=datetime(2026, 4, 11, 12, 0, tzinfo=timezone.utc),
+            offset_seconds=60,
+            source_interval="5",
+            deploy_epoch="test-epoch",
+            engine_commit="abc1234",
+        )
+        meta = json.loads(db.execute(
+            "SELECT metadata FROM lab_predictions"
+        ).fetchone()[0])
+        assert meta["schema_version"] == 2
+        assert meta["engine_commit"] == "abc1234"
+        assert meta["deploy_epoch"] == "test-epoch"
+        assert meta["cycle_close_at"] == "2026-04-11T12:00:00+00:00"
+        assert meta["offset_seconds"] == 60
+        assert meta["symbol"] == "BTCUSDT"
+        assert meta["pipeline"] == "btc_5m"
+        assert meta["source_interval"] == "5"
+        db.close()
+
     def test_write_prediction_stores_large_metadata(self):
         """Always-fire strategies store large metadata — verify it persists."""
         from strategy_lab import _init_db, _write_prediction
@@ -445,8 +505,10 @@ class TestAutoResolution:
         resolved = _auto_resolve(db, next_candle,
                                  datetime(2026, 4, 11, 12, 5, tzinfo=timezone.utc))
         assert resolved == 1
-        row = db.execute("SELECT outcome, pnl FROM lab_predictions WHERE id=1").fetchone()
+        row = db.execute("SELECT outcome, pnl, synthetic_pnl FROM lab_predictions WHERE id=1").fetchone()
         assert row[0] == 1
+        assert row[1] == 25.0
+        assert row[2] == 25.0
         db.close()
 
     def test_resolve_incorrect_up(self):

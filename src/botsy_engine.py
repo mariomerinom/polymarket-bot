@@ -121,6 +121,7 @@ FALLBACK_TIMEOUT_S = 360  # 6 minutes
 
 # Metrics write interval
 METRICS_INTERVAL_S = 60
+POLYMARKET_MICROSTRUCTURE_INTERVAL_S = 30
 
 # Git commit interval
 GIT_COMMIT_INTERVAL_S = 300  # 5 minutes
@@ -171,6 +172,7 @@ class BotsyEngine:
         self._orderbook_ages: list = []  # recent orderbook ages in ms
         self._orderbook_cache: dict = {}  # in-memory: asset_id → entry dict
         self._orderbook_dirty = False     # flag: needs disk flush
+        self._token_context: dict = {}     # token_id → {market_id, side, pipeline}
 
         # Daily regime metrics: track last recorded UTC date per asset so we
         # only fire the rollover fetch once per asset per day. See asset_daily.py.
@@ -209,6 +211,7 @@ class BotsyEngine:
             self._supervise(self.daily_report_check, name="daily_report"),
             self._supervise(self.fallback_timer, name="fallback"),
             self._supervise(self.metrics_writer, name="metrics"),
+            self._supervise(self.microstructure_writer, name="poly_microstructure"),
             self._supervise(self.memory_profiler, name="memory_profiler"),
             self._supervise(self.log_rotator, name="log_rotator"),
             self._verify_orderbook_cache_format(),  # one-shot, no supervision
@@ -499,7 +502,7 @@ class BotsyEngine:
         import sqlite3
         from clob_depth import get_clob_tokens
 
-        market_ids = set()
+        market_ids = {}
         for db_name in self._POLYMARKET_DB_PATHS:
             db_path = DATA_DIR / db_name
             if not db_path.exists():
@@ -515,23 +518,40 @@ class BotsyEngine:
                 """).fetchall()
                 db.close()
                 for row in rows:
-                    market_ids.add(row["id"])
+                    pipeline = {
+                        "predictions.db": "btc_5m",
+                        "predictions_15m.db": "btc_15m",
+                        "predictions_eth.db": "eth_5m",
+                    }.get(db_name)
+                    market_ids[row["id"]] = pipeline
             except Exception as e:
                 log(f"[WS] Polymarket token lookup failed for {db_name}: {e}")
 
         # Resolve unique market IDs to token IDs via Gamma API
         token_ids = set()
-        for market_id in market_ids:
+        token_context = {}
+        for market_id, pipeline in market_ids.items():
             try:
                 tokens = get_clob_tokens(market_id)
                 if tokens:
                     if tokens.get("yes"):
                         token_ids.add(tokens["yes"])
+                        token_context[tokens["yes"]] = {
+                            "market_id": market_id,
+                            "side": "YES",
+                            "pipeline": pipeline,
+                        }
                     if tokens.get("no"):
                         token_ids.add(tokens["no"])
+                        token_context[tokens["no"]] = {
+                            "market_id": market_id,
+                            "side": "NO",
+                            "pipeline": pipeline,
+                        }
             except Exception:
                 continue
 
+        self._token_context = token_context
         return list(token_ids)
 
     def _update_orderbook_cache(self, data: dict):
@@ -680,9 +700,15 @@ class BotsyEngine:
         # Run Strategy Lab (shadow strategies, never affects production)
         try:
             from strategy_lab import strategy_lab_run
+            cycle_close_at = None
+            if candle_ts:
+                divisor = 1000 if candle_ts > 10_000_000_000 else 1
+                cycle_close_at = datetime.fromtimestamp(
+                    candle_ts / divisor, tz=timezone.utc
+                )
             await asyncio.to_thread(
                 strategy_lab_run, pipelines, symbol, interval,
-                candle_data, indicators,
+                candle_data, indicators, cycle_close_at,
             )
         except Exception as e:
             log(f"[STRATEGY_LAB] {e}")
@@ -1119,6 +1145,26 @@ class BotsyEngine:
                 self._flush_orderbook_cache()
             except Exception as e:
                 log(f"WARNING: orderbook flush failed: {e}")
+
+    async def microstructure_writer(self):
+        """Write research-only Polymarket orderbook snapshots every 30s."""
+        while True:
+            await asyncio.sleep(POLYMARKET_MICROSTRUCTURE_INTERVAL_S)
+            try:
+                from polymarket_microstructure import (
+                    record_orderbook_snapshots,
+                    prune_old_snapshots,
+                )
+                count = await asyncio.to_thread(
+                    record_orderbook_snapshots,
+                    dict(self._orderbook_cache),
+                    dict(self._token_context),
+                )
+                await asyncio.to_thread(prune_old_snapshots)
+                if count:
+                    log(f"[POLY_MICRO] recorded {count} token snapshot(s)")
+            except Exception as e:
+                log(f"WARNING: microstructure capture failed: {e}")
 
     def _compute_percentiles(self):
         """Compute p50/p95 from recent latency samples."""
