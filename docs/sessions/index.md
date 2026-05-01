@@ -2,6 +2,7 @@
 
 Working session summaries — what was built, shipped, learned, and kicked forward.
 
+- [2026-05-01](2026-05-01.md) — Kalshi strike-aware rebuild and Lab/Microstructure roadmap built and tested, then current head revealed VPS auto-commit rollback problem
 - [2026-04-23](2026-04-23.md) — V4 thesis decay documented, Phase 0 cross-venue arb shadow logger shipped, DO Inference LLM client + arb_classifier + v4_diagnosis (11 commits)
 - [2026-04-21](2026-04-21.md) — FAK pilot day-1 postmortem (−$159, 11% WR), signal-EHR live gate added (layer 4), auto-restart hook deployed, shadow regime extended to BTC/ETH spot (3 commits)
 - [2026-04-20](2026-04-20.md) — FAK live pilot activated on btc_5m, ETH VWAP graduated, SOL relative regime shadow shipped, shadow framework formalized (4 commits)
