@@ -1,25 +1,7 @@
 # Pivot Options — Where BOTSY Can Go
 
-> **🪦 RETIRED 2026-05-01.**
->
-> This document was a 2026-04-23 strategic snapshot framing the V4-decay pivot question. It is preserved as historical context; it is NOT a current source of truth. Several of its assumptions are now stale:
->
-> - btc_5m sunset trigger fired 2026-04-28 (live → paper); the doc treats this as a pending decision.
-> - The Apr 5 dispatch-timing root cause was discovered 2026-04-28 (see `docs/analysis/signal_rehab_2026-04-28.md`); the doc's framing of the decay as opaque is superseded.
-> - The Apr 28 disk-full incident, history rewrite, and ~6h data loss are not reflected; see `docs/ops/postmortem_2026-04-28_disk_full.md` and `docs/ops/postmortem_2026-04-28_data_loss_during_rewrite.md`.
-> - Multi-poll Phase A is now the active experiment; this doc precedes it. See `docs/plans/multi_poll_predict_plan.md`.
-> - Kalshi rebuild is now estimated at ~4h (not ~2 days) because the strike-aware fair-p machinery already exists in `src/arb_divergence.py`; this doc's costing is wrong.
->
-> **For current state:** `~/.claude/plans/groovy-squishing-scott.md` (active plan, rebased 2026-05-01).
->
-> **For active experiments:** `docs/optimizations.json` and the per-experiment plans in `docs/plans/`.
->
-> The body below is preserved verbatim from the 2026-04-23 cut. Treat it as a snapshot of the question framing at that moment, not as a list of current options.
-
----
-
 **Date of this cut:** 2026-04-23
-**Status:** Retired 2026-05-01 (see banner above)
+**Status:** Strategic options, not a committed direction
 **Related:** `docs/core/strategy.md` (current strategy), `docs/core/ROADMAP.md`, `docs/ops/DEPLOYMENT.md`
 
 ---
