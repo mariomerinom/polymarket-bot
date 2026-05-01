@@ -859,6 +859,34 @@
       "post_stats": null,
       "closed_at": null,
       "close_reason": null
+    },
+    {
+      "name": "kalshi_strike_aware_parser",
+      "description": "Correctness rebuild for Kalshi BTC strike markets. Parser version kalshi_strike_v1 persists strike/timeframe/market_type, maps BTC momentum to explicit YES/NO side per contract, gates unreachable strikes, and stores parser metadata in predictions.reasoning. Pre-parser Kalshi performance is contaminated by strike-blind mapping and is excluded from edge claims.",
+      "registered_at": "2026-05-01T00:00:00+00:00",
+      "pipeline": "kalshi",
+      "status": "monitoring",
+      "issue": 91,
+      "min_sample": 200,
+      "revert_condition": "pause immediately if any conv>=3 parser-versioned Kalshi prediction is missing strike, current_btc, minutes_to_expiry, or selected_side; close as no-go if WR < 50 on 200 resolved parser-versioned predictions OR fewer than 25 conv>=3 parser-versioned predictions resolve in 7 days",
+      "baseline": {
+        "parser_version": "kalshi_strike_v1",
+        "old_history_status": "contaminated_pre_parser_do_not_use_for_edge_claims",
+        "pre_parser_conv3plus_bets": 420,
+        "pre_parser_conv3plus_wr_pct": 18.1,
+        "pre_parser_up_bets": 344,
+        "pre_parser_up_wins": 0,
+        "pre_parser_down_bets": 76,
+        "pre_parser_down_wins": 76,
+        "go_condition": "conv>=3 WR > 55 and positive estimated P&L on 200 resolved parser-versioned predictions",
+        "no_go_condition": "WR < 50 on 200 resolved parser-versioned predictions, or fewer than 25 conv>=3 resolved predictions in one week",
+        "evidence": "docs/analysis/kalshi_parser_audit_2026-05-01.md",
+        "plan": "docs/plans/kalshi-strike-aware-parser-plan.md"
+      },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
     }
   ]
 }

@@ -36,10 +36,112 @@ from pipeline_utils import get_next_cycle, has_unpredicted_market
 
 # Dead hours gate — EMPTY until calibrated from Kalshi paper trading data.
 DEAD_HOURS_UTC = set()
+KALSHI_PARSER_VERSION = "kalshi_strike_v1"
+MIN_REACHABLE_MOVE_PCT = 0.002
+MAX_REACHABLE_MOVE_PCT = 0.05
+REACHABLE_MOVE_PCT_PER_MIN = 0.0015
+
+
+def _parse_dt(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _reachable_move_limit(minutes_to_expiry):
+    if minutes_to_expiry is None or minutes_to_expiry <= 0:
+        return None
+    return min(
+        MAX_REACHABLE_MOVE_PCT,
+        max(MIN_REACHABLE_MOVE_PCT, minutes_to_expiry * REACHABLE_MOVE_PCT_PER_MIN),
+    )
+
+
+def _skip_signal(source_signal, reason):
+    signal = dict(source_signal or {})
+    signal.update({
+        "estimate": 0.5,
+        "should_trade": False,
+        "confidence": "skip",
+        "reason": reason,
+    })
+    return signal
+
+
+def build_strike_aware_signal(market, signal, current_btc, now=None):
+    """
+    Convert generic BTC momentum into a prediction for this specific Kalshi strike.
+
+    The returned estimate remains YES-probability encoded: >0.5 favors YES,
+    <0.5 favors NO, and 0.5 is a skip/neutral observation.
+    """
+    now = now or datetime.now(timezone.utc)
+    expiry = _parse_dt(market.get("end_date"))
+    strike = market.get("strike")
+    market_type = market.get("market_type")
+
+    meta = {
+        "parser_version": KALSHI_PARSER_VERSION,
+        "market_type": market_type,
+        "strike": strike,
+        "current_btc": current_btc,
+        "selected_side": "SKIP",
+        "skip_reason": None,
+    }
+
+    if market_type != "btc_above_strike" or strike is None or expiry is None or not current_btc:
+        meta["skip_reason"] = "invalid_market_contract"
+        meta["minutes_to_expiry"] = None
+        meta["required_move_pct"] = None
+        return _skip_signal(signal, meta["skip_reason"]), meta
+
+    minutes_to_expiry = (expiry - now).total_seconds() / 60.0
+    required_move_pct = (float(strike) - float(current_btc)) / float(current_btc)
+    move_limit = _reachable_move_limit(minutes_to_expiry)
+    meta.update({
+        "minutes_to_expiry": round(minutes_to_expiry, 3),
+        "required_move_pct": round(required_move_pct, 6),
+        "reachable_move_limit_pct": round(move_limit, 6) if move_limit is not None else None,
+    })
+
+    if minutes_to_expiry <= 0 or move_limit is None:
+        meta["skip_reason"] = "expired_or_invalid_expiry"
+        return _skip_signal(signal, meta["skip_reason"]), meta
+
+    if not signal.get("should_trade"):
+        meta["skip_reason"] = signal.get("reason", "no_momentum_signal")
+        return _skip_signal(signal, meta["skip_reason"]), meta
+
+    direction = signal.get("direction")
+    mapped = dict(signal)
+    if direction == "UP":
+        if required_move_pct > move_limit:
+            meta["skip_reason"] = "strike_unreachable"
+            return _skip_signal(signal, meta["skip_reason"]), meta
+        mapped["estimate"] = max(float(signal.get("estimate", 0.5)), 0.5001)
+        mapped["selected_side"] = "YES"
+        meta["selected_side"] = "YES"
+        return mapped, meta
+
+    if direction == "DOWN":
+        if required_move_pct < -move_limit:
+            meta["skip_reason"] = "strike_unreachable"
+            return _skip_signal(signal, meta["skip_reason"]), meta
+        mapped["estimate"] = min(float(signal.get("estimate", 0.5)), 0.4999)
+        mapped["selected_side"] = "NO"
+        meta["selected_side"] = "NO"
+        return mapped, meta
+
+    meta["skip_reason"] = "missing_model_direction"
+    return _skip_signal(signal, meta["skip_reason"]), meta
 
 
 def store_prediction_kalshi(db, market_id, signal, regime, cycle,
-                            predicted_at=None, mkt_price=None, kalshi_ob=None):
+                            predicted_at=None, mkt_price=None, kalshi_ob=None,
+                            kalshi_meta=None):
     """
     Store a Kalshi prediction in the database.
 
@@ -55,7 +157,14 @@ def store_prediction_kalshi(db, market_id, signal, regime, cycle,
 
     # Phase 1: conviction scoring (upgraded from Phase 0 hardcoded conv=2).
     # Matches BTC/Bybit filtering logic: streak-based, regime-gated.
-    if signal["should_trade"]:
+    selected_side = (kalshi_meta or {}).get("selected_side")
+    has_contract_meta = bool(kalshi_meta and kalshi_meta.get("parser_version")
+                             and kalshi_meta.get("strike") is not None
+                             and kalshi_meta.get("current_btc") is not None
+                             and kalshi_meta.get("minutes_to_expiry") is not None
+                             and selected_side in ("YES", "NO"))
+
+    if signal["should_trade"] and has_contract_meta:
         direction = signal.get("direction", "")
         regime_label = regime.get("label", "") if regime else ""
         # DOWN+NEUTRAL demotion (same as Bybit pipeline)
@@ -78,6 +187,8 @@ def store_prediction_kalshi(db, market_id, signal, regime, cycle,
         "conviction_tier": conviction,
         "mkt_price": mkt_price,
     }
+    if kalshi_meta:
+        reasoning_data.update(kalshi_meta)
     if kalshi_ob:
         reasoning_data["kalshi_orderbook"] = kalshi_ob
     reasoning = json.dumps(reasoning_data)
@@ -229,13 +340,12 @@ def _run_predictions(cycle, kalshi_data, market_limit=5, min_streak=2,
     # Get markets to predict
     now_iso = datetime.now(timezone.utc).isoformat()
     cursor = db.execute("""
-        SELECT id, question, category, end_date, volume, price_yes
+        SELECT id, question, category, end_date, volume, price_yes, strike, timeframe, market_type
         FROM markets WHERE resolved = 0 AND end_date > ?
         AND id NOT IN (SELECT DISTINCT market_id FROM predictions)
         ORDER BY end_date ASC LIMIT ?
     """, (now_iso, market_limit))
-    markets = [dict(zip(["id", "question", "category", "end_date", "volume", "price_yes"], row))
-               for row in cursor.fetchall()]
+    markets = [dict(row) for row in cursor.fetchall()]
 
     if not markets:
         print("  No unresolved Kalshi markets found.")
@@ -248,54 +358,49 @@ def _run_predictions(cycle, kalshi_data, market_limit=5, min_streak=2,
         print(f"\n  Market: {market['question'][:60]}...")
         mkt_price = market["price_yes"]
         print(f"  Mkt price: {mkt_price:.0%}")
+        strike_signal, kalshi_meta = build_strike_aware_signal(
+            market, signal, kalshi_data.get("current_price")
+        )
 
         # Dead hours gate
         current_hour_utc = datetime.now(timezone.utc).hour
         if DEAD_HOURS_UTC and current_hour_utc in DEAD_HOURS_UTC:
-            skip_signal = {
-                "estimate": mkt_price,
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": f"time_gate_dead_hour (UTC {current_hour_utc})",
-            }
-            store_prediction_kalshi(db, market["id"], skip_signal, regime, cycle)
+            skip_signal = _skip_signal(strike_signal, f"time_gate_dead_hour (UTC {current_hour_utc})")
+            skip_meta = {**kalshi_meta, "selected_side": "SKIP", "skip_reason": skip_signal["reason"]}
+            store_prediction_kalshi(db, market["id"], skip_signal, regime, cycle, kalshi_meta=skip_meta)
             print(f"    -> SKIP (dead hour: UTC {current_hour_utc})")
             continue
 
         # Price gate: skip extreme prices
         if mkt_price > 0.85 or mkt_price < 0.15:
-            skip_signal = {
-                "estimate": mkt_price,
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": f"price_gate_extreme ({mkt_price:.0%})",
-            }
-            store_prediction_kalshi(db, market["id"], skip_signal, regime, cycle)
+            skip_signal = _skip_signal(strike_signal, f"price_gate_extreme ({mkt_price:.0%})")
+            skip_meta = {**kalshi_meta, "selected_side": "SKIP", "skip_reason": skip_signal["reason"]}
+            store_prediction_kalshi(db, market["id"], skip_signal, regime, cycle, kalshi_meta=skip_meta)
             print(f"    -> SKIP (price gate: {mkt_price:.0%})")
             continue
 
         # Mean-reverting regime gate
         if regime["is_mean_reverting"]:
-            skip_signal = {
-                "estimate": mkt_price,
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": "regime_gate_mean_reverting",
-            }
-            store_prediction_kalshi(db, market["id"], skip_signal, regime, cycle)
+            skip_signal = _skip_signal(strike_signal, "regime_gate_mean_reverting")
+            skip_meta = {**kalshi_meta, "selected_side": "SKIP", "skip_reason": skip_signal["reason"]}
+            store_prediction_kalshi(db, market["id"], skip_signal, regime, cycle, kalshi_meta=skip_meta)
             print(f"    -> SKIP (mean-reverting regime)")
             continue
 
         # HIGH_VOL non-trending gate (port from Bybit/BTC 5m pipelines)
         if "HIGH_VOL" in regime["label"] and "TRENDING" not in regime["label"]:
-            skip_signal = {
-                "estimate": mkt_price,
-                "should_trade": False,
-                "confidence": "skip",
-                "reason": "regime_gate_high_vol_non_trending",
-            }
-            store_prediction_kalshi(db, market["id"], skip_signal, regime, cycle)
+            skip_signal = _skip_signal(strike_signal, "regime_gate_high_vol_non_trending")
+            skip_meta = {**kalshi_meta, "selected_side": "SKIP", "skip_reason": skip_signal["reason"]}
+            store_prediction_kalshi(db, market["id"], skip_signal, regime, cycle, kalshi_meta=skip_meta)
             print(f"    -> SKIP (HIGH_VOL non-trending)")
+            continue
+
+        if not strike_signal["should_trade"]:
+            store_prediction_kalshi(
+                db, market["id"], strike_signal, regime, cycle,
+                mkt_price=mkt_price, kalshi_meta=kalshi_meta,
+            )
+            print(f"    -> SKIP ({kalshi_meta.get('skip_reason')})")
             continue
 
         # Fetch Kalshi orderbook for this market (analysis logging)
@@ -303,13 +408,14 @@ def _run_predictions(cycle, kalshi_data, market_limit=5, min_streak=2,
 
         # Store prediction
         prediction = store_prediction_kalshi(
-            db, market["id"], signal, regime, cycle,
-            mkt_price=mkt_price, kalshi_ob=kalshi_ob,
+            db, market["id"], strike_signal, regime, cycle,
+            mkt_price=mkt_price, kalshi_ob=kalshi_ob, kalshi_meta=kalshi_meta,
         )
-        direction = signal.get("direction", "?")
-        est = signal["estimate"]
+        direction = strike_signal.get("direction", "?")
+        est = strike_signal["estimate"]
         conv = prediction["conviction_score"]
-        print(f"    -> {direction} @ {est:.0%} (conv={conv})")
+        side = kalshi_meta.get("selected_side", "?")
+        print(f"    -> {direction}/{side} @ {est:.0%} (conv={conv})")
 
     db.close()
 
