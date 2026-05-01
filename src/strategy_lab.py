@@ -14,9 +14,7 @@ dispatch cycle.
 import importlib
 import json
 import sqlite3
-import subprocess
 from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
 
 from strategies.base import StrategyContext, StrategySignal
@@ -26,7 +24,6 @@ from strategies.base import StrategyContext, StrategySignal
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STRATEGY_LAB_CONFIG = ROOT_DIR / "config" / "strategy_lab.json"
 STRATEGY_LAB_DB = ROOT_DIR / "data" / "strategy_lab.db"
-LAB_SCHEMA_VERSION = 2
 
 
 # ── Database ─────────────────────────────────────────────────────────────
@@ -49,23 +46,9 @@ def _init_db(db: sqlite3.Connection):
             predicted_at TEXT NOT NULL,
             resolved_at TEXT,
             outcome INTEGER,
-            pnl REAL,
-            schema_version INTEGER DEFAULT 1,
-            engine_commit TEXT,
-            deploy_epoch TEXT,
-            cycle_close_at TEXT,
-            offset_seconds INTEGER,
-            source_interval TEXT,
-            synthetic_pnl REAL
+            pnl REAL
         )
     """)
-    _ensure_column(db, "lab_predictions", "schema_version", "INTEGER DEFAULT 1")
-    _ensure_column(db, "lab_predictions", "engine_commit", "TEXT")
-    _ensure_column(db, "lab_predictions", "deploy_epoch", "TEXT")
-    _ensure_column(db, "lab_predictions", "cycle_close_at", "TEXT")
-    _ensure_column(db, "lab_predictions", "offset_seconds", "INTEGER")
-    _ensure_column(db, "lab_predictions", "source_interval", "TEXT")
-    _ensure_column(db, "lab_predictions", "synthetic_pnl", "REAL")
     db.execute("""
         CREATE INDEX IF NOT EXISTS idx_lab_strategy
         ON lab_predictions(strategy)
@@ -77,77 +60,14 @@ def _init_db(db: sqlite3.Connection):
     db.commit()
 
 
-def _ensure_column(db: sqlite3.Connection, table: str, column: str, ddl: str):
-    """Add a nullable column if an older DB was created before it existed."""
-    cols = [row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()]
-    if column not in cols:
-        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
-
-
-@lru_cache(maxsize=1)
-def _engine_commit() -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=ROOT_DIR,
-            text=True,
-            stderr=subprocess.DEVNULL,
-            timeout=2,
-        ).strip()
-    except Exception:
-        return "unknown"
-
-
-def _iso(dt):
-    if dt is None:
-        return None
-    return dt.isoformat() if isinstance(dt, datetime) else str(dt)
-
-
-def _derive_offset_seconds(predicted_at, cycle_close_at):
-    if cycle_close_at is None:
-        return None
-    try:
-        pred_dt = predicted_at if isinstance(predicted_at, datetime) else datetime.fromisoformat(str(predicted_at))
-        close_dt = cycle_close_at if isinstance(cycle_close_at, datetime) else datetime.fromisoformat(str(cycle_close_at))
-        if pred_dt.tzinfo is None:
-            pred_dt = pred_dt.replace(tzinfo=timezone.utc)
-        if close_dt.tzinfo is None:
-            close_dt = close_dt.replace(tzinfo=timezone.utc)
-        return int((pred_dt - close_dt).total_seconds())
-    except (ValueError, TypeError):
-        return None
-
-
 def _write_prediction(db, strategy_name, pipeline, symbol, signal, regime_label,
-                       entry_price, timestamp, cycle_close_at=None,
-                       offset_seconds=None, source_interval=None,
-                       deploy_epoch=None, engine_commit=None):
+                       entry_price, timestamp):
     """Insert a lab prediction into the database."""
-    engine_commit = engine_commit or _engine_commit()
-    deploy_epoch = deploy_epoch or engine_commit
-    if offset_seconds is None:
-        offset_seconds = _derive_offset_seconds(timestamp, cycle_close_at)
-
-    meta = dict(signal.metadata) if signal.metadata else {}
-    meta.update({
-        "schema_version": LAB_SCHEMA_VERSION,
-        "engine_commit": engine_commit,
-        "deploy_epoch": deploy_epoch,
-        "cycle_close_at": _iso(cycle_close_at),
-        "offset_seconds": offset_seconds,
-        "symbol": symbol,
-        "pipeline": pipeline,
-        "source_interval": source_interval,
-    })
-
     db.execute("""
         INSERT INTO lab_predictions
             (strategy, pipeline, symbol, direction, estimate, conviction,
-             reason, metadata, regime, entry_price, predicted_at,
-             schema_version, engine_commit, deploy_epoch, cycle_close_at,
-             offset_seconds, source_interval)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             reason, metadata, regime, entry_price, predicted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         strategy_name,
         pipeline,
@@ -156,16 +76,10 @@ def _write_prediction(db, strategy_name, pipeline, symbol, signal, regime_label,
         signal.estimate,
         signal.conviction,
         signal.reason,
-        json.dumps(meta),
+        json.dumps(signal.metadata) if signal.metadata else None,
         regime_label,
         entry_price,
-        _iso(timestamp),
-        LAB_SCHEMA_VERSION,
-        engine_commit,
-        deploy_epoch,
-        _iso(cycle_close_at),
-        offset_seconds,
-        source_interval,
+        timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp),
     ))
     db.commit()
 
@@ -208,9 +122,9 @@ def _auto_resolve(db, next_candle, resolve_time, symbol=None):
 
         db.execute("""
             UPDATE lab_predictions
-            SET outcome = ?, pnl = ?, synthetic_pnl = ?, resolved_at = ?
+            SET outcome = ?, pnl = ?, resolved_at = ?
             WHERE id = ?
-        """, (outcome, pnl, pnl, resolve_time.isoformat(), row_id))
+        """, (outcome, pnl, resolve_time.isoformat(), row_id))
         resolved_count += 1
 
     db.commit()
@@ -251,9 +165,7 @@ def _load_strategies():
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
-def _dispatch_strategies(db, strategies, ctx, cycle_close_at=None,
-                         source_interval=None, deploy_epoch=None,
-                         engine_commit=None):
+def _dispatch_strategies(db, strategies, ctx):
     """Run all matching strategies and write signals to DB.
 
     A strategy matches if its assets include ctx.symbol
@@ -273,10 +185,6 @@ def _dispatch_strategies(db, strategies, ctx, cycle_close_at=None,
                 _write_prediction(
                     db, name, ctx.pipeline, ctx.symbol,
                     result, regime_label, ctx.current_price, ctx.timestamp,
-                    cycle_close_at=cycle_close_at,
-                    source_interval=source_interval,
-                    deploy_epoch=deploy_epoch,
-                    engine_commit=engine_commit,
                 )
         except Exception as e:
             print(f"  [STRATEGY_LAB] {name} error: {e}")
@@ -325,8 +233,7 @@ def _build_context(pipeline, symbol, timeframe, candle_data, indicators):
 
 # ── Main Entry Point ────────────────────────────────────────────────────
 
-def strategy_lab_run(pipelines, symbol, interval, candle_data, indicators,
-                     cycle_close_at=None):
+def strategy_lab_run(pipelines, symbol, interval, candle_data, indicators):
     """Run all matching lab strategies for this candle event.
 
     Called from botsy_engine.py after production pipeline dispatch.
@@ -356,17 +263,10 @@ def strategy_lab_run(pipelines, symbol, interval, candle_data, indicators,
                     print(f"  [STRATEGY_LAB] Resolved {resolved} prediction(s)")
 
             # Build context and dispatch for each pipeline
-            commit = _engine_commit()
             for pipeline in (pipelines if pipelines else []):
                 ctx = _build_context(pipeline, symbol, interval,
                                      candle_data, indicators)
-                _dispatch_strategies(
-                    db, strategies, ctx,
-                    cycle_close_at=cycle_close_at,
-                    source_interval=interval,
-                    deploy_epoch=commit,
-                    engine_commit=commit,
-                )
+                _dispatch_strategies(db, strategies, ctx)
 
         finally:
             db.close()

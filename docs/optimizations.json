@@ -837,48 +837,6 @@
       "close_reason": null
     },
     {
-      "name": "lab_reliability_v1",
-      "description": "Harden Strategy Lab as a discovery-only research surface. Adds deploy/timing metadata, schema versioning, synthetic candle-score P&L labeling, deploy-date MCP filters, and min-sample warnings so Lab WR cannot be mistaken for executable edge.",
-      "registered_at": "2026-05-01T17:30:00+00:00",
-      "pipeline": "strategy-lab",
-      "status": "active",
-      "min_sample": 50,
-      "issue": 92,
-      "revert_condition": "if Lab reports or MCP output present synthetic candle-score P&L as executable trading P&L, revert the reporting surface and keep raw Lab logging only",
-      "baseline": {
-        "old_behavior": "Lab P&L used fixed +/-$25 candle-score math and was labeled generically as P&L",
-        "new_fields": ["schema_version", "engine_commit", "deploy_epoch", "cycle_close_at", "offset_seconds", "source_interval", "synthetic_pnl"],
-        "plan": "docs/plans/lab-microstructure-roadmap.md",
-        "no_capital_risk": "reporting and metadata only; no conviction, order, sizing, or execution behavior changes"
-      },
-      "latest_check": null,
-      "post_stats": null,
-      "closed_at": null,
-      "close_reason": null
-    },
-    {
-      "name": "polymarket_microstructure_capture_v1",
-      "description": "Research-only Polymarket CLOB snapshot capture for dislocation, order-flow, dead-hour, and execution-aware strategy validation. Records summarized token snapshots from the live orderbook cache every 30 seconds with 30-day retention and exposes MCP freshness/spread/imbalance diagnostics.",
-      "registered_at": "2026-05-01T17:30:00+00:00",
-      "pipeline": "btc_5m+eth_5m",
-      "status": "shadow",
-      "min_sample": 200,
-      "issue": 92,
-      "revert_condition": "if snapshot capture causes engine instability, DB growth beyond 30-day retention, or fails to produce fresh snapshots after one running hour with active markets, disable the writer and keep Lab reliability changes",
-      "baseline": {
-        "table": "orderbook_snapshots",
-        "db": "data/polymarket_microstructure.db",
-        "cadence_seconds": 30,
-        "retention_days": 30,
-        "mcp_tool": "polymarket_microstructure_summary",
-        "promotion_blocker": "microstructure data is validation substrate only; no strategy candidate may affect conviction or capital without separate forward validation"
-      },
-      "latest_check": null,
-      "post_stats": null,
-      "closed_at": null,
-      "close_reason": null
-    },
-    {
       "name": "multi_poll_predict_logger",
       "description": "Phase A of in-cycle prediction-timing study. After each Bybit 5m candle close, fires 9 additional predict() calls at offsets T+30s through T+270s (every 30s) and logs each to multi_poll_predictions table. Pure shadow — no behavior change for capital, conviction gating, or trade execution. Plan: docs/plans/multi_poll_predict_plan.md. Triggered by signal_rehab_2026-04-28 finding that the Apr 5 dispatch refactor (f79e56f21) sharply reduced lab WR from ~60% to ~50% by removing ~2:30 of in-flight candle data that GHA scheduling delays had been picking up. This experiment makes the in-cycle information curve measurable so Phase B can decide whether a delayed (or regime-adaptive) dispatch policy recovers the lost edge.",
       "registered_at": "2026-04-28T13:30:00+00:00",
