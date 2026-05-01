@@ -174,6 +174,67 @@ class TestLogPoll:
         ).fetchone()
         assert row == (0.65, None, None)  # signal stored, orderbook NULL
 
+    def test_get_market_orderbook_falls_back_to_price_yes(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression for 2026-05-01 bug: WS cache only covers ~50 tokens,
+        so most market lookups returned all-None. Fallback to gamma
+        snapshot's markets.price_yes was missing. With the fix, when WS
+        miss happens, we return (price_yes, None, None, None, None)."""
+        import multi_poll_predict
+
+        # Build a minimal predictions.db with a markets row
+        db_path = str(tmp_path / "p.db")
+        db = sqlite3.connect(db_path)
+        db.execute(
+            "CREATE TABLE markets (id TEXT PRIMARY KEY, price_yes REAL, "
+            "price_no REAL, fetched_at TEXT, resolved INTEGER)"
+        )
+        db.execute(
+            "INSERT INTO markets (id, price_yes, price_no, fetched_at, resolved) "
+            "VALUES ('mkt1', 0.62, 0.38, '2026-05-01T12:00:00Z', 0)"
+        )
+        db.commit()
+        db.close()
+
+        # Make the WS cache path return None (simulates the bug condition).
+        # We do this by simulating a missing token so the path falls through.
+        monkeypatch.setattr(
+            "clob_depth.get_clob_tokens_safe",
+            lambda mid: None,
+        )
+
+        result = multi_poll_predict._get_market_orderbook(
+            "mkt1", db_path=db_path
+        )
+        # Mid = 0.62 from gamma snapshot; bid/ask/spread/age all None
+        assert result == (0.62, None, None, None, None)
+
+    def test_get_market_orderbook_returns_all_none_when_market_unknown(
+        self, tmp_path, monkeypatch
+    ):
+        """If neither cache nor markets table has the row, all-None."""
+        import multi_poll_predict
+
+        db_path = str(tmp_path / "p.db")
+        db = sqlite3.connect(db_path)
+        db.execute(
+            "CREATE TABLE markets (id TEXT PRIMARY KEY, price_yes REAL, "
+            "price_no REAL, fetched_at TEXT, resolved INTEGER)"
+        )
+        db.commit()
+        db.close()
+
+        monkeypatch.setattr(
+            "clob_depth.get_clob_tokens_safe",
+            lambda mid: None,
+        )
+
+        result = multi_poll_predict._get_market_orderbook(
+            "missing_mkt", db_path=db_path
+        )
+        assert result == (None, None, None, None, None)
+
     def test_init_table_migration_adds_orderbook_columns(self, tmp_path):
         """Pre-existing tables (from before 2026-04-30) get the new
         orderbook columns added via ALTER TABLE on next init_table call."""

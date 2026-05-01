@@ -280,38 +280,67 @@ def compute_poll_predictions(
 
 # ── Async orchestrator ─────────────────────────────────────────────
 
-def _get_market_orderbook(market_id: str):
+def _get_market_orderbook(market_id: str, db_path: Optional[str] = None):
     """Return (mid, best_bid, best_ask, spread, age_ms) for the YES token
-    of a Polymarket market, or all-None on miss.
+    of a Polymarket market.
 
-    Mirrors src/arb_loggers.py::_get_orderbook_mid + _get_clob_tokens.
+    Two-tier lookup, mirrors src/arb_loggers.py:
+      1. Live WS OrderbookCache.get_fresh_entry() — best granularity
+         (real best_bid/best_ask/spread + sub-second age) but only
+         covers the ~50 tokens the WS feed currently subscribes to.
+      2. Fallback to markets.price_yes from the gamma snapshot — covers
+         every market in the DB (gamma fetch every 5 min) but only
+         gives mid; bid/ask/spread stay None.
+
+    Returns (None, None, None, None, None) only if BOTH tiers miss
+    (e.g. market not yet in the gamma snapshot, db unavailable, etc).
     Pulled out so tests can monkey-patch a single function.
     """
+    # Tier 1: live WS cache (rich data when available)
+    yes_token = None
     try:
         from clob_depth import get_clob_tokens_safe
         tokens = get_clob_tokens_safe(market_id)
+        if tokens:
+            yes_token = tokens.get("yes")
     except Exception:
-        return None, None, None, None, None
-    if not tokens:
-        return None, None, None, None, None
-    yes_token = tokens.get("yes")
-    if not yes_token:
+        tokens = None
+
+    if yes_token:
+        try:
+            from orderbook_cache import OrderbookCache
+            cache = OrderbookCache.load()
+            entry = cache.get_fresh_entry(yes_token)
+            if entry is not None:
+                return (
+                    entry.mid,
+                    entry.best_bid,
+                    entry.best_ask,
+                    entry.spread,
+                    entry.age_ms,
+                )
+        except Exception:
+            pass
+
+    # Tier 2: gamma snapshot fallback (mid only, no bid/ask granularity)
+    if db_path is None:
         return None, None, None, None, None
     try:
-        from orderbook_cache import OrderbookCache
-        cache = OrderbookCache.load()
-        entry = cache.get_fresh_entry(yes_token)
-        if entry is None:
-            return None, None, None, None, None
-        return (
-            entry.mid,
-            entry.best_bid,
-            entry.best_ask,
-            entry.spread,
-            entry.age_ms,
-        )
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            row = conn.execute(
+                "SELECT price_yes FROM markets WHERE id = ?",
+                (market_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row and row[0] is not None:
+            return float(row[0]), None, None, None, None
     except Exception:
-        return None, None, None, None, None
+        pass
+
+    return None, None, None, None, None
 
 
 def _get_active_market_ids(db_path: str, limit: int = 50) -> list[tuple]:
@@ -452,7 +481,7 @@ async def schedule_polls(
                 # filters those out.
                 try:
                     mkt_mid, mkt_bid, mkt_ask, mkt_spread, ob_age = (
-                        _get_market_orderbook(market_id)
+                        _get_market_orderbook(market_id, db_path=db_path)
                     )
                 except Exception as e:
                     _log.warning(
