@@ -318,7 +318,26 @@ The v1 fix still used a writable global, making the same class of bug inevitable
 
 ---
 
-## Summary: The 15 Rules
+## 16. Hard-Sync Code Before Auto-Committing Data
+
+**Incident:** On 2026-05-01, the VPS auto-commit loop repeatedly deleted freshly-pushed source and documentation commits. Kalshi parser work, Lab/Microstructure work, and the session log were all pushed successfully, then removed by later `Auto:` commits from the engine.
+
+**Root cause:** `_git_commit_push()` used `git reset --soft origin/main` in its push-recovery path. Soft reset moves `HEAD` but preserves the old index and worktree. The VPS could therefore claim to be at the new remote commit while its files still looked like the stale checkout, then commit source/doc deletions in the next runtime-data snapshot.
+
+**Why it is subtle:** The code only ran `git add data/ docs/daily/`, so it looked scoped. But git index state survives soft reset. The staging allowlist was not enough once the worktree and `HEAD` disagreed.
+
+**Remediation:**
+- `_git_commit_push()` now fetches before committing.
+- If local `HEAD` is safely behind `origin/main`, it uses `git reset --hard origin/main` before staging runtime data.
+- If local and remote diverge, it writes `data/GIT_COMMIT_BAIL` and stops auto-committing.
+- If push fails after a commit, it bails instead of trying soft-reset recovery.
+- Regression tests assert hard reset before staging and forbid `git reset --soft`.
+
+**Best practice:** Production automation that commits generated data must hard-sync code first, then stage only generated paths. Never use soft reset in an unattended writer. If histories diverge, bail and ask for human inspection.
+
+---
+
+## Summary: The 16 Rules
 
 1. **One source of truth.** The deployed system is canonical. Local state is a cache.
 2. **Test from deployment.** If it works on your machine but not in CI, it doesn't work.
@@ -335,3 +354,4 @@ The v1 fix still used a writable global, making the same class of bug inevitable
 13. **Scope every DB write.** Shared tables need entity filters on every UPDATE/DELETE.
 14. **Check the timestamp.** Historical data dilutes post-change metrics. Partition by deploy date.
 15. **Log everything, optimize later.** Hard thresholds are premature. Store full state, decide post-hoc.
+16. **Hard-sync before auto-commit.** Generated-data writers must hard-reset to remote code before staging runtime files.
