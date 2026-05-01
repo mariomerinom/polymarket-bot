@@ -1065,14 +1065,16 @@ def _analyze_strategy_lab(db_path=None):
     try:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(lab_predictions)").fetchall()]
+        pnl_expr = "COALESCE(synthetic_pnl, pnl, 0)" if "synthetic_pnl" in cols else "COALESCE(pnl, 0)"
 
         # All-time stats per strategy (only resolved predictions)
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT strategy,
                    COUNT(*) as total,
                    SUM(CASE WHEN outcome = 1 THEN 1 ELSE 0 END) as wins,
                    SUM(CASE WHEN outcome = 0 THEN 1 ELSE 0 END) as losses,
-                   COALESCE(SUM(pnl), 0) as pnl
+                   COALESCE(SUM({pnl_expr}), 0) as synthetic_pnl
             FROM lab_predictions
             WHERE outcome IS NOT NULL
             GROUP BY strategy
@@ -1094,7 +1096,7 @@ def _analyze_strategy_lab(db_path=None):
                 "wins": wins,
                 "losses": r["losses"],
                 "wr": wr,
-                "pnl": r["pnl"],
+                "synthetic_pnl": r["synthetic_pnl"],
             })
 
         # Leaderboard: only strategies with 10+ resolved
@@ -1151,6 +1153,8 @@ def _analyze_strategy_lab(db_path=None):
             "gate_tracker": gate_tracker,
             "kill_candidates": kill_candidates,
             "graduation_candidates": graduation_candidates,
+            "pnl_metric": "synthetic_candle_pnl",
+            "caveat": "Strategy Lab is discovery-only; WR and synthetic P&L are candle-score metrics, not executable trading edge.",
         }
     except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
         print(f"  Strategy Lab DB error: {e}")
@@ -1720,7 +1724,7 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
         lines.extend([
             "## Strategy Lab",
             "",
-            "*Shadow strategies running on every candle cycle. No real trades.*",
+            "*Discovery-only candle scoring. No real trades; P&L is synthetic and cannot justify promotion without forward shadow/paper validation.*",
             "",
         ])
 
@@ -1729,13 +1733,13 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
             lines.extend([
                 "### Leaderboard (10+ resolved bets)",
                 "",
-                "| Rank | Strategy | Bets | Wins | WR% | P&L |",
+                "| Rank | Strategy | Bets | Wins | WR% | Synthetic P&L |",
                 "|------|----------|------|------|-----|-----|",
             ])
             for i, s in enumerate(lab["leaderboard"], 1):
                 lines.append(
                     f"| {i} | {s['strategy']} | {s['total']} | {s['wins']} | "
-                    f"{s['wr']}% | ${s['pnl']:+.2f} |"
+                    f"{s['wr']}% | ${s['synthetic_pnl']:+.2f} |"
                 )
             lines.append("")
         else:
@@ -1769,7 +1773,7 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
             for s in lab["kill_candidates"]:
                 lines.append(
                     f"- **{s['strategy']}:** {s['wr']}% WR on {s['total']} bets, "
-                    f"${s['pnl']:+.2f} P&L"
+                    f"${s['synthetic_pnl']:+.2f} synthetic P&L"
                 )
             lines.append("")
 
@@ -1782,7 +1786,7 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
             for s in lab["graduation_candidates"]:
                 lines.append(
                     f"- **{s['strategy']}:** {s['wr']}% WR on {s['total']} bets, "
-                    f"${s['pnl']:+.2f} P&L"
+                    f"${s['synthetic_pnl']:+.2f} synthetic P&L"
                 )
             lines.append("")
 
@@ -2454,7 +2458,8 @@ def generate_ci_summary(date_str, data_5m, data_15m, decision_alerts=None, data_
         top = lab["leaderboard"][0]
         lines.extend([
             "## Strategy Lab",
-            f"**Top strategy:** {top['strategy']} ({top['wr']}% WR on {top['total']} bets)",
+            f"**Top discovery strategy:** {top['strategy']} ({top['wr']}% WR on {top['total']} candle-scored rows)",
+            "**Caveat:** Lab output is discovery-only; promotion requires forward shadow/paper validation.",
         ])
         if lab["kill_candidates"]:
             kills = ", ".join(s["strategy"] for s in lab["kill_candidates"])

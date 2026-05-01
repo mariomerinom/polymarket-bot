@@ -16,6 +16,7 @@ Usage (via Claude Code settings.json):
 
 import json
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -29,6 +30,9 @@ mcp = FastMCP("botsy")
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / "data"
 PIPELINES_JSON = ROOT_DIR / "config" / "pipelines.json"
+SRC_DIR = ROOT_DIR / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 ASSET_DAILY_DB = DATA_DIR / "asset_daily.db"
 
@@ -791,6 +795,31 @@ def streak_analysis(
 # ── Tool: Strategy Lab Performance ──────────────────────────────────────
 
 STRATEGY_LAB_DB = DATA_DIR / "strategy_lab.db"
+POLYMARKET_MICROSTRUCTURE_DB = DATA_DIR / "polymarket_microstructure.db"
+
+
+def _date_filters(column: str, days: int, start_date: str = "", end_date: str = ""):
+    clauses = []
+    params = []
+    if start_date:
+        clauses.append(f"{column} >= ?")
+        params.append(start_date)
+    if end_date:
+        clauses.append(f"{column} < datetime(?, '+1 day')")
+        params.append(end_date)
+    if not start_date and not end_date:
+        clauses.append(f"{column} >= datetime('now', '-{days} days')")
+    return clauses, params
+
+
+def _table_columns(db: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _lab_pnl_expr(columns: set[str]) -> str:
+    if "synthetic_pnl" in columns:
+        return "COALESCE(synthetic_pnl, pnl, 0)"
+    return "COALESCE(pnl, 0)"
 
 
 @mcp.tool()
@@ -798,16 +827,20 @@ def lab_performance(
     strategy: str = "",
     pipeline: str = "",
     days: int = 7,
+    start_date: str = "",
+    end_date: str = "",
 ) -> str:
-    """Strategy Lab results: WR, P&L, bet count per strategy.
+    """Strategy Lab discovery results: WR and synthetic candle-score P&L.
 
     Args:
         strategy: Filter by strategy name (empty = all strategies)
         pipeline: Filter by pipeline name (empty = all pipelines)
         days: Lookback period in days (default 7)
+        start_date: Optional ISO date/datetime lower bound for deploy partitioning
+        end_date: Optional ISO date/datetime upper bound for deploy partitioning
 
     Returns:
-        JSON array with per-strategy stats: bets, wins, WR, P&L, days to gate
+        JSON array with per-strategy discovery stats. Not executable P&L.
     """
     if not STRATEGY_LAB_DB.exists():
         return json.dumps({"error": "strategy_lab.db not found — lab not running yet"})
@@ -815,9 +848,8 @@ def lab_performance(
     db = sqlite3.connect(f"file:{STRATEGY_LAB_DB}?mode=ro", uri=True)
     db.row_factory = sqlite3.Row
     try:
-        where_clauses = ["outcome IS NOT NULL",
-                         f"predicted_at >= datetime('now', '-{days} days')"]
-        params = []
+        date_where, params = _date_filters("predicted_at", days, start_date, end_date)
+        where_clauses = ["outcome IS NOT NULL"] + date_where
         if strategy:
             where_clauses.append("strategy = ?")
             params.append(strategy)
@@ -826,12 +858,20 @@ def lab_performance(
             params.append(pipeline)
 
         where = " AND ".join(where_clauses)
+        columns = _table_columns(db, "lab_predictions")
+        pnl_expr = _lab_pnl_expr(columns)
+        deploy_expr = (
+            "COUNT(DISTINCT deploy_epoch)"
+            if "deploy_epoch" in columns else
+            "0"
+        )
 
         rows = db.execute(f"""
             SELECT strategy, pipeline,
                    COUNT(*) as bets,
                    SUM(CASE WHEN outcome = 1 THEN 1 ELSE 0 END) as wins,
-                   SUM(pnl) as total_pnl
+                   SUM({pnl_expr}) as total_pnl,
+                   {deploy_expr} as deploy_epochs
             FROM lab_predictions
             WHERE {where}
             GROUP BY strategy, pipeline
@@ -860,9 +900,12 @@ def lab_performance(
                 "wins": wins,
                 "losses": bets - wins,
                 "win_rate_pct": wr,
-                "pnl": round(r["total_pnl"] or 0, 2),
+                "synthetic_candle_pnl": round(r["total_pnl"] or 0, 2),
+                "pnl_metric": "synthetic_candle_pnl",
+                "deploy_epochs": r["deploy_epochs"],
                 "total_predictions": total,
                 "gate_progress": f"{total}/200",
+                "warning": "Strategy Lab is discovery-only; WR/P&L are candle-score metrics, not executable trading edge.",
             })
 
         return json.dumps(results, indent=2)
@@ -875,8 +918,10 @@ def lab_param_sweep(
     strategy: str = "",
     param: str = "",
     buckets: int = 5,
-    min_samples: int = 10,
+    min_samples: int = 50,
     days: int = 7,
+    start_date: str = "",
+    end_date: str = "",
 ) -> str:
     """Parameter optimization: bucket WR by metadata parameter values.
 
@@ -889,11 +934,13 @@ def lab_param_sweep(
                'streak_length', 'rvol', 'z_score', 'expansion_ratio').
                Empty = show available params and their value ranges.
         buckets: Number of equal-width buckets for numeric params (default 5)
-        min_samples: Minimum samples per bucket to show (default 10)
+        min_samples: Minimum samples per bucket to show (default 50)
         days: Lookback period in days (default 7)
+        start_date: Optional ISO date/datetime lower bound for deploy partitioning
+        end_date: Optional ISO date/datetime upper bound for deploy partitioning
 
     Returns:
-        JSON with per-bucket WR, count, and P&L. Sorted by WR descending.
+        JSON with per-bucket WR, count, and synthetic P&L. Discovery-only.
     """
     if not STRATEGY_LAB_DB.exists():
         return json.dumps({"error": "strategy_lab.db not found — lab not running yet"})
@@ -902,9 +949,8 @@ def lab_param_sweep(
     db.row_factory = sqlite3.Row
     try:
         # Build base query
-        where = [f"predicted_at >= datetime('now', '-{days} days')",
-                 "outcome IS NOT NULL", "metadata IS NOT NULL"]
-        params_list = []
+        date_where, params_list = _date_filters("predicted_at", days, start_date, end_date)
+        where = date_where + ["outcome IS NOT NULL", "metadata IS NOT NULL"]
         if strategy:
             where.append("strategy = ?")
             params_list.append(strategy)
@@ -957,9 +1003,13 @@ def lab_param_sweep(
             return json.dumps({"available_params": available,
                                "usage": "Call with param='rsi_14' to see WR bucketed by RSI"}, indent=2)
 
+        columns = _table_columns(db, "lab_predictions")
+        pnl_expr = _lab_pnl_expr(columns)
+
         # Fetch all resolved predictions with metadata
         rows = db.execute(f"""
-            SELECT direction, outcome, pnl, metadata, strategy
+            SELECT direction, outcome, {pnl_expr} as pnl,
+                   metadata, strategy
             FROM lab_predictions
             WHERE {where_sql}
         """, params_list).fetchall()
@@ -1028,6 +1078,9 @@ def lab_param_sweep(
                 "type": "numeric",
                 "total_samples": len(entries),
                 "buckets": results,
+                "pnl_metric": "synthetic_candle_pnl",
+                "min_samples": min_samples,
+                "warning": "Discovery-only bucket scan; forward shadow/paper validation is required before promotion.",
                 "insight": _param_insight(results, param),
             }, indent=2)
         else:
@@ -1059,6 +1112,9 @@ def lab_param_sweep(
                 "type": "categorical",
                 "total_samples": len(entries),
                 "buckets": results,
+                "pnl_metric": "synthetic_candle_pnl",
+                "min_samples": min_samples,
+                "warning": "Discovery-only bucket scan; forward shadow/paper validation is required before promotion.",
                 "insight": _param_insight(results, param),
             }, indent=2)
 
@@ -1089,8 +1145,10 @@ def lab_param_matrix(
     param_x: str = "",
     param_y: str = "",
     buckets: int = 3,
-    min_samples: int = 5,
+    min_samples: int = 50,
     days: int = 7,
+    start_date: str = "",
+    end_date: str = "",
 ) -> str:
     """2D parameter matrix: WR by two parameters simultaneously.
 
@@ -1103,8 +1161,10 @@ def lab_param_matrix(
         param_x: First parameter (rows)
         param_y: Second parameter (columns)
         buckets: Number of buckets per numeric param (default 3, keep low for readability)
-        min_samples: Min samples per cell (default 5)
+        min_samples: Min samples per cell (default 50)
         days: Lookback period (default 7)
+        start_date: Optional ISO date/datetime lower bound for deploy partitioning
+        end_date: Optional ISO date/datetime upper bound for deploy partitioning
     """
     if not STRATEGY_LAB_DB.exists():
         return json.dumps({"error": "strategy_lab.db not found"})
@@ -1116,15 +1176,16 @@ def lab_param_matrix(
     db = sqlite3.connect(f"file:{STRATEGY_LAB_DB}?mode=ro", uri=True)
     db.row_factory = sqlite3.Row
     try:
-        where = [f"predicted_at >= datetime('now', '-{days} days')",
-                 "outcome IS NOT NULL", "metadata IS NOT NULL"]
-        params_list = []
+        date_where, params_list = _date_filters("predicted_at", days, start_date, end_date)
+        where = date_where + ["outcome IS NOT NULL", "metadata IS NOT NULL"]
         if strategy:
             where.append("strategy = ?")
             params_list.append(strategy)
 
+        columns = _table_columns(db, "lab_predictions")
+        pnl_expr = _lab_pnl_expr(columns)
         rows = db.execute(f"""
-            SELECT outcome, pnl, metadata
+            SELECT outcome, {pnl_expr} as pnl, metadata
             FROM lab_predictions
             WHERE {" AND ".join(where)}
         """, params_list).fetchall()
@@ -1194,10 +1255,33 @@ def lab_param_matrix(
             "param_x": param_x,
             "param_y": param_y,
             "total_samples": len(entries),
+            "min_samples": min_samples,
+            "pnl_metric": "synthetic_candle_pnl",
+            "warning": "Discovery-only matrix; forward shadow/paper validation is required before promotion.",
             "cells": matrix,
         }, indent=2)
     finally:
         db.close()
+
+
+@mcp.tool()
+def polymarket_microstructure_summary(days: int = 1) -> str:
+    """Summarize research-only Polymarket orderbook snapshots.
+
+    Args:
+        days: Lookback period in days
+
+    Returns:
+        JSON with snapshot freshness, spread, imbalance, and missing-token rates.
+    """
+    try:
+        from polymarket_microstructure import microstructure_summary
+        return json.dumps(
+            microstructure_summary(POLYMARKET_MICROSTRUCTURE_DB, days=days),
+            indent=2,
+        )
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 
 if __name__ == "__main__":
