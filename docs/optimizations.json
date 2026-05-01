@@ -838,26 +838,21 @@
     },
     {
       "name": "multi_poll_predict_logger",
-      "description": "Phase A of in-cycle prediction-timing study. After each Bybit 5m candle close, fires 9 additional predict() calls at offsets T+30s through T+270s (every 30s) and logs each to multi_poll_predictions table. Pure shadow — no behavior change for capital, conviction gating, or trade execution. Plan: docs/plans/multi_poll_predict_plan.md. Triggered by signal_rehab_2026-04-28 finding that the Apr 5 dispatch refactor (f79e56f21) sharply reduced lab WR from ~60% to ~50% by removing ~2:30 of in-flight candle data that GHA scheduling delays had been picking up. This experiment makes the in-cycle information curve measurable so Phase B can decide whether a delayed (or regime-adaptive) dispatch policy recovers the lost edge. Realistic-shadow extension shipped 2026-04-30 logs orderbook context per poll (mkt_mid, best_bid, best_ask, spread, age_ms) so Phase B's analysis uses realistic entry prices, not the original $0.50 fiction. Daily report integration shipped 2026-04-30 surfaces the per-(offset × regime) WR + realistic-entry P&L automatically.",
+      "description": "Phase A of in-cycle prediction-timing study. After each Bybit 5m candle close, fires 9 additional predict() calls at offsets T+30s through T+270s (every 30s) and logs each to multi_poll_predictions table. Pure shadow — no behavior change for capital, conviction gating, or trade execution. Plan: docs/plans/multi_poll_predict_plan.md. Triggered by signal_rehab_2026-04-28 finding that the Apr 5 dispatch refactor (f79e56f21) sharply reduced lab WR from ~60% to ~50% by removing ~2:30 of in-flight candle data that GHA scheduling delays had been picking up. This experiment makes the in-cycle information curve measurable so Phase B can decide whether a delayed (or regime-adaptive) dispatch policy recovers the lost edge.",
       "registered_at": "2026-04-28T13:30:00+00:00",
       "pipeline": "btc_5m+eth_5m",
       "status": "shadow",
       "min_sample": 100,
-      "revert_condition": "after ≥7 days of orderbook-enriched observation: if no offset shows realistic-entry WR ≥55% on N≥100 per cell across ≥2 regimes, AND realistic EV/bet ≤ 0 sustained, the in-flight information edge is not recoverable as a time-based policy. Document and close as 'no edge'. Phase C does not ship. Backstop: original revert criterion (lab-WR ≥2pp over offset=0 baseline) remains valid for the lab-only cohort; realistic-entry takes precedence when both columns have data.",
+      "revert_condition": "after 14 days of observation: if no offset shows ≥2pp WR over the immediate-dispatch (offset=0) baseline on N≥100 per cell across at least 4 (offset × regime) cells, the in-flight information edge is not recoverable as a time-based policy. Document and close as 'no edge'. Phase C does not ship.",
       "baseline": {
         "trigger": "automatic — fires every 5m bybit_spot close for BTCUSDT and ETHUSDT",
         "poll_offsets_seconds": [30, 60, 90, 120, 150, 180, 210, 240, 270],
-        "expected_volume_per_day": "9 polls × ~17 active markets × 288 cycles ≈ 41k rows/day per asset",
+        "expected_volume_per_day": "9 polls × ~10 active markets × 288 cycles = ~26k rows/day per asset",
         "retention_days": 30,
         "table": "multi_poll_predictions",
         "no_capital_risk": "shadow only — does not feed conviction gates or trade execution",
-        "phase_b_decision": "after observation: tools/multi_poll_analysis.py + daily_report.analyze_multi_poll compute WR + realistic-entry P&L per (offset × regime × asset) cell. Three outcomes: (1) single offset wins clearly → ship as new policy in Phase C; (2) regime-adaptive optimum → ship policy table; (3) no edge → close out, V4 chapter ends",
-        "phase_c_gating": "if Phase C ships, signal_ehr_live_gate still controls live capital. Multi-poll ships dispatch timing only. Paper-pipeline-as-staging-step explicitly considered and DEFERRED 2026-04-30 in favor of realistic-shadow first (see plan doc).",
-        "shipped_extensions": {
-          "2026-04-30_realistic_shadow": "5 columns added (mkt_mid, mkt_best_bid, mkt_best_ask, mkt_spread, orderbook_age_ms). Idempotent forward-migration via ALTER TABLE. analyze_multi_poll computes realistic-entry P&L: estimate>0.5 → BUY YES at best_ask, estimate<0.5 → BUY NO at (1-best_bid). Falls back to mid when ask is NULL. 2% taker fee. Daily report renders 3 new columns: Realistic n, Realistic P&L, EV/bet.",
-          "2026-04-30_daily_report_section": "analyze_multi_poll(db, date_str) added as first-class daily-report section per pipeline. Surfaces per-cell WR and (if orderbook present) realistic-entry P&L automatically.",
-          "2026-05-01_orderbook_fallback": "WS feed only subscribes to ~50 tokens; multi-poll polls every active market (often >50). Cache-miss returned NULL orderbook on first day, breaking realistic-entry math. Two-tier lookup added: tier 1 OrderbookCache.get_fresh_entry, tier 2 fallback to markets.price_yes from gamma snapshot. Tier-2 returns mid only (best_bid/ask/spread stay NULL); analyzer's mid-fallback handles this gracefully."
-        },
+        "phase_b_decision": "after observation: tools/multi_poll_analysis.py computes WR per (offset × regime × asset) cell. Three outcomes: (1) single offset wins clearly → ship as new policy in Phase C; (2) regime-adaptive optimum → ship policy table; (3) no edge → close out, V4 chapter ends",
+        "phase_c_gating": "if Phase C ships, signal_ehr_live_gate still controls live capital. Multi-poll ships dispatch timing only.",
         "post_incident_discipline": "RETENTION_DAYS=30 hardcoded in module from day 1. Lessons from 2026-04-24 disk-full incident: retention-in-code, not in a never-wired cron."
       },
       "latest_check": null,
