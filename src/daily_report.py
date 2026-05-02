@@ -785,10 +785,28 @@ def generate_alerts(summary, rolling, orders=None, integrity_issues=None, ehr=No
         warn_count = sum(1 for i in integrity_issues if i["status"] == "WARN")
         if fail_count:
             alerts.append(f"🚨 {fail_count} integrity check failure(s) today")
-        # Surface specific high-value alerts
-        for issue in integrity_issues[:3]:  # Cap at 3 most recent
-            if issue["check_name"] in ("orphaned_predictions", "expired_would_win", "failed_orders"):
-                alerts.append(f"⚠️ {issue['check_name']}: {issue['detail']}")
+        # Surface specific high-value alerts, grouped by check so repeated
+        # orphan rows don't drown out the actual operator signal.
+        grouped = {}
+        for issue in integrity_issues:
+            check_name = issue["check_name"]
+            if check_name not in ("orphaned_predictions", "expired_would_win", "failed_orders"):
+                continue
+            grouped.setdefault(check_name, []).append(issue["detail"])
+        for check_name, details in list(grouped.items())[:3]:
+            unique_details = []
+            seen = set()
+            for detail in details:
+                if detail in seen:
+                    continue
+                seen.add(detail)
+                unique_details.append(detail)
+            sample = "; ".join(unique_details[:3])
+            more = len(unique_details) - 3
+            suffix = f"; +{more} more" if more > 0 else ""
+            alerts.append(
+                f"⚠️ {check_name}: {len(details)} issue(s) - {sample}{suffix}"
+            )
 
     # AC-EHR-2: Rolling 7d signal EHR < 0 on 50+ bets
     if ehr and ehr.get("alert"):

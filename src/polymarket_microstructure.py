@@ -165,7 +165,12 @@ def _avg(values):
     return round(sum(vals) / len(vals), 6)
 
 
-def microstructure_summary(db_path=DB_PATH, days=1, max_fresh_age_ms=10_000):
+def microstructure_summary(
+    db_path=DB_PATH,
+    days=1,
+    max_fresh_age_ms=10_000,
+    now=None,
+):
     if not Path(db_path).exists():
         return {
             "snapshots": 0,
@@ -178,7 +183,8 @@ def microstructure_summary(db_path=DB_PATH, days=1, max_fresh_age_ms=10_000):
             "imbalance": {"avg_abs": None, "max_abs": None},
         }
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    now = now or datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=days)).isoformat()
     db = sqlite3.connect(str(db_path))
     db.row_factory = sqlite3.Row
     try:

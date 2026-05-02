@@ -195,6 +195,37 @@ def test_alerts_consecutive_losses():
     assert any("consecutive" in a.lower() for a in alerts), f"Expected losing streak alert, got {alerts}"
 
 
+def test_integrity_alerts_group_repeated_orphans():
+    """Repeated orphan rows should summarize without losing count/detail."""
+    summary = {"resolved_bets": 5, "wr": 60, "pnl": 50, "bets": 5}
+    issues = [
+        {
+            "check_name": "orphaned_predictions",
+            "status": "WARN",
+            "detail": "1 conv>=3 prediction(s) with no order: ids=3004",
+        },
+        {
+            "check_name": "orphaned_predictions",
+            "status": "WARN",
+            "detail": "1 conv>=3 prediction(s) with no order: ids=3003",
+        },
+        {
+            "check_name": "orphaned_predictions",
+            "status": "WARN",
+            "detail": "1 conv>=3 prediction(s) with no order: ids=3002",
+        },
+    ]
+
+    alerts = generate_alerts(summary, [], integrity_issues=issues)
+
+    grouped = [a for a in alerts if "orphaned_predictions" in a]
+    assert len(grouped) == 1
+    assert "3 issue(s)" in grouped[0]
+    assert "3004" in grouped[0]
+    assert "3003" in grouped[0]
+    assert "3002" in grouped[0]
+
+
 def test_generate_report_creates_file():
     """Full report generation creates output file."""
     with tempfile.TemporaryDirectory() as tmpdir:

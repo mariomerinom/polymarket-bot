@@ -137,7 +137,11 @@ def test_microstructure_summary_reports_freshness_and_missing_tokens(tmp_path):
     db.commit()
     db.close()
 
-    summary = microstructure_summary(db_path, days=1)
+    summary = microstructure_summary(
+        db_path,
+        days=1,
+        now=datetime(2026, 5, 1, 13, 0, tzinfo=timezone.utc),
+    )
 
     assert summary["snapshots"] == 2
     assert summary["tokens"] == 2

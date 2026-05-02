@@ -301,6 +301,57 @@ class TestGitCommitPushSafeRecovery:
             assert not any(c[:n] == forbidden for c in calls), \
                 f"Expected no {forbidden} while bailed; calls: {calls}"
 
+    def test_auto_commit_bails_on_forbidden_staged_paths(self, tmp_path):
+        """Auto commits must not include source/config/test/docs-plan paths."""
+        from botsy_engine import BotsyEngine
+
+        engine = self._make_engine()
+        engine._checkpoint_all_dbs = lambda: None
+
+        def mock_run(cmd, **kwargs):
+            calls.append(cmd)
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = b""
+            result.stderr = b""
+            if cmd[:3] == ["git", "rev-parse", "--short"]:
+                result.stdout = b"localsha\n"
+            elif cmd[:3] == ["git", "rev-parse", "HEAD"]:
+                result.stdout = b"localfull\n"
+            elif cmd[:3] == ["git", "rev-parse", "origin/main"]:
+                result.stdout = b"localfull\n"
+            elif cmd[:5] == ["git", "diff", "--cached", "--name-only", "-z"]:
+                result.stdout = b"data/ws_metrics.json\0src/predict.py\0"
+            elif cmd[:4] == ["git", "diff", "--cached", "--quiet"]:
+                result.returncode = 1
+            return result
+
+        calls = []
+        bail_marker = tmp_path / "data" / "GIT_COMMIT_BAIL"
+        with patch("subprocess.run", side_effect=mock_run), \
+             patch("os.chdir"), \
+             patch("botsy_engine.REPO_DIR", tmp_path):
+            (tmp_path / "data").mkdir()
+            engine._git_commit_push()
+
+        assert bail_marker.exists()
+        text = bail_marker.read_text()
+        assert "forbidden staged path" in text
+        assert "src/predict.py" in text
+        assert not any(c[:2] == ["git", "commit"] for c in calls)
+        assert not any(c[:2] == ["git", "push"] for c in calls)
+
+    def test_auto_commit_allowlist_accepts_runtime_daily_paths(self):
+        """Runtime data and daily reports are the only Auto: commit paths."""
+        from botsy_engine import BotsyEngine
+
+        assert BotsyEngine._auto_commit_path_allowed("data/ws_metrics.json")
+        assert BotsyEngine._auto_commit_path_allowed("docs/daily/2026-05-01.md")
+        assert not BotsyEngine._auto_commit_path_allowed("src/predict.py")
+        assert not BotsyEngine._auto_commit_path_allowed("config/pipelines.json")
+        assert not BotsyEngine._auto_commit_path_allowed("tests/test_engine_resilience.py")
+        assert not BotsyEngine._auto_commit_path_allowed("docs/plans/foo.md")
+
 
 # ── TestGitCommitLoopResilience ───────────────────────────────────────────
 

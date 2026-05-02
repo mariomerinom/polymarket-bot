@@ -41,7 +41,7 @@ def compute_portfolio_totals(per_pipeline_results: list) -> dict:
     total_losses = 0
     total_pnl = 0.0
     total_wagered = 0.0
-    active = 0
+    pipelines_with_bets = 0
 
     for result in per_pipeline_results:
         summary = _summary_of(result)
@@ -49,7 +49,7 @@ def compute_portfolio_totals(per_pipeline_results: list) -> dict:
             continue
         bets = summary.get("resolved_bets") or 0
         if bets > 0:
-            active += 1
+            pipelines_with_bets += 1
         total_bets += bets
         total_wins += summary.get("wins") or 0
         total_losses += summary.get("losses") or 0
@@ -65,7 +65,8 @@ def compute_portfolio_totals(per_pipeline_results: list) -> dict:
         "aggregate_wr_pct": wr,
         "total_pnl_usd": round(total_pnl, 2),
         "total_wagered_usd": round(total_wagered, 2),
-        "active_pipelines": active,
+        "active_pipelines": pipelines_with_bets,
+        "pipelines_with_resolved_bets": pipelines_with_bets,
         "total_pipelines": len(per_pipeline_results),
     }
 
@@ -144,7 +145,7 @@ def render_overview_block(per_pipeline_results: list, date_str: str) -> str:
     lines.extend([
         f"| Total P&L | {_fmt_pnl_bold(totals['total_pnl_usd'])} |",
         f"| Total wagered | ${totals['total_wagered_usd']:,.2f} |",
-        f"| Active pipelines | {totals['active_pipelines']} of {totals['total_pipelines']} |",
+        f"| Pipelines with resolved bets | {totals['pipelines_with_resolved_bets']} of {totals['total_pipelines']} |",
         f"| Detail | [Full breakdown →](./consolidated-{date_str}.md) |",
         "",
     ])
@@ -183,7 +184,7 @@ def _render_portfolio_totals_section(totals: dict) -> list:
         f"| Aggregate WR | {totals['aggregate_wr_pct']}% |",
         f"| Total P&L | {_fmt_pnl_bold(totals['total_pnl_usd'])} |",
         f"| Total wagered | ${totals['total_wagered_usd']:,.2f} |",
-        f"| Active pipelines | {totals['active_pipelines']} of {totals['total_pipelines']} |",
+        f"| Pipelines with resolved bets | {totals['pipelines_with_resolved_bets']} of {totals['total_pipelines']} |",
         "",
     ]
 
@@ -452,7 +453,7 @@ def _render_circuit_breaker_section(per_pipeline_results: list) -> list:
         any_data = True
         loss_str = f"${daily_loss:.2f}" if daily_loss is not None else "—"
         lim_str = f"${breaker_limit}" if breaker_limit is not None else "—"
-        trip_str = "🚨 YES" if tripped else "✅"
+        trip_str = "YES" if tripped else "No"
         lines.append(f"| {name} | {loss_str} | {lim_str} | {trip_str} |")
     if not any_data:
         lines.append("| _no order data today_ |  |  |  |")

@@ -168,6 +168,8 @@ class TestRender:
         assert "Total P&L" in md
         assert "+$150" in md  # sum of 100+50
         assert "consolidated-2026-04-15.md" in md  # link to detail
+        assert "Pipelines with resolved bets | 2 of 2" in md
+        assert "Active pipelines" not in md
         # Table rows render
         assert "BTC" in md
         assert "ETH" in md
@@ -189,6 +191,31 @@ class TestRender:
         # Every pipeline from input appears in leaderboard
         assert "btc_5m" in md
         assert "eth_5m" in md
+
+    def test_circuit_breaker_false_renders_untripped_plainly(self):
+        results = [
+            {
+                **_mk_result("btc_5m", bets=4, wins=2),
+                "orders": {
+                    "daily_loss": 125.0,
+                    "breaker_limit": 300.0,
+                    "breaker_tripped": False,
+                },
+            },
+            {
+                **_mk_result("eth_5m", bets=4, wins=1),
+                "orders": {
+                    "daily_loss": 325.0,
+                    "breaker_limit": 300.0,
+                    "breaker_tripped": True,
+                },
+            },
+        ]
+        md = consolidated_report.render_consolidated_detail(results, "2026-04-15")
+
+        assert "| btc_5m | $125.00 | $300.0 | No |" in md
+        assert "| eth_5m | $325.00 | $300.0 | YES |" in md
+        assert "| btc_5m | $125.00 | $300.0 | ✅ |" not in md
 
     def test_zero_bets_day_does_not_crash(self):
         """No-activity day still renders."""

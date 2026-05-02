@@ -939,6 +939,33 @@ class BotsyEngine:
         except Exception:
             return "?"
 
+    @staticmethod
+    def _auto_commit_path_allowed(path: str) -> bool:
+        """Return True if an Auto: commit may include this tracked path."""
+        normalized = path.strip().replace("\\", "/")
+        if not normalized:
+            return True
+        if normalized.endswith(".db-wal") or normalized.endswith(".db-shm"):
+            return False
+        return (
+            normalized.startswith("data/")
+            or normalized.startswith("docs/daily/")
+        )
+
+    def _staged_auto_commit_violations(self) -> list[str]:
+        """List staged paths that an unattended runtime-data commit may not include."""
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--name-only", "-z"],
+            capture_output=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return ["<could not inspect staged paths>"]
+        raw_paths = result.stdout.decode(errors="replace").split("\0")
+        return [
+            path for path in raw_paths
+            if path and not self._auto_commit_path_allowed(path)
+        ]
+
     def _git_commit_push(self):
         """Synchronous git add + commit + push.
 
@@ -1044,6 +1071,26 @@ class BotsyEngine:
                 capture_output=True, timeout=10,
             )
 
+            violations = self._staged_auto_commit_violations()
+            if violations:
+                ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                log(f"ERROR: Auto commit staged forbidden path(s): "
+                    f"{', '.join(violations[:10])}. Writing bail marker "
+                    f"{bail_marker}; auto-commit quiesced.")
+                try:
+                    bail_marker.write_text(
+                        f"forbidden staged path at {ts}\n"
+                        f"local HEAD: {self._git_head()}\n"
+                        f"origin/main: {self._git_rev_parse('origin/main')}\n"
+                        "forbidden paths:\n"
+                        + "\n".join(f"- {path}" for path in violations)
+                        + "\nreset the index and delete this file after "
+                        "manual inspection to resume.\n"
+                    )
+                except Exception as e:
+                    log(f"WARNING: bail marker write failed: {e}")
+                return
+
             # Check if there are changes to commit
             result = subprocess.run(
                 ["git", "diff", "--cached", "--quiet"],
@@ -1052,7 +1099,7 @@ class BotsyEngine:
             if result.returncode == 0:
                 return  # Nothing to commit
 
-            # Commit FIRST (before fetch — keeps the working tree clean)
+            # Commit only after fetch/reset preflight and staged-path allowlist.
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             msg = f"Auto: cycle update {ts}"
             result = subprocess.run(
