@@ -7,7 +7,8 @@
 # Checks:
 #   1. Disk usage on / — WARN >85%, CRIT >95%
 #   2. systemctl is-active botsy — CRIT if not active
-#   3. Predictions DB freshness — WARN >15min, CRIT >60min stale
+#   3. Predictions DB freshness for every unpaused configured pipeline —
+#      WARN >15min, CRIT >60min stale
 #
 # Outputs:
 #   - logs/engine_health.log   — full local log (rotated by log_rotator)
@@ -24,10 +25,10 @@
 
 set -u
 
-ROOT="/home/botuser/polymarket-bot"
+ROOT="${BOTSY_ROOT:-/home/botuser/polymarket-bot}"
 LOG_FILE="$ROOT/logs/engine_health.log"
 SUMMARY_FILE="$ROOT/data/engine_health.txt"
-DB_PATH="$ROOT/data/predictions.db"
+CONFIG_PATH="$ROOT/config/pipelines.json"
 
 now_utc() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 log() { echo "[$(now_utc)] $*" | tee -a "$LOG_FILE" >&2; }
@@ -60,28 +61,99 @@ else
 fi
 
 # 3. Predictions DB freshness
-if [ -r "$DB_PATH" ]; then
-    age_s=$(sqlite3 "$DB_PATH" "SELECT CAST((julianday('now') - julianday(MAX(predicted_at))) * 86400 AS INTEGER) FROM predictions" 2>/dev/null)
-    if [ -z "$age_s" ] || [ "$age_s" = "" ]; then
-        log "WARN: predictions table empty or unreadable"
-        notes+=("preds=unknown-WARN")
-        [ $worst -lt 1 ] && worst=1
-    elif [ "$age_s" -ge 3600 ]; then
-        mins=$((age_s / 60))
-        log "CRIT: most recent prediction ${mins} minutes old"
-        notes+=("preds=${mins}m-CRIT")
-        worst=2
-    elif [ "$age_s" -ge 900 ]; then
-        mins=$((age_s / 60))
-        log "WARN: most recent prediction ${mins} minutes old"
-        notes+=("preds=${mins}m-WARN")
-        [ $worst -lt 1 ] && worst=1
-    else
-        notes+=("preds=$((age_s / 60))m")
+pipeline_paths=$(
+    ROOT="$ROOT" CONFIG_PATH="$CONFIG_PATH" python3 - <<'PY' 2>/dev/null
+import json
+import os
+from pathlib import Path
+
+root = Path(os.environ["ROOT"])
+config_path = Path(os.environ["CONFIG_PATH"])
+legacy = {
+    "btc_5m": "predictions.db",
+    "btc_15m": "predictions_15m.db",
+    "eth_5m": "predictions_eth.db",
+    "kalshi": "predictions_kalshi.db",
+    "bybit": "predictions_bybit.db",
+}
+
+def db_name(pipeline):
+    if pipeline in legacy:
+        return legacy[pipeline]
+    parts = pipeline.split("_", 1)
+    if len(parts) == 2:
+        asset, exchange = parts
+        return f"predictions_{exchange}_{asset}.db"
+    return f"predictions_{pipeline}.db"
+
+config = json.loads(config_path.read_text())
+for name, cfg in sorted(config.get("pipelines", {}).items()):
+    if cfg.get("mode") == "paused":
+        continue
+    print(f"{name}|{root / 'data' / db_name(name)}")
+PY
+)
+
+if [ -z "$pipeline_paths" ]; then
+    pipeline_paths="btc_5m|$ROOT/data/predictions.db"
+fi
+
+max_age_s=-1
+max_age_pipeline=""
+stale=()
+missing=()
+unknown=()
+now_sql="${BOTSY_HEALTH_NOW:-$(now_utc)}"
+
+while IFS='|' read -r pipeline db_path; do
+    [ -z "$pipeline" ] && continue
+    if [ ! -r "$db_path" ]; then
+        missing+=("$pipeline")
+        continue
     fi
+    age_s=$(sqlite3 "$db_path" "SELECT CAST((julianday('$now_sql') - julianday(MAX(predicted_at))) * 86400 AS INTEGER) FROM predictions" 2>/dev/null)
+    if [ -z "$age_s" ]; then
+        unknown+=("$pipeline")
+        continue
+    fi
+    if [ "$age_s" -gt "$max_age_s" ]; then
+        max_age_s=$age_s
+        max_age_pipeline=$pipeline
+    fi
+    if [ "$age_s" -ge 900 ]; then
+        stale+=("$pipeline:$(((age_s + 30) / 60))m")
+    fi
+done <<< "$pipeline_paths"
+
+if [ "$max_age_s" -lt 0 ]; then
+    log "WARN: no readable prediction DBs"
+    notes+=("preds=unknown-WARN")
+    [ $worst -lt 1 ] && worst=1
+elif [ "$max_age_s" -ge 3600 ]; then
+    mins=$(((max_age_s + 30) / 60))
+    log "CRIT: stalest unpaused pipeline ${max_age_pipeline} prediction ${mins} minutes old"
+    notes+=("preds=max=${mins}m-CRIT")
+    worst=2
+elif [ "$max_age_s" -ge 900 ]; then
+    mins=$(((max_age_s + 30) / 60))
+    log "WARN: stalest unpaused pipeline ${max_age_pipeline} prediction ${mins} minutes old"
+    notes+=("preds=max=${mins}m-WARN")
+    [ $worst -lt 1 ] && worst=1
 else
-    log "WARN: $DB_PATH not readable"
-    notes+=("preds=db-unreadable-WARN")
+    notes+=("preds=max=$(((max_age_s + 30) / 60))m")
+fi
+
+if [ "${#stale[@]}" -gt 0 ]; then
+    notes+=("stale=$(IFS=,; echo "${stale[*]}")")
+fi
+if [ "${#missing[@]}" -gt 0 ]; then
+    log "WARN: missing prediction DBs for: $(IFS=,; echo "${missing[*]}")"
+    notes+=("missing=$(IFS=,; echo "${missing[*]}")")
+    [ $worst -lt 1 ] && worst=1
+fi
+if [ "${#unknown[@]}" -gt 0 ]; then
+    log "WARN: unreadable prediction DBs for: $(IFS=,; echo "${unknown[*]}")"
+    notes+=("unknown=$(IFS=,; echo "${unknown[*]}")")
     [ $worst -lt 1 ] && worst=1
 fi
 
