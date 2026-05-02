@@ -1,33 +1,39 @@
 # Pipeline Integrity and Performance Review - 2026-05-02
 
-Fresh review after `git pull --rebase --autostash` on 2026-05-02. Data sources:
-Botsy MCP, `data/ws_metrics.json`, `config/pipelines.json`, and the latest daily
-reports. No prediction logic was changed.
+Fresh review after `git pull --rebase --autostash` on 2026-05-02. Initial data
+sources were Botsy MCP, `data/ws_metrics.json`, `config/pipelines.json`, and the
+latest daily reports. No prediction logic was changed.
+
+**Correction added 2026-05-02T13:45Z:** the initial MCP/local DB view was stale
+because `data/*.db` files are intentionally untracked after the 2026-04-28 DB
+bloat cleanup and must be refreshed from the VPS with `tools/sync_data.sh`.
+Direct VPS checks showed live prediction DBs were fresh. Incident #94 was
+closed as a local-analysis freshness issue, not a live pipeline outage.
 
 ## Executive Summary
 
-- **Primary integrity finding:** the fleet is stale. `btc_5m` last predicted at
-  2026-05-01T12:50:30Z, while the review was run at 2026-05-02T12:56Z.
-  `btc_5m` integrity logs confirm `system_state_health` warnings: "STALE: last
-  prediction was 1438m ago." Opened incident:
-  https://github.com/mariomerinom/polymarket-bot/issues/94
-- **Runtime finding:** all websocket feeds are reported disconnected in
-  `data/ws_metrics.json`: `bybit_spot`, `bybit_linear`, and `polymarket`.
-  Reconnects over 24h are 133, 174, and 139 respectively. Dispatch latency is
-  high: p50 50.5s, p95 146.4s.
-- **Performance finding:** `btc_5m` remains the only useful control group:
-  65 7d bets, 52.3% WR, +$136.90 estimated P&L. `eth_5m` is weak:
-  48 7d bets, 43.8% WR, -$129.91 estimated P&L, and 0% judge coverage.
-- **Do not infer current edge from stale perps/SOL/DOGE.** Most perp/alt
-  pipelines last predicted on 2026-04-28 and have too little fresh 7d activity.
+- **Primary corrected integrity finding:** the live fleet was not stale. Direct
+  VPS SQLite checks around 2026-05-02T13:15Z-13:19Z showed fresh predictions
+  across BTC/ETH/perps/Kalshi. The stale MCP output came from local ignored DB
+  files that had not been synced from the VPS.
+- **Reporting/process finding:** MCP-backed reviews need an explicit DB sync
+  step after `git pull`: `tools/sync_data.sh` or targeted `tools/sync_data.sh
+  predictions.db`. GitHub is still source of truth for code/runtime JSON, but
+  operational SQLite DBs now live on the VPS and sync by rsync.
+- **Runtime finding:** the engine was active and dispatching. A manual fleet
+  health check after the health-script fix reported `OK disk=36% botsy=active
+  preds=max=4m`.
+- **Performance finding:** after sync, BTC 5m remained the useful control group
+  but with slightly updated numbers: 73 7d bets, 52.1% WR, +$107.80 estimated
+  P&L. ETH 5m remained weak: 82 7d bets, 42.7% WR, -$117.06 estimated P&L.
 
 ## Integrity Review
 
 | Area | Status | Evidence | Action |
 |------|--------|----------|--------|
-| Prediction recency | FAIL | `btc_5m` stale ~24h; ETH stale since 2026-04-30; most perps stale since 2026-04-28 | Incident #94 opened. Inspect VPS service/websocket dispatch before signal work. |
-| Websocket feeds | FAIL | all three feeds disconnected; reconnects_24h 133/174/139 | Check service logs and reconnect loop. Confirm confirmed candle-close events reach dispatch. |
-| BTC 5m integrity log | WARN/FAIL | 7d: `db_health` 626 WARN, `expired_would_win` 167 WARN, `system_state_health` 28 WARN, `api_health` 8 FAIL, `orphaned_predictions` 7 WARN | Treat stale/API failures as incident. `db_health` foreign-key warnings need separate cleanup. |
+| Prediction recency | OK after sync | Direct VPS DB latest rows: `btc_5m` 2026-05-02T13:17Z, `eth_5m` 2026-05-02T13:18Z, `bybit` 2026-05-02T13:17Z, `sol_bybit` 2026-05-02T13:18Z, `kalshi` 2026-05-02T13:18Z | Do not use local MCP numbers until DBs are synced from VPS. |
+| Websocket feeds | OK/noisy | Runtime JSON showed feeds connected after later pull; reconnect counts remained high | Monitor reconnect churn separately from prediction recency. |
+| BTC 5m integrity log | WARN | Historical local log included stale warnings from the unsynced view plus `db_health` noise | Keep `foreign_keys=OFF` cleanup separate; do not treat the stale warnings as current outage evidence. |
 | ETH 5m integrity log | WARN | 7d: `db_health` 462 WARN, `expired_would_win` 177 WARN, `orphaned_predictions` 18 WARN | Integrity noise remains high; report grouping reduces noise but root causes remain. |
 | Auto-commit safety | IMPROVED | `Auto:` commits now block forbidden staged paths before commit | Watch next auto-commit cycle after source deploy. |
 
@@ -35,25 +41,23 @@ reports. No prediction logic was changed.
 
 | Pipeline | Verdict | Evidence | Interpretation |
 |----------|---------|----------|----------------|
-| `btc_5m` | Control, not live-ready | 65 7d bets, 34W-31L, 52.3% WR, +$136.90. Judge-accepted subset: 10 bets, 70.0% WR, +$111.64. | Directional signal is not dead, but runtime staleness blocks conclusions. Judge subset deserves forward monitoring, not promotion. |
-| `eth_5m` | Weak | 48 7d bets, 43.8% WR, -$129.91. Current streak: 2 losses. Judge coverage: 0%. | ETH should not be promoted. First fix judge coverage/data freshness, then revisit. |
-| `bybit` | Stale/low sample | 1 7d bet, 100% WR; last prediction 2026-04-28T23:15Z | Ignore WR. Runtime recency first. |
-| `eth_bybit` / `eth_hl` | Stale/low sample | 4 7d bets each, 50% WR; last prediction 2026-04-28T23:15Z | Not enough current data. |
-| `sol_bybit` / `sol_hl` | Stale/no fresh bets | 0 7d bets; last prediction 2026-04-28T23:15Z | Treat May 1 loss snapshot as historical, not current live signal. |
-| DOGE perps | Stale/no fresh bets | 0 7d bets; last prediction 2026-04-28T23:15Z | Monitor only after runtime recovers. |
-| `kalshi` | Stale experiment | last prediction 2026-04-17T14:30Z | Historical parser-contaminated data remains excluded from edge claims. |
+| `btc_5m` | Control, not live-ready | 73 7d bets, 38W-35L, 52.1% WR, +$107.80. 30d: 451 bets, 53.2% WR, +$886.60. | Directional signal is not dead, but edge is uneven. Continue BTC5M signal triage/shadow validation. |
+| `eth_5m` | Weak | 82 7d bets, 42.7% WR, -$117.06 | ETH should not be promoted. Treat as separate signal rehab after BTC triage. |
+| `bybit` | Active/positive | 65 7d bets, 56.9% WR after sync | Worth separate perp review; do not mix with BTC5M Polymarket conclusions. |
+| `eth_bybit` / `eth_hl` | Active/weak | 97 7d bets each, 41.2% / 40.2% WR | Weak; defer optimization until BTC5M control triage is underway. |
+| `sol_bybit` / `sol_hl` | Active/weak | 83-87 7d bets, ~39% WR | Weak; likely needs asset-relative regime work, not immediate promotion. |
+| DOGE perps | Active/small sample | 4 7d bets each after sync | Sample too small for conclusion. |
+| `kalshi` | Active parser validation | 12 7d bets, 100% WR after parser restart; still very small | Continue parser-versioned forward validation; old history remains contaminated. |
 
 ## Component Findings
 
-- **Regime:** BTC 5m 7d edge is concentrated in `MEDIUM_VOL / TRENDING`:
-  30 bets, 66.7% WR. BTC `MEDIUM_VOL / NEUTRAL` is poor: 34 bets, 41.2% WR.
-  ETH does not share the same pattern: `MEDIUM_VOL / TRENDING` is 1/4 over 7d.
-- **Direction:** BTC 30d conv>=3 is slightly better DOWN than UP:
-  DOWN 58/103 = 56.3%, UP 178/340 = 52.4%. ETH is roughly flat:
-  DOWN 160/314 = 51.0%, UP 175/336 = 52.1%.
-- **Conviction:** BTC 30d conv=5 is strong but small: 40/55 = 72.7%.
-  BTC conv=2 is weak: 178/376 = 47.3%. ETH conv=2 is also weak:
-  183/376 = 48.7%.
+- **Regime:** BTC 5m 30d edge is concentrated in TRENDING regimes:
+  140 bets, 60.7% WR. NEUTRAL regimes are 311 bets, 49.8% WR.
+- **Direction:** BTC 30d conv>=3 is modestly better DOWN than UP:
+  DOWN 59/104 = 56.7%, UP 181/347 = 52.2%.
+- **Conviction:** BTC 30d conv=5 is meaningfully different: 41/57 = 71.9%.
+  Conv=3 and conv=4 overall are near coin-flip. The biggest weak bucket is
+  conv=4 UP: 138/287 = 48.1%.
 - **Skipped/low conviction:** BTC conv=0 is 1867/3563 = 52.4%, but this is
   mostly no-trade observations and should not be treated as executable edge
   without price/liquidity validation. ETH conv=0 is 2335/4465 = 52.3%.
@@ -70,20 +74,18 @@ reports. No prediction logic was changed.
   paper rows. BTC: 58 records (`paper_would_fire` 37, `skipped_low_edge` 16,
   `skipped_thin_book` 5). ETH: 30 records (`paper_would_fire` 16,
   `skipped_low_edge` 10, `skipped_thin_book` 4).
-- `polymarket_microstructure_summary(days=1)` returns 0 snapshots. The capture
-  path should be checked as part of incident #94 because it may be another
-  symptom of the disconnected feed/runtime recency issue.
+- Microstructure snapshot freshness should be reviewed separately. It was not
+  evidence of prediction staleness after VPS DB recency was verified.
 
 ## Recommendations
 
-1. **Resolve incident #94 before any signal changes.** A stale engine makes all
-   performance review second-order. Confirm websocket reconnect, candle close
-   dispatch, and prediction writes.
-2. **Keep BTC 5m as paper control.** Do not promote live; use it as the only
-   current signal yardstick once recency is restored.
-3. **Do not act on ETH/perp/SOL performance until freshness returns.** ETH is
-   weak, but stale/partial data and missing judge coverage mean the immediate
-   action is instrumentation repair, not a new filter.
+1. **Require VPS DB sync before MCP-backed analysis.** Run `tools/sync_data.sh`
+   or targeted DB syncs before citing pipeline recency or WR.
+2. **Keep BTC 5m as paper control.** Do not promote live; use it as the first
+   signal-triage sprint lane.
+3. **Track BTC5M signal-triage shadows.** Issue #95 / commit `e0823e416` now
+   tags TRENDING-only, weak-hour, conv4-UP, and judge-accepted cohorts forward
+   without changing behavior.
 4. **Open a follow-up cleanup for `foreign_keys=OFF` integrity spam.** It is
    high-volume and obscures more urgent warnings.
 5. **Investigate why Polymarket microstructure snapshots are empty.** If the
@@ -92,6 +94,6 @@ reports. No prediction logic was changed.
 
 ## Non-Actions
 
-- No prediction logic or hard thresholds changed.
+- No prediction logic or hard thresholds changed in this review.
 - No paper pipeline paused from this review.
 - No live-capital state changed.
