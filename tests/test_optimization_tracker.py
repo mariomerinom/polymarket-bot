@@ -239,3 +239,18 @@ def test_shadow_filters_map_exists():
     for name, filters in SHADOW_FILTERS.items():
         assert "shadow_key" in filters or "agent_filter" in filters, \
             f"{name} has no valid filter"
+
+
+def test_btc5m_signal_triage_shadow_filters_registered():
+    """BTC5M signal triage cohorts are visible to optimization checks."""
+    expected = {
+        "btc5m_trending_only_shadow": "shadow_btc5m_trending_only",
+        "btc5m_weak_hour_shadow": "shadow_btc5m_weak_hour_filter",
+        "btc5m_conv4_up_recalibration_shadow": (
+            "shadow_btc5m_conv4_up_recalibration"
+        ),
+        "btc5m_judge_accept_shadow": "shadow_btc5m_judge_accept",
+    }
+
+    for name, shadow_key in expected.items():
+        assert SHADOW_FILTERS[name] == {"shadow_key": shadow_key}

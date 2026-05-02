@@ -584,7 +584,7 @@
     },
     {
       "name": "intraday_range_gate",
-      "description": "Demote conv>=3 to conv=2 when today's in-progress intraday range_pct is ≥1.5σ above the 30-day historical mean. Uses TODAY's candles (not yesterday's completed row — fixing the failure mode of reverted btc_daily_regime_gate #68). Morning exemption before 12:00 UTC. Applies to btc_5m and eth_5m.",
+      "description": "Demote conv>=3 to conv=2 when today's in-progress intraday range_pct is \u22651.5\u03c3 above the 30-day historical mean. Uses TODAY's candles (not yesterday's completed row \u2014 fixing the failure mode of reverted btc_daily_regime_gate #68). Morning exemption before 12:00 UTC. Applies to btc_5m and eth_5m.",
       "registered_at": "2026-04-17T15:00:00+00:00",
       "pipeline": "5m",
       "status": "active",
@@ -597,7 +597,7 @@
         "apr_13_range_zscore": 1.83,
         "apr_13_btc_5m_pnl": -27,
         "apr_13_btc_5m_wr_pct": 40,
-        "note": "On days with range_zscore ≥+1.5, BTC 5m consistently lost money. Gate throttles these days proactively."
+        "note": "On days with range_zscore \u2265+1.5, BTC 5m consistently lost money. Gate throttles these days proactively."
       },
       "latest_check": null,
       "post_stats": null,
@@ -612,17 +612,20 @@
     },
     {
       "name": "arb_divergence_logger",
-      "description": "Phase 0 of Polymarket ↔ Bybit cross-venue arbitrage (plan: docs/plans/groovy-squishing-scott.md, frame: docs/core/PIVOT_OPTIONS.md). Logs per-cycle divergence between Polymarket market mid-price on 'Up or Down' 5m/15m binary markets and the Bybit-derived fair probability (Φ-based intra-window conditional). Zero trading. Regime-aware logging (5m regime + daily regime stamped on every row). Decision gate requires BOTH ≥48h observation AND regime coverage (≥4 vol×trend regimes with ≥100 rows each + ≥2 daily-regime buckets) before Phase 1 consideration.",
+      "description": "Phase 0 of Polymarket \u2194 Bybit cross-venue arbitrage (plan: docs/plans/groovy-squishing-scott.md, frame: docs/core/PIVOT_OPTIONS.md). Logs per-cycle divergence between Polymarket market mid-price on 'Up or Down' 5m/15m binary markets and the Bybit-derived fair probability (\u03a6-based intra-window conditional). Zero trading. Regime-aware logging (5m regime + daily regime stamped on every row). Decision gate requires BOTH \u226548h observation AND regime coverage (\u22654 vol\u00d7trend regimes with \u2265100 rows each + \u22652 daily-regime buckets) before Phase 1 consideration.",
       "registered_at": "2026-04-23T20:00:00+00:00",
       "pipeline": "btc_5m+eth_5m",
       "status": "shadow",
       "min_sample": 100000,
-      "revert_condition": "after regime coverage met: no regime shows ≥5 exploitable divergences/day AND persistence < 1 cycle — in that case the thesis is dead",
+      "revert_condition": "after regime coverage met: no regime shows \u22655 exploitable divergences/day AND persistence < 1 cycle \u2014 in that case the thesis is dead",
       "baseline": {
         "observation_period_start": "2026-04-28",
-        "previous_start_attempt": "2026-04-23 — invalidated by 2026-04-24/28 disk-full outage; only ~4.5h of data accumulated before engine died",
-        "market_classes_covered": ["5m", "15m"],
-        "note": "Longer-duration market classes (hourly/daily) deferred — current fetch_markets only ingests 5m/15m 'Up or Down' markets. If Phase 0 shows edge on 5m/15m, longer-duration will be added as a follow-up ingestion expansion. Phase 0 clock effectively reset 2026-04-28; see docs/ops/postmortem_2026-04-28_disk_full.md."
+        "previous_start_attempt": "2026-04-23 \u2014 invalidated by 2026-04-24/28 disk-full outage; only ~4.5h of data accumulated before engine died",
+        "market_classes_covered": [
+          "5m",
+          "15m"
+        ],
+        "note": "Longer-duration market classes (hourly/daily) deferred \u2014 current fetch_markets only ingests 5m/15m 'Up or Down' markets. If Phase 0 shows edge on 5m/15m, longer-duration will be added as a follow-up ingestion expansion. Phase 0 clock effectively reset 2026-04-28; see docs/ops/postmortem_2026-04-28_disk_full.md."
       },
       "latest_check": null,
       "post_stats": null,
@@ -631,7 +634,7 @@
     },
     {
       "name": "signal_ehr_live_gate",
-      "description": "Auto-suspend live mode when 7-day rolling signal EHR drifts below 0 on 50+ bets. Protective circuit breaker one abstraction layer above the 5-loss / $300-daily rails. Added 2026-04-21 after FAK pilot on btc_5m took −$159 on day 1 — the signal EHR had silently drifted from +0.035 to −0.082 over 48h and we didn't catch it before going live. Paper mode is unaffected (we want paper to keep generating predictions for monitoring). Implemented in src/system_state.py::get_system_state — a new blocker in state.blockers when the conditions hold.",
+      "description": "Auto-suspend live mode when 7-day rolling signal EHR drifts below 0 on 50+ bets. Protective circuit breaker one abstraction layer above the 5-loss / $300-daily rails. Added 2026-04-21 after FAK pilot on btc_5m took \u2212$159 on day 1 \u2014 the signal EHR had silently drifted from +0.035 to \u22120.082 over 48h and we didn't catch it before going live. Paper mode is unaffected (we want paper to keep generating predictions for monitoring). Implemented in src/system_state.py::get_system_state \u2014 a new blocker in state.blockers when the conditions hold.",
       "registered_at": "2026-04-21T19:30:00+00:00",
       "pipeline": "all",
       "status": "active",
@@ -645,7 +648,7 @@
         "fak_pilot_filled_wr": 0.11,
         "signal_ehr_at_activation": -0.082,
         "signal_ehr_48h_prior": 0.035,
-        "note": "FAK fill rate validated at 90% (success). FAK filled WR 11% — execution improvement does not rescue a negative-EHR signal. This gate ensures future live activations require a verified-healthy signal."
+        "note": "FAK fill rate validated at 90% (success). FAK filled WR 11% \u2014 execution improvement does not rescue a negative-EHR signal. This gate ensures future live activations require a verified-healthy signal."
       },
       "latest_check": null,
       "post_stats": null,
@@ -654,7 +657,7 @@
     },
     {
       "name": "shadow_maker_phase_1",
-      "description": "Shadow maker Phase 1. Every conv>=3 prediction logs a hypothetical passive maker order (mid ± 0.25×spread) alongside the real taker decision. Measures fill rate, adverse selection, and shadow EHR. Goal: validate whether passive posting closes the 60-point adverse-selection gap seen in historical GTC+FOK live data (filled WR 35% vs unfilled WR 95%). Promotion to Phase 2 (real maker orders) gated on shadow_ehr > taker EHR on 200+ fills.",
+      "description": "Shadow maker Phase 1. Every conv>=3 prediction logs a hypothetical passive maker order (mid \u00b1 0.25\u00d7spread) alongside the real taker decision. Measures fill rate, adverse selection, and shadow EHR. Goal: validate whether passive posting closes the 60-point adverse-selection gap seen in historical GTC+FOK live data (filled WR 35% vs unfilled WR 95%). Promotion to Phase 2 (real maker orders) gated on shadow_ehr > taker EHR on 200+ fills.",
       "registered_at": "2026-04-16T00:00:00+00:00",
       "pipeline": "btc_5m",
       "status": "shadow",
@@ -684,7 +687,19 @@
       "min_sample": 200,
       "revert_condition": "no graduation yet; shadow WR across tiers does not differentiate from production by >3pp on 200+ bets per pipeline",
       "baseline": {
-        "pipelines_active": ["btc_5m", "eth_5m", "kalshi", "bybit", "hl", "eth_bybit", "eth_hl", "sol_bybit", "sol_hl", "doge_bybit", "doge_hl"],
+        "pipelines_active": [
+          "btc_5m",
+          "eth_5m",
+          "kalshi",
+          "bybit",
+          "hl",
+          "eth_bybit",
+          "eth_hl",
+          "sol_bybit",
+          "sol_hl",
+          "doge_bybit",
+          "doge_hl"
+        ],
         "note": "Running since ~2026-03-30. Data is embedded in every prediction's reasoning JSON. analyze_shadow_conviction() in daily_report.py surfaces divergence counts. Previously-unregistered; registration added 2026-04-19 for catalog completeness."
       },
       "latest_check": null,
@@ -699,12 +714,20 @@
       "pipeline": "all",
       "status": "shadow",
       "min_sample": 500,
-      "revert_condition": "no active revert — this is continuous observation; individual indicator-based optimizations carry their own revert criteria",
+      "revert_condition": "no active revert \u2014 this is continuous observation; individual indicator-based optimizations carry their own revert criteria",
       "baseline": {
-        "indicators_logged": ["rsi_14", "obv_slope", "vwap_zscore"],
+        "indicators_logged": [
+          "rsi_14",
+          "obv_slope",
+          "vwap_zscore"
+        ],
         "trigger": "RSI always; OBV only in 0.50-0.70 price bucket; VWAP z-score only in MEAN_REVERTING regime",
-        "related_reverts": ["shadow_rsi_14_gate", "shadow_obv_bucket_filter", "shadow_vwap_meanrev"],
-        "note": "Previously-unregistered; registration added 2026-04-19. Core observation continues — specific indicator-based gates spun off as separate optimizations each with their own baseline."
+        "related_reverts": [
+          "shadow_rsi_14_gate",
+          "shadow_obv_bucket_filter",
+          "shadow_vwap_meanrev"
+        ],
+        "note": "Previously-unregistered; registration added 2026-04-19. Core observation continues \u2014 specific indicator-based gates spun off as separate optimizations each with their own baseline."
       },
       "latest_check": null,
       "post_stats": null,
@@ -744,7 +767,7 @@
         "lab_wr": 52.6,
         "lab_pnl": 975.0,
         "lab_window_days": 30,
-        "note": "Lab always-fire results from strategy_lab.db. HV+MR VWAP fires will hit HIGH_VOL gate in store_prediction_eth → logged at conv=2 (shadow). MV+MR VWAP fires at conv=3 (real bet)."
+        "note": "Lab always-fire results from strategy_lab.db. HV+MR VWAP fires will hit HIGH_VOL gate in store_prediction_eth \u2192 logged at conv=2 (shadow). MV+MR VWAP fires at conv=3 (real bet)."
       },
       "latest_check": null,
       "post_stats": null,
@@ -753,12 +776,12 @@
     },
     {
       "name": "eth_mv_trending_down_monitor",
-      "description": "Monitor ETH 5m MEDIUM_VOL/TRENDING + DOWN direction bucket. Identified 2026-04-19 investigation: 65% WR on 20 bets over 14 days — only ETH bucket with clear edge. Hypothesis: 5m down-streaks inside larger up-trends are contrarian-valid. No code change; data already being collected via predictions table. If sample reaches 50 with WR > 60%, consider conviction +1 bonus in this specific regime/direction pair.",
+      "description": "Monitor ETH 5m MEDIUM_VOL/TRENDING + DOWN direction bucket. Identified 2026-04-19 investigation: 65% WR on 20 bets over 14 days \u2014 only ETH bucket with clear edge. Hypothesis: 5m down-streaks inside larger up-trends are contrarian-valid. No code change; data already being collected via predictions table. If sample reaches 50 with WR > 60%, consider conviction +1 bonus in this specific regime/direction pair.",
       "registered_at": "2026-04-19T18:45:00+00:00",
       "pipeline": "eth_5m",
       "status": "monitoring",
       "min_sample": 50,
-      "revert_condition": "WR falls below 55% on 50+ bets before any action — close as reverted (false positive in thin sample)",
+      "revert_condition": "WR falls below 55% on 50+ bets before any action \u2014 close as reverted (false positive in thin sample)",
       "baseline": {
         "bucket_bets": 20,
         "bucket_wr": 65.0,
@@ -766,7 +789,7 @@
         "query": "SELECT ... WHERE regime='MEDIUM_VOL / TRENDING' AND estimate<0.5 AND m.outcome=0",
         "all_mv_trending_up_wr": 48.0,
         "all_mv_trending_up_bets": 25,
-        "comparison": "DOWN wins 65% while UP in same regime wins 48% — directional asymmetry worth tracking."
+        "comparison": "DOWN wins 65% while UP in same regime wins 48% \u2014 directional asymmetry worth tracking."
       },
       "latest_check": null,
       "post_stats": null,
@@ -775,18 +798,18 @@
     },
     {
       "name": "bucket_15_30_monitor",
-      "description": "Monitor 0.15-0.30 price bucket — decision #6 triggered 2026-04-19 at 85.7% WR on 21 bets (threshold >65% at 20+). Sample is thin; registered as Monitoring until N reaches 50. No code change yet — if WR holds above 65% at 50+ bets, promote to conviction +1 boost in predict.py.",
+      "description": "Monitor 0.15-0.30 price bucket \u2014 decision #6 triggered 2026-04-19 at 85.7% WR on 21 bets (threshold >65% at 20+). Sample is thin; registered as Monitoring until N reaches 50. No code change yet \u2014 if WR holds above 65% at 50+ bets, promote to conviction +1 boost in predict.py.",
       "registered_at": "2026-04-19T16:00:00+00:00",
       "pipeline": "btc_5m",
       "status": "monitoring",
       "min_sample": 50,
-      "revert_condition": "WR falls below 55% on 50+ bets — no shipment to revert",
+      "revert_condition": "WR falls below 55% on 50+ bets \u2014 no shipment to revert",
       "baseline": {
         "bucket_bets": 21,
         "bucket_wr": 85.7,
         "threshold": ">65% at 20+",
         "trigger_date": "2026-04-19",
-        "note": "From Decision #6 in daily_report.py::DECISIONS. No code change in this registration — will promote to conviction +1 bonus when sample reaches 50 with sustained WR."
+        "note": "From Decision #6 in daily_report.py::DECISIONS. No code change in this registration \u2014 will promote to conviction +1 bonus when sample reaches 50 with sustained WR."
       },
       "latest_check": null,
       "post_stats": null,
@@ -800,15 +823,19 @@
       "pipeline": "btc_5m+eth_5m",
       "status": "shadow",
       "min_sample": 50,
-      "revert_condition": "on the first 50 classifications with ground-truth outcomes available at market resolution: if LLM-class vs actual-outcome agreement rate < 60% for the 'lag' class (LLM says lag => market should resolve consistent with bybit direction within the window), the classifier is noise — do not use for Phase 0 decision; rely on per-regime raw counts only",
+      "revert_condition": "on the first 50 classifications with ground-truth outcomes available at market resolution: if LLM-class vs actual-outcome agreement rate < 60% for the 'lag' class (LLM says lag => market should resolve consistent with bybit direction within the window), the classifier is noise \u2014 do not use for Phase 0 decision; rely on per-regime raw counts only",
       "baseline": {
-        "trigger": "Phase 0 decision gate (≥48h + regime coverage met)",
+        "trigger": "Phase 0 decision gate (\u226548h + regime coverage met)",
         "n_per_call": 50,
         "min_edge_filter": 0.02,
-        "schema": ["class (lag|model_error|adverse_selection|other)", "rationale", "confidence (low|medium|high)"],
+        "schema": [
+          "class (lag|model_error|adverse_selection|other)",
+          "rationale",
+          "confidence (low|medium|high)"
+        ],
         "cost_per_batch": "<$1 at llama3.3-70b pricing",
         "no_bias_constraint": "schema explicitly excludes buy/sell/direction; classifier names CAUSE only, never action",
-        "note": "First real calibration happens when Phase 0 reaches the decision gate — shadow until then. Manual entry point: python3 -m arb_classifier --n 50 --min-edge 0.02."
+        "note": "First real calibration happens when Phase 0 reaches the decision gate \u2014 shadow until then. Manual entry point: python3 -m arb_classifier --n 50 --min-edge 0.02."
       },
       "latest_check": null,
       "post_stats": null,
@@ -822,7 +849,7 @@
       "pipeline": "btc_5m",
       "status": "one_shot_analysis",
       "min_sample": 1,
-      "revert_condition": "n/a — one-shot analysis, not a live signal path; if the output disagrees sharply with independent quant read AND the quant read is later vindicated, the diagnosis is noise for this class of question and should not be re-run without prompt iteration",
+      "revert_condition": "n/a \u2014 one-shot analysis, not a live signal path; if the output disagrees sharply with independent quant read AND the quant read is later vindicated, the diagnosis is noise for this class of question and should not be re-run without prompt iteration",
       "baseline": {
         "trigger": "manual run before 2026-04-28 pivot decision",
         "window_default": "2026-03-15 to 2026-04-23",
@@ -847,7 +874,15 @@
       "revert_condition": "if Lab reports or MCP output present synthetic candle-score P&L as executable trading P&L, revert the reporting surface and keep raw Lab logging only",
       "baseline": {
         "old_behavior": "Lab P&L used fixed +/-$25 candle-score math and was labeled generically as P&L",
-        "new_fields": ["schema_version", "engine_commit", "deploy_epoch", "cycle_close_at", "offset_seconds", "source_interval", "synthetic_pnl"],
+        "new_fields": [
+          "schema_version",
+          "engine_commit",
+          "deploy_epoch",
+          "cycle_close_at",
+          "offset_seconds",
+          "source_interval",
+          "synthetic_pnl"
+        ],
         "plan": "docs/plans/lab-microstructure-roadmap.md",
         "no_capital_risk": "reporting and metadata only; no conviction, order, sizing, or execution behavior changes"
       },
@@ -880,20 +915,30 @@
     },
     {
       "name": "multi_poll_predict_logger",
-      "description": "Phase A of in-cycle prediction-timing study. After each Bybit 5m candle close, fires 9 additional predict() calls at offsets T+30s through T+270s (every 30s) and logs each to multi_poll_predictions table. Pure shadow — no behavior change for capital, conviction gating, or trade execution. Plan: docs/plans/multi_poll_predict_plan.md. Triggered by signal_rehab_2026-04-28 finding that the Apr 5 dispatch refactor (f79e56f21) sharply reduced lab WR from ~60% to ~50% by removing ~2:30 of in-flight candle data that GHA scheduling delays had been picking up. This experiment makes the in-cycle information curve measurable so Phase B can decide whether a delayed (or regime-adaptive) dispatch policy recovers the lost edge.",
+      "description": "Phase A of in-cycle prediction-timing study. After each Bybit 5m candle close, fires 9 additional predict() calls at offsets T+30s through T+270s (every 30s) and logs each to multi_poll_predictions table. Pure shadow \u2014 no behavior change for capital, conviction gating, or trade execution. Plan: docs/plans/multi_poll_predict_plan.md. Triggered by signal_rehab_2026-04-28 finding that the Apr 5 dispatch refactor (f79e56f21) sharply reduced lab WR from ~60% to ~50% by removing ~2:30 of in-flight candle data that GHA scheduling delays had been picking up. This experiment makes the in-cycle information curve measurable so Phase B can decide whether a delayed (or regime-adaptive) dispatch policy recovers the lost edge.",
       "registered_at": "2026-04-28T13:30:00+00:00",
       "pipeline": "btc_5m+eth_5m",
       "status": "shadow",
       "min_sample": 100,
-      "revert_condition": "after 14 days of observation: if no offset shows ≥2pp WR over the immediate-dispatch (offset=0) baseline on N≥100 per cell across at least 4 (offset × regime) cells, the in-flight information edge is not recoverable as a time-based policy. Document and close as 'no edge'. Phase C does not ship.",
+      "revert_condition": "after 14 days of observation: if no offset shows \u22652pp WR over the immediate-dispatch (offset=0) baseline on N\u2265100 per cell across at least 4 (offset \u00d7 regime) cells, the in-flight information edge is not recoverable as a time-based policy. Document and close as 'no edge'. Phase C does not ship.",
       "baseline": {
-        "trigger": "automatic — fires every 5m bybit_spot close for BTCUSDT and ETHUSDT",
-        "poll_offsets_seconds": [30, 60, 90, 120, 150, 180, 210, 240, 270],
-        "expected_volume_per_day": "9 polls × ~10 active markets × 288 cycles = ~26k rows/day per asset",
+        "trigger": "automatic \u2014 fires every 5m bybit_spot close for BTCUSDT and ETHUSDT",
+        "poll_offsets_seconds": [
+          30,
+          60,
+          90,
+          120,
+          150,
+          180,
+          210,
+          240,
+          270
+        ],
+        "expected_volume_per_day": "9 polls \u00d7 ~10 active markets \u00d7 288 cycles = ~26k rows/day per asset",
         "retention_days": 30,
         "table": "multi_poll_predictions",
-        "no_capital_risk": "shadow only — does not feed conviction gates or trade execution",
-        "phase_b_decision": "after observation: tools/multi_poll_analysis.py computes WR per (offset × regime × asset) cell. Three outcomes: (1) single offset wins clearly → ship as new policy in Phase C; (2) regime-adaptive optimum → ship policy table; (3) no edge → close out, V4 chapter ends",
+        "no_capital_risk": "shadow only \u2014 does not feed conviction gates or trade execution",
+        "phase_b_decision": "after observation: tools/multi_poll_analysis.py computes WR per (offset \u00d7 regime \u00d7 asset) cell. Three outcomes: (1) single offset wins clearly \u2192 ship as new policy in Phase C; (2) regime-adaptive optimum \u2192 ship policy table; (3) no edge \u2192 close out, V4 chapter ends",
         "phase_c_gating": "if Phase C ships, signal_ehr_live_gate still controls live capital. Multi-poll ships dispatch timing only.",
         "post_incident_discipline": "RETENTION_DAYS=30 hardcoded in module from day 1. Lessons from 2026-04-24 disk-full incident: retention-in-code, not in a never-wired cron."
       },
@@ -925,6 +970,102 @@
         "evidence": "docs/analysis/kalshi_parser_audit_2026-05-01.md",
         "plan": "docs/plans/kalshi-strike-aware-parser-plan.md"
       },
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "btc5m_trending_only_shadow",
+      "description": "BTC 5m signal-triage shadow tag for current conv>=3 momentum_rule bets in TRENDING regimes. Historical sprint read: TRENDING 140 bets at 60.7% WR vs NEUTRAL 311 bets at 49.8% over the fresh 30d BTC5M sample. No production gate change; forward tags live in predictions.reasoning[shadow_btc5m_trending_only].",
+      "revert_condition": "close as no-edge if tagged TRENDING cohort WR <= baseline WR on 50+ forward resolved tagged observations; promotion requires separate optimization commit and rollback criteria",
+      "baseline": {
+        "btc5m_30d_bets": 451,
+        "btc5m_30d_wr_pct": 53.2,
+        "btc5m_30d_estimated_pnl": 886.6,
+        "historical_tagged_bets": 140,
+        "historical_tagged_wr_pct": 60.7,
+        "comparison": "NEUTRAL 311 bets at 49.8% WR",
+        "shadow_key": "shadow_btc5m_trending_only"
+      },
+      "registered_at": "2026-05-02T13:34:11.234543+00:00",
+      "pipeline": "btc_5m",
+      "status": "shadow",
+      "issue": 95,
+      "min_sample": 50,
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "btc5m_weak_hour_shadow",
+      "description": "BTC 5m signal-triage shadow tag for current conv>=3 momentum_rule bets in weak UTC hours {1,2,12,13,19}. Historical sprint read: these hours were 97 bets at 35.1% WR vs all other hours 354 bets at 58.2%. No hard hour gate change; forward tags live in predictions.reasoning[shadow_btc5m_weak_hour_filter].",
+      "revert_condition": "abandon weak-hour filter candidate if tagged weak-hour WR >= 50% on 50+ forward resolved tagged observations, or if sample shows weakness concentrated in one transient date only",
+      "baseline": {
+        "btc5m_30d_bets": 451,
+        "btc5m_30d_wr_pct": 53.2,
+        "weak_hours_utc": [
+          1,
+          2,
+          12,
+          13,
+          19
+        ],
+        "historical_tagged_bets": 97,
+        "historical_tagged_wr_pct": 35.1,
+        "comparison": "other hours 354 bets at 58.2% WR",
+        "shadow_key": "shadow_btc5m_weak_hour_filter"
+      },
+      "registered_at": "2026-05-02T13:34:11.234543+00:00",
+      "pipeline": "btc_5m",
+      "status": "shadow",
+      "issue": 95,
+      "min_sample": 50,
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "btc5m_conv4_up_recalibration_shadow",
+      "description": "BTC 5m signal-triage shadow tag for current conviction=4 UP momentum_rule bets. Historical sprint read: conv4 UP was the largest weak bucket at 287 bets and 48.1% WR, while conv4 DOWN was 20 bets at 85.0% and conv5 was 57 bets at 71.9%. No conviction demotion ships here; forward tags live in predictions.reasoning[shadow_btc5m_conv4_up_recalibration].",
+      "revert_condition": "abandon conv4-up demotion candidate if tagged conv4 UP WR >= baseline WR on 50+ forward resolved tagged observations; promotion requires separate counterfactual/demotion implementation",
+      "baseline": {
+        "btc5m_30d_bets": 451,
+        "btc5m_30d_wr_pct": 53.2,
+        "historical_tagged_bets": 287,
+        "historical_tagged_wr_pct": 48.1,
+        "comparison": "conv4 DOWN 20 bets at 85.0%; conv5 57 bets at 71.9%",
+        "shadow_key": "shadow_btc5m_conv4_up_recalibration"
+      },
+      "registered_at": "2026-05-02T13:34:11.234543+00:00",
+      "pipeline": "btc_5m",
+      "status": "shadow",
+      "issue": 95,
+      "min_sample": 50,
+      "latest_check": null,
+      "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "btc5m_judge_accept_shadow",
+      "description": "BTC 5m signal-triage shadow tag for current conv>=3 momentum_rule bets where judge.should_bet=true. Historical sprint read: judge-accepted 69 bets at 58.0% WR vs judge-rejected 163 bets at 46.0%; coverage 51.4%. No judge gate change; forward tags live in predictions.reasoning[shadow_btc5m_judge_accept].",
+      "revert_condition": "abandon judge-accept gate candidate if tagged judge-accepted WR <= baseline WR on 50+ forward resolved tagged observations, or coverage remains below 50% after 7 running days",
+      "baseline": {
+        "btc5m_30d_bets": 451,
+        "btc5m_30d_wr_pct": 53.2,
+        "historical_tagged_bets": 69,
+        "historical_tagged_wr_pct": 58.0,
+        "comparison": "judge rejected 163 bets at 46.0%; no judge score 219; coverage 51.4%",
+        "shadow_key": "shadow_btc5m_judge_accept"
+      },
+      "registered_at": "2026-05-02T13:34:11.234543+00:00",
+      "pipeline": "btc_5m",
+      "status": "shadow",
+      "issue": 95,
+      "min_sample": 50,
       "latest_check": null,
       "post_stats": null,
       "closed_at": null,

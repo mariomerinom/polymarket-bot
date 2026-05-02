@@ -154,6 +154,12 @@ SHADOW_FILTERS = {
     "shadow_rsi_14_gate": {"shadow_key": "shadow_rsi_14"},
     "shadow_obv_bucket_filter": {"shadow_key": "shadow_obv_slope"},
     "shadow_vwap_meanrev": {"agent_filter": "vwap_meanrev"},
+    "btc5m_trending_only_shadow": {"shadow_key": "shadow_btc5m_trending_only"},
+    "btc5m_weak_hour_shadow": {"shadow_key": "shadow_btc5m_weak_hour_filter"},
+    "btc5m_conv4_up_recalibration_shadow": {
+        "shadow_key": "shadow_btc5m_conv4_up_recalibration",
+    },
+    "btc5m_judge_accept_shadow": {"shadow_key": "shadow_btc5m_judge_accept"},
 }
 
 

@@ -11,6 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from shadow_indicators import (
+    BTC5M_TRIAGE_WEAK_HOURS_UTC,
+    compute_btc5m_signal_triage,
     compute_rsi,
     compute_obv_slope,
     compute_vwap_zscore,
@@ -139,6 +141,47 @@ class TestVWAP:
         candles = _make_candles([100.0, 101.0])
         result = compute_vwap_zscore(candles)
         assert result["vwap"] is None
+
+
+# ---------------------------------------------------------------------------
+# BTC 5m signal triage shadow tests
+# ---------------------------------------------------------------------------
+
+class TestBTC5MSignalTriageShadow:
+    def test_tags_current_btc5m_risk_cohorts_without_changing_trade_fields(self):
+        reasoning = {
+            "judge": {"should_bet": True, "p_success": 0.61, "threshold": 0.52}
+        }
+
+        tags = compute_btc5m_signal_triage(
+            reasoning,
+            predicted_at="2026-05-02T13:15:00+00:00",
+            regime="MEDIUM_VOL / TRENDING",
+            estimate=0.62,
+            conviction=4,
+            agent="momentum_rule",
+        )
+
+        assert "shadow_btc5m_trending_only" in tags
+        assert "shadow_btc5m_weak_hour_filter" in tags
+        assert "shadow_btc5m_conv4_up_recalibration" in tags
+        assert "shadow_btc5m_judge_accept" in tags
+        assert tags["shadow_btc5m_weak_hour_filter"]["hour_utc"] == 13
+        assert tags["shadow_btc5m_weak_hour_filter"]["weak_hours_utc"] == sorted(
+            BTC5M_TRIAGE_WEAK_HOURS_UTC
+        )
+
+    def test_ignores_non_production_or_low_conviction_predictions(self):
+        tags = compute_btc5m_signal_triage(
+            {"judge": {"should_bet": True}},
+            predicted_at="2026-05-02T13:15:00+00:00",
+            regime="MEDIUM_VOL / TRENDING",
+            estimate=0.62,
+            conviction=2,
+            agent="vwap_meanrev",
+        )
+
+        assert tags == {}
 
 
 # ---------------------------------------------------------------------------
@@ -303,3 +346,34 @@ class TestShadowLogIntegration:
         assert "shadow_rsi_14" in updated
         assert isinstance(updated["shadow_rsi_14"], float)
         assert result.get("updated") == 1
+
+    def test_logs_btc5m_signal_triage_shadow_flags(self):
+        db = _create_test_db()
+        reasoning = json.dumps({
+            "mkt_price": 0.60,
+            "judge": {"should_bet": True, "p_success": 0.62, "threshold": 0.52},
+        })
+        db.execute(
+            "INSERT INTO predictions (market_id, agent, estimate, edge, confidence, "
+            "reasoning, predicted_at, cycle, conviction_score, regime) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("mkt1", "momentum_rule", 0.62, 0.12, "high", reasoning,
+             "2026-05-02T13:15:00+00:00", 1, 4, "MEDIUM_VOL / TRENDING"),
+        )
+        db.commit()
+
+        candles = _make_candles([100 + i for i in range(20)])
+        shadow_log_indicators(db, cycle=1, candles=candles)
+
+        row = db.execute("SELECT reasoning FROM predictions WHERE id = 1").fetchone()
+        updated = json.loads(row[0])
+        assert "shadow_btc5m_trending_only" in updated
+        assert "shadow_btc5m_weak_hour_filter" in updated
+        assert "shadow_btc5m_conv4_up_recalibration" in updated
+        assert "shadow_btc5m_judge_accept" in updated
+
+        estimate, conviction = db.execute(
+            "SELECT estimate, conviction_score FROM predictions WHERE id = 1"
+        ).fetchone()
+        assert estimate == 0.62
+        assert conviction == 4

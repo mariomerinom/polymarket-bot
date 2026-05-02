@@ -17,6 +17,10 @@ from datetime import datetime, timezone
 from config import OBV_WINDOW, OBV_PRICE_BUCKET_LOW, OBV_PRICE_BUCKET_HIGH
 
 
+BTC5M_TRIAGE_WEAK_HOURS_UTC = {1, 2, 12, 13, 19}
+BTC5M_TRIAGE_AGENT = "momentum_rule"
+
+
 def compute_rsi(closes, period=14):
     """Wilder-smoothed RSI. Returns 0-100 float, or 50.0 if insufficient data."""
     if len(closes) < period + 1:
@@ -109,6 +113,75 @@ def compute_vwap_zscore(candles):
     }
 
 
+def compute_btc5m_signal_triage(reasoning, *, predicted_at, regime, estimate,
+                                conviction, agent):
+    """Return shadow-only BTC5M signal triage cohort tags.
+
+    These flags are observation-only. They deliberately do not change estimate,
+    conviction, order routing, or any production gate.
+    """
+    if agent != BTC5M_TRIAGE_AGENT or conviction is None or conviction < 3:
+        return {}
+
+    direction = "UP" if estimate is not None and estimate >= 0.5 else "DOWN"
+    tags = {}
+
+    if "TRENDING" in (regime or ""):
+        tags["shadow_btc5m_trending_only"] = {
+            "candidate": "btc5m_trending_only_shadow",
+            "would_keep": True,
+            "regime": regime,
+            "conviction": conviction,
+            "direction": direction,
+        }
+
+    hour_utc = _hour_utc(predicted_at)
+    if hour_utc in BTC5M_TRIAGE_WEAK_HOURS_UTC:
+        tags["shadow_btc5m_weak_hour_filter"] = {
+            "candidate": "btc5m_weak_hour_shadow",
+            "would_filter": True,
+            "hour_utc": hour_utc,
+            "weak_hours_utc": sorted(BTC5M_TRIAGE_WEAK_HOURS_UTC),
+            "conviction": conviction,
+            "direction": direction,
+        }
+
+    if conviction == 4 and direction == "UP":
+        tags["shadow_btc5m_conv4_up_recalibration"] = {
+            "candidate": "btc5m_conv4_up_recalibration_shadow",
+            "would_demote": True,
+            "production_conviction": conviction,
+            "direction": direction,
+            "regime": regime,
+        }
+
+    judge = reasoning.get("judge") if isinstance(reasoning, dict) else None
+    if isinstance(judge, dict) and judge.get("should_bet") is True:
+        tags["shadow_btc5m_judge_accept"] = {
+            "candidate": "btc5m_judge_accept_shadow",
+            "would_keep": True,
+            "p_success": judge.get("p_success"),
+            "threshold": judge.get("threshold"),
+            "conviction": conviction,
+            "direction": direction,
+        }
+
+    return tags
+
+
+def _hour_utc(value):
+    if not value:
+        return None
+    try:
+        normalized = str(value).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).hour
+    except (TypeError, ValueError):
+        return None
+
+
 def shadow_log_indicators(db, cycle, candles=None):
     """Main entry point. Compute indicators and attach to this cycle's predictions.
 
@@ -154,7 +227,8 @@ def _shadow_log_impl(db, cycle, candles=None):
 
     # Fetch this cycle's predictions
     rows = db.execute(
-        "SELECT id, market_id, reasoning, regime, estimate, conviction_score "
+        "SELECT id, market_id, reasoning, regime, estimate, conviction_score, "
+        "predicted_at, agent "
         "FROM predictions WHERE cycle = ?",
         (cycle,),
     ).fetchall()
@@ -172,6 +246,8 @@ def _shadow_log_impl(db, cycle, candles=None):
         regime = row[3] or ""
         estimate = row[4]
         conviction = row[5]
+        predicted_at = row[6]
+        agent = row[7]
 
         # Parse existing reasoning
         try:
@@ -190,6 +266,15 @@ def _shadow_log_impl(db, cycle, candles=None):
         # Spec 3: VWAP z-score — attach to MEAN_REVERTING predictions
         if "MEAN_REVERTING" in regime:
             reasoning["shadow_vwap_zscore"] = vwap_data
+
+        reasoning.update(compute_btc5m_signal_triage(
+            reasoning,
+            predicted_at=predicted_at,
+            regime=regime,
+            estimate=estimate,
+            conviction=conviction,
+            agent=agent,
+        ))
 
         # Update reasoning JSON
         db.execute(
