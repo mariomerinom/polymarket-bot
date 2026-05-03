@@ -16,6 +16,7 @@ from optimization_tracker import (
     register,
     check_all,
     close,
+    db_path_for_pipeline,
     OPTIMIZATIONS_PATH,
     SHADOW_FILTERS,
 )
@@ -319,12 +320,85 @@ def test_daily_regime_filter_counts_quiet_tape_cohort():
         assert stats["wr"] == 100.0
 
 
+def test_daily_regime_filter_counts_high_range_cohort():
+    """Daily regime filters can track high-range protection candidates."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pred_db_path = _create_test_db(tmpdir, n_bets=10, wr=0.6, price=0.45, conv=3)
+        asset_db_path = _create_asset_daily_test_db(tmpdir)
+
+        db = sqlite3.connect(pred_db_path)
+        db.execute(
+            "UPDATE predictions SET predicted_at = ? WHERE market_id IN "
+            "('m6', 'm7', 'm8', 'm9')",
+            ("2026-03-29T10:00:00",),
+        )
+        db.commit()
+        db.close()
+
+        stats = compute_stats(
+            pred_db_path,
+            daily_regime_filter={
+                "asset": "BTC",
+                "range_zscore_gte": 1.5,
+            },
+            asset_daily_db_path=asset_db_path,
+        )
+
+        assert stats["bets"] == 4
+        assert stats["wins"] == 0
+        assert stats["wr"] == 0.0
+
+
+def test_regime_filter_counts_selected_regimes_only():
+    """Regime filters isolate terrain cohorts without changing conviction rules."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = _create_test_db(tmpdir, n_bets=9, wr=0.67, price=0.45, conv=3)
+
+        db = sqlite3.connect(db_path)
+        db.execute(
+            "UPDATE predictions SET regime = ? WHERE market_id IN ('m0', 'm1', 'm2')",
+            ("LOW_VOL / NEUTRAL",),
+        )
+        db.execute(
+            "UPDATE predictions SET regime = ? WHERE market_id IN ('m3', 'm4', 'm5')",
+            ("LOW_VOL / TRENDING",),
+        )
+        db.execute(
+            "UPDATE predictions SET regime = ? WHERE market_id IN ('m6', 'm7', 'm8')",
+            ("HIGH_VOL / TRENDING",),
+        )
+        db.commit()
+        db.close()
+
+        stats = compute_stats(
+            db_path,
+            regime_filter=["LOW_VOL / NEUTRAL", "LOW_VOL / TRENDING"],
+        )
+
+        assert stats["bets"] == 6
+        assert stats["wins"] == 6
+        assert stats["wr"] == 100.0
+
+
+def test_named_pipeline_db_resolution(monkeypatch):
+    """Optimization checks can target non-BTC5M pipeline DBs by name."""
+    import optimization_tracker as ot
+
+    eth_path = type(ot.DB_5M)("/tmp/predictions_eth_test.db")
+    monkeypatch.setitem(ot.PIPELINE_DBS, "eth_5m", eth_path)
+
+    assert db_path_for_pipeline("5m") == ot.DB_5M
+    assert db_path_for_pipeline("15m") == ot.DB_15M
+    assert db_path_for_pipeline("eth_5m") == eth_path
+
+
 def test_shadow_filters_map_exists():
     """All shadow filter keys map to valid filter parameters."""
     for name, filters in SHADOW_FILTERS.items():
         assert (
             "shadow_key" in filters
             or "agent_filter" in filters
+            or "regime_filter" in filters
             or "daily_regime_filter" in filters
         ), \
             f"{name} has no valid filter"
@@ -352,5 +426,28 @@ def test_btc5m_quiet_daily_tape_shadow_filter_registered():
             "asset": "BTC",
             "range_zscore_lt": -0.5,
             "abs_velocity_zscore_lt": 0.75,
+        },
+    }
+
+
+def test_promotion_terrain_shadow_filters_registered():
+    """Promotion sprint terrain cohorts are visible to optimization checks."""
+    assert SHADOW_FILTERS["bybit_btc_regime_filter_shadow"] == {
+        "regime_filter": [
+            "LOW_VOL / NEUTRAL",
+            "LOW_VOL / TRENDING",
+            "MEDIUM_VOL / TRENDING",
+        ],
+    }
+    assert SHADOW_FILTERS["eth5m_low_vol_shadow"] == {
+        "regime_filter": [
+            "LOW_VOL / NEUTRAL",
+            "LOW_VOL / TRENDING",
+        ],
+    }
+    assert SHADOW_FILTERS["btc5m_high_range_protection_shadow"] == {
+        "daily_regime_filter": {
+            "asset": "BTC",
+            "range_zscore_gte": 1.5,
         },
     }

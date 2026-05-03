@@ -29,6 +29,24 @@ OPTIMIZATIONS_PATH = Path(__file__).parent.parent / "docs" / "optimizations.json
 DB_5M = Path(__file__).parent.parent / "data" / "predictions.db"
 DB_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
 ASSET_DAILY_DB = Path(__file__).parent.parent / "data" / "asset_daily.db"
+PIPELINE_DBS = {
+    "5m": DB_5M,
+    "btc_5m": DB_5M,
+    "15m": DB_15M,
+    "btc_15m": DB_15M,
+    "eth_5m": Path(__file__).parent.parent / "data" / "predictions_eth.db",
+    "bybit": Path(__file__).parent.parent / "data" / "predictions_bybit.db",
+    "btc_bybit": Path(__file__).parent.parent / "data" / "predictions_bybit.db",
+    "hl": Path(__file__).parent.parent / "data" / "predictions_hl.db",
+    "btc_hl": Path(__file__).parent.parent / "data" / "predictions_hl.db",
+    "eth_bybit": Path(__file__).parent.parent / "data" / "predictions_bybit_eth.db",
+    "eth_hl": Path(__file__).parent.parent / "data" / "predictions_hl_eth.db",
+    "sol_bybit": Path(__file__).parent.parent / "data" / "predictions_bybit_sol.db",
+    "sol_hl": Path(__file__).parent.parent / "data" / "predictions_hl_sol.db",
+    "doge_bybit": Path(__file__).parent.parent / "data" / "predictions_bybit_doge.db",
+    "doge_hl": Path(__file__).parent.parent / "data" / "predictions_hl_doge.db",
+    "kalshi": Path(__file__).parent.parent / "data" / "predictions_kalshi.db",
+}
 
 # Date-aware sizing: imported from centralized config.py
 from config import (
@@ -53,7 +71,8 @@ def save_optimizations(data):
 
 
 def compute_stats(db_path, since=None, shadow_key=None, agent_filter=None,
-                  daily_regime_filter=None, asset_daily_db_path=ASSET_DAILY_DB):
+                  regime_filter=None, daily_regime_filter=None,
+                  asset_daily_db_path=ASSET_DAILY_DB):
     """Compute aggregate stats from the DB, optionally filtered to predictions after a date.
 
     Args:
@@ -64,6 +83,8 @@ def compute_stats(db_path, since=None, shadow_key=None, agent_filter=None,
                     filter since shadow indicators apply to all predictions.
         agent_filter: If set, only count predictions from this agent name
                       (e.g. "vwap_meanrev"). Drops the conv>=3 filter.
+        regime_filter: If set, only count predictions whose p.regime is in
+                       this list or equals this string.
         daily_regime_filter: If set, only count resolved predictions whose
                              UTC prediction date matches an asset_daily row
                              satisfying the supplied range/velocity bounds.
@@ -114,6 +135,14 @@ def compute_stats(db_path, since=None, shadow_key=None, agent_filter=None,
             if shadow_key in reasoning:
                 filtered.append(r)
         rows = filtered
+
+    if regime_filter:
+        allowed_regimes = (
+            {regime_filter}
+            if isinstance(regime_filter, str)
+            else set(regime_filter)
+        )
+        rows = [r for r in rows if r["regime"] in allowed_regimes]
 
     if daily_regime_filter:
         rows = _filter_by_daily_regime(
@@ -179,6 +208,25 @@ SHADOW_FILTERS = {
             "abs_velocity_zscore_lt": 0.75,
         },
     },
+    "bybit_btc_regime_filter_shadow": {
+        "regime_filter": [
+            "LOW_VOL / NEUTRAL",
+            "LOW_VOL / TRENDING",
+            "MEDIUM_VOL / TRENDING",
+        ],
+    },
+    "eth5m_low_vol_shadow": {
+        "regime_filter": [
+            "LOW_VOL / NEUTRAL",
+            "LOW_VOL / TRENDING",
+        ],
+    },
+    "btc5m_high_range_protection_shadow": {
+        "daily_regime_filter": {
+            "asset": "BTC",
+            "range_zscore_gte": 1.5,
+        },
+    },
 }
 
 
@@ -227,6 +275,12 @@ def _daily_regime_matches(daily, daily_regime_filter):
     if "range_zscore_lte" in daily_regime_filter:
         if range_z is None or range_z > daily_regime_filter["range_zscore_lte"]:
             return False
+    if "range_zscore_gt" in daily_regime_filter:
+        if range_z is None or range_z <= daily_regime_filter["range_zscore_gt"]:
+            return False
+    if "range_zscore_gte" in daily_regime_filter:
+        if range_z is None or range_z < daily_regime_filter["range_zscore_gte"]:
+            return False
     if "abs_velocity_zscore_lt" in daily_regime_filter:
         if velocity_z is None or abs(velocity_z) >= daily_regime_filter["abs_velocity_zscore_lt"]:
             return False
@@ -237,6 +291,15 @@ def _daily_regime_matches(daily, daily_regime_filter):
         if trend_label not in set(daily_regime_filter["trend_labels"]):
             return False
     return True
+
+
+def db_path_for_pipeline(pipeline):
+    """Return the prediction DB path for an optimization pipeline label."""
+    if pipeline in ("5m", "btc_5m"):
+        return DB_5M
+    if pipeline in ("15m", "btc_15m"):
+        return DB_15M
+    return PIPELINE_DBS.get(pipeline, DB_5M)
 
 
 def register(name, description, revert_condition, min_sample=50, pipeline="5m"):
@@ -250,7 +313,7 @@ def register(name, description, revert_condition, min_sample=50, pipeline="5m"):
             return None
 
     # Compute baseline stats (all data up to now)
-    db_path = DB_5M if pipeline == "5m" else DB_15M
+    db_path = db_path_for_pipeline(pipeline)
     shadow = SHADOW_FILTERS.get(name, {})
     baseline = compute_stats(db_path, **shadow)
     if baseline is None:
@@ -295,7 +358,7 @@ def check_all():
         if opt["status"] != "active":
             continue
 
-        db_path = DB_5M if opt["pipeline"] == "5m" else DB_15M
+        db_path = db_path_for_pipeline(opt["pipeline"])
         shadow = SHADOW_FILTERS.get(opt["name"], {})
         post = compute_stats(db_path, since=opt["registered_at"], **shadow)
 
@@ -420,7 +483,7 @@ if __name__ == "__main__":
     reg.add_argument("--description", required=True)
     reg.add_argument("--revert-if", required=True, dest="revert_condition")
     reg.add_argument("--min-sample", type=int, default=50)
-    reg.add_argument("--pipeline", default="5m", choices=["5m", "15m"])
+    reg.add_argument("--pipeline", default="5m", choices=sorted(PIPELINE_DBS))
 
     chk = sub.add_parser("check", help="Check all active optimizations")
 

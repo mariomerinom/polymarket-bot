@@ -64,6 +64,24 @@ Polymarket-style fill-rate fix.
    out of scope until recent 7d performance recovers.
 5. Keep Kalshi on the existing parser-versioned 200-sample gate.
 
+## 2026-05-03 Sweep Update
+
+Follow-up implementation registered the missing forward trackers rather than
+changing production behavior:
+
+| Tracker | Scope | Baseline |
+|---------|-------|----------|
+| `bybit_btc_regime_filter_shadow` | BTC Bybit LOW_VOL/NEUTRAL, LOW_VOL/TRENDING, MEDIUM_VOL/TRENDING | 127 bets, 63.8% WR, +$875.00 P&L |
+| `eth5m_low_vol_shadow` | ETH 5m LOW_VOL/NEUTRAL and LOW_VOL/TRENDING | 129 bets, 61.2% WR, +$656.26 P&L |
+| `btc5m_high_range_protection_shadow` | BTC 5m days where BTC `range_zscore >= 1.5` | 41 bets, 39.0% WR, -$220.05 P&L |
+
+Promotion posture remains unchanged: #96, #97, #98, and #99 are not ready until
+their forward samples reach gate size. Execution issue #15 still blocks normal
+live-capital promotion; a canary needs explicit fill/adverse-selection reporting
+or a documented bypass.
+
+Operational playbook: `docs/plans/signal-terrain-execution-sweep-2026-05-03.md`.
+
 ## Non-Actions
 
 - No pipeline mode changed.
