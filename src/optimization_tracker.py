@@ -28,6 +28,7 @@ from pathlib import Path
 OPTIMIZATIONS_PATH = Path(__file__).parent.parent / "docs" / "optimizations.json"
 DB_5M = Path(__file__).parent.parent / "data" / "predictions.db"
 DB_15M = Path(__file__).parent.parent / "data" / "predictions_15m.db"
+ASSET_DAILY_DB = Path(__file__).parent.parent / "data" / "asset_daily.db"
 
 # Date-aware sizing: imported from centralized config.py
 from config import (
@@ -51,7 +52,8 @@ def save_optimizations(data):
     OPTIMIZATIONS_PATH.write_text(json.dumps(data, indent=2) + "\n")
 
 
-def compute_stats(db_path, since=None, shadow_key=None, agent_filter=None):
+def compute_stats(db_path, since=None, shadow_key=None, agent_filter=None,
+                  daily_regime_filter=None, asset_daily_db_path=ASSET_DAILY_DB):
     """Compute aggregate stats from the DB, optionally filtered to predictions after a date.
 
     Args:
@@ -62,6 +64,9 @@ def compute_stats(db_path, since=None, shadow_key=None, agent_filter=None):
                     filter since shadow indicators apply to all predictions.
         agent_filter: If set, only count predictions from this agent name
                       (e.g. "vwap_meanrev"). Drops the conv>=3 filter.
+        daily_regime_filter: If set, only count resolved predictions whose
+                             UTC prediction date matches an asset_daily row
+                             satisfying the supplied range/velocity bounds.
     """
     if not Path(db_path).exists():
         return None
@@ -87,7 +92,7 @@ def compute_stats(db_path, since=None, shadow_key=None, agent_filter=None):
     try:
         rows = db.execute(f"""
             SELECT p.estimate, p.conviction_score, p.regime, p.reasoning,
-                   m.outcome, m.price_yes
+                   p.predicted_at, m.outcome, m.price_yes
             FROM predictions p
             JOIN markets m ON p.market_id = m.id
             WHERE m.resolved = 1 {conv_filter}
@@ -109,6 +114,13 @@ def compute_stats(db_path, since=None, shadow_key=None, agent_filter=None):
             if shadow_key in reasoning:
                 filtered.append(r)
         rows = filtered
+
+    if daily_regime_filter:
+        rows = _filter_by_daily_regime(
+            rows,
+            daily_regime_filter,
+            asset_daily_db_path=asset_daily_db_path,
+        )
 
     if not rows:
         db.close()
@@ -160,7 +172,71 @@ SHADOW_FILTERS = {
         "shadow_key": "shadow_btc5m_conv4_up_recalibration",
     },
     "btc5m_judge_accept_shadow": {"shadow_key": "shadow_btc5m_judge_accept"},
+    "btc5m_quiet_daily_tape_shadow": {
+        "daily_regime_filter": {
+            "asset": "BTC",
+            "range_zscore_lt": -0.5,
+            "abs_velocity_zscore_lt": 0.75,
+        },
+    },
 }
+
+
+def _filter_by_daily_regime(rows, daily_regime_filter, asset_daily_db_path=ASSET_DAILY_DB):
+    """Keep rows whose prediction date matches a quiet daily-regime cohort."""
+    if not rows or not Path(asset_daily_db_path).exists():
+        return []
+
+    asset = daily_regime_filter.get("asset", "BTC")
+    try:
+        daily_db = sqlite3.connect(asset_daily_db_path)
+        daily_db.row_factory = sqlite3.Row
+        daily_rows = daily_db.execute(
+            "SELECT date, range_zscore, velocity_zscore, body_pct, trend_label "
+            "FROM asset_daily WHERE asset = ?",
+            (asset,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        try:
+            daily_db.close()
+        except Exception:
+            pass
+
+    by_date = {r["date"]: r for r in daily_rows}
+    kept = []
+    for row in rows:
+        predicted_at = row["predicted_at"] or ""
+        prediction_date = str(predicted_at)[:10]
+        daily = by_date.get(prediction_date)
+        if daily and _daily_regime_matches(daily, daily_regime_filter):
+            kept.append(row)
+    return kept
+
+
+def _daily_regime_matches(daily, daily_regime_filter):
+    range_z = daily["range_zscore"]
+    velocity_z = daily["velocity_zscore"]
+    body_pct = daily["body_pct"]
+    trend_label = daily["trend_label"]
+
+    if "range_zscore_lt" in daily_regime_filter:
+        if range_z is None or range_z >= daily_regime_filter["range_zscore_lt"]:
+            return False
+    if "range_zscore_lte" in daily_regime_filter:
+        if range_z is None or range_z > daily_regime_filter["range_zscore_lte"]:
+            return False
+    if "abs_velocity_zscore_lt" in daily_regime_filter:
+        if velocity_z is None or abs(velocity_z) >= daily_regime_filter["abs_velocity_zscore_lt"]:
+            return False
+    if "abs_body_pct_lt" in daily_regime_filter:
+        if body_pct is None or abs(body_pct) >= daily_regime_filter["abs_body_pct_lt"]:
+            return False
+    if "trend_labels" in daily_regime_filter:
+        if trend_label not in set(daily_regime_filter["trend_labels"]):
+            return False
+    return True
 
 
 def register(name, description, revert_condition, min_sample=50, pipeline="5m"):
@@ -175,7 +251,8 @@ def register(name, description, revert_condition, min_sample=50, pipeline="5m"):
 
     # Compute baseline stats (all data up to now)
     db_path = DB_5M if pipeline == "5m" else DB_15M
-    baseline = compute_stats(db_path)
+    shadow = SHADOW_FILTERS.get(name, {})
+    baseline = compute_stats(db_path, **shadow)
     if baseline is None:
         print(f"  ⚠️  No DB found at {db_path}")
         return None
@@ -228,16 +305,23 @@ def check_all():
         opt["latest_check"] = now
         opt["post_stats"] = post
 
-        baseline_wr = opt["baseline"]["wr"]
+        baseline_wr = opt.get("baseline", {}).get("wr")
         post_wr = post["wr"]
         post_bets = post["bets"]
         min_sample = opt.get("min_sample", 50)
 
         if post_bets < min_sample:
             # Not enough data yet — report progress
+            baseline_display = f"{baseline_wr}% baseline" if baseline_wr is not None else "custom baseline"
             alerts.append(
                 f"📊 {opt['name']}: {post_bets}/{min_sample} bets collected "
-                f"({post_wr}% WR vs {baseline_wr}% baseline)"
+                f"({post_wr}% WR vs {baseline_display})"
+            )
+        elif baseline_wr is None:
+            alerts.append(
+                f"📊 {opt['name']}: sample ready — {post_wr}% WR "
+                f"on {post_bets} bets, ${post['pnl']:+.2f} P&L "
+                f"(custom baseline; review manually)"
             )
         else:
             # Enough data — evaluate

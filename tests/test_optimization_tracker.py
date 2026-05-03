@@ -133,6 +133,37 @@ def test_duplicate_registration_blocked(monkeypatch):
         assert result is None  # blocked
 
 
+def test_check_all_handles_active_custom_baseline(monkeypatch):
+    """Active registry entries with custom baselines should not crash checks."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = _create_test_db(tmpdir, n_bets=10, wr=0.7, price=0.45, conv=3)
+        opt_path = os.path.join(tmpdir, "optimizations.json")
+
+        import optimization_tracker as ot
+        monkeypatch.setattr(ot, "OPTIMIZATIONS_PATH", type(OPTIMIZATIONS_PATH)(opt_path))
+        monkeypatch.setattr(ot, "DB_5M", type(ot.DB_5M)(db_path))
+
+        save_optimizations({
+            "optimizations": [{
+                "name": "custom_baseline_active",
+                "description": "custom baseline payload",
+                "registered_at": "2026-03-01T00:00:00+00:00",
+                "pipeline": "5m",
+                "status": "active",
+                "min_sample": 50,
+                "revert_condition": "post_wr < baseline_wr - 2",
+                "baseline": {"note": "manual baseline"},
+                "latest_check": None,
+                "post_stats": None,
+                "closed_at": None,
+                "close_reason": None,
+            }],
+        })
+
+        alerts = check_all()
+        assert any("custom baseline" in a for a in alerts)
+
+
 def _create_shadow_test_db(tmpdir):
     """Create a test DB with shadow indicator data in reasoning JSON.
 
@@ -190,6 +221,30 @@ def _create_shadow_test_db(tmpdir):
     return db_path
 
 
+def _create_asset_daily_test_db(tmpdir):
+    db_path = os.path.join(tmpdir, "asset_daily.db")
+    db = sqlite3.connect(db_path)
+    db.execute("""CREATE TABLE asset_daily (
+        asset TEXT NOT NULL,
+        date TEXT NOT NULL,
+        range_zscore REAL,
+        velocity_zscore REAL,
+        body_pct REAL,
+        trend_label TEXT,
+        PRIMARY KEY (asset, date)
+    )""")
+    db.executemany(
+        "INSERT INTO asset_daily VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            ("BTC", "2026-03-28", -1.2, 0.2, 0.002, "chop"),
+            ("BTC", "2026-03-29", 1.8, 1.4, 0.04, "up"),
+        ],
+    )
+    db.commit()
+    db.close()
+    return db_path
+
+
 def test_shadow_rsi_filter():
     """Shadow RSI filter only counts predictions with shadow_rsi_14 in reasoning."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -234,10 +289,44 @@ def test_aggregate_excludes_low_conviction():
         assert stats["wins"] == 6
 
 
+def test_daily_regime_filter_counts_quiet_tape_cohort():
+    """Daily regime filters count only predictions on matching BTC day rows."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pred_db_path = _create_test_db(tmpdir, n_bets=10, wr=0.6, price=0.45, conv=3)
+        asset_db_path = _create_asset_daily_test_db(tmpdir)
+
+        db = sqlite3.connect(pred_db_path)
+        db.execute(
+            "UPDATE predictions SET predicted_at = ? WHERE market_id IN "
+            "('m6', 'm7', 'm8', 'm9')",
+            ("2026-03-29T10:00:00",),
+        )
+        db.commit()
+        db.close()
+
+        stats = compute_stats(
+            pred_db_path,
+            daily_regime_filter={
+                "asset": "BTC",
+                "range_zscore_lt": -0.5,
+                "abs_velocity_zscore_lt": 0.75,
+            },
+            asset_daily_db_path=asset_db_path,
+        )
+
+        assert stats["bets"] == 6
+        assert stats["wins"] == 6
+        assert stats["wr"] == 100.0
+
+
 def test_shadow_filters_map_exists():
     """All shadow filter keys map to valid filter parameters."""
     for name, filters in SHADOW_FILTERS.items():
-        assert "shadow_key" in filters or "agent_filter" in filters, \
+        assert (
+            "shadow_key" in filters
+            or "agent_filter" in filters
+            or "daily_regime_filter" in filters
+        ), \
             f"{name} has no valid filter"
 
 
@@ -254,3 +343,14 @@ def test_btc5m_signal_triage_shadow_filters_registered():
 
     for name, shadow_key in expected.items():
         assert SHADOW_FILTERS[name] == {"shadow_key": shadow_key}
+
+
+def test_btc5m_quiet_daily_tape_shadow_filter_registered():
+    """Quiet daily tape cohort is visible to optimization checks."""
+    assert SHADOW_FILTERS["btc5m_quiet_daily_tape_shadow"] == {
+        "daily_regime_filter": {
+            "asset": "BTC",
+            "range_zscore_lt": -0.5,
+            "abs_velocity_zscore_lt": 0.75,
+        },
+    }

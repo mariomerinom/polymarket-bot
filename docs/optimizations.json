@@ -479,13 +479,13 @@
         "pnl": 2984.7,
         "wagered": 12100.0
       },
-      "latest_check": "2026-04-14T15:45:08.264398+00:00",
+      "latest_check": "2026-05-03T13:34:19.078532+00:00",
       "post_stats": {
-        "bets": 73,
-        "wins": 41,
-        "wr": 56.2,
-        "pnl": 234.8,
-        "wagered": 1825.0
+        "bets": 242,
+        "wins": 120,
+        "wr": 49.6,
+        "pnl": -4.65,
+        "wagered": 6050.0
       },
       "closed_at": null,
       "close_reason": null
@@ -505,13 +505,13 @@
         "pnl": 2984.7,
         "wagered": 12100.0
       },
-      "latest_check": "2026-04-14T15:45:08.264398+00:00",
+      "latest_check": "2026-05-03T13:34:19.078532+00:00",
       "post_stats": {
-        "bets": 73,
-        "wins": 41,
-        "wr": 56.2,
-        "pnl": 234.8,
-        "wagered": 1825.0
+        "bets": 242,
+        "wins": 120,
+        "wr": 49.6,
+        "pnl": -4.65,
+        "wagered": 6050.0
       },
       "closed_at": null,
       "close_reason": null
@@ -535,8 +535,14 @@
         "eth_wr": 51.6,
         "eth_bets": 541
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-05-03T13:34:19.078532+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
       "closed_at": null,
       "close_reason": null
     },
@@ -555,8 +561,14 @@
         "hv_neutral_bets": 28,
         "total_hv_bets": 68
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-05-03T13:34:19.078532+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
       "closed_at": null,
       "close_reason": null
     },
@@ -577,8 +589,14 @@
         "doge_bybit_hv_trending_bets": 13,
         "note": "_hl pipelines identical to _bybit (same asset signal, different venue)"
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-05-03T13:34:19.078532+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
       "closed_at": null,
       "close_reason": null
     },
@@ -599,8 +617,14 @@
         "apr_13_btc_5m_wr_pct": 40,
         "note": "On days with range_zscore \u2265+1.5, BTC 5m consistently lost money. Gate throttles these days proactively."
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-05-03T13:34:19.078532+00:00",
+      "post_stats": {
+        "bets": 147,
+        "wins": 69,
+        "wr": 46.9,
+        "pnl": -187.62,
+        "wagered": 3675.0
+      },
       "closed_at": null,
       "close_reason": null,
       "predecessor": {
@@ -650,8 +674,14 @@
         "signal_ehr_48h_prior": 0.035,
         "note": "FAK fill rate validated at 90% (success). FAK filled WR 11% \u2014 execution improvement does not rescue a negative-EHR signal. This gate ensures future live activations require a verified-healthy signal."
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-05-03T13:34:19.078532+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
       "closed_at": null,
       "close_reason": null
     },
@@ -769,8 +799,14 @@
         "lab_window_days": 30,
         "note": "Lab always-fire results from strategy_lab.db. HV+MR VWAP fires will hit HIGH_VOL gate in store_prediction_eth \u2192 logged at conv=2 (shadow). MV+MR VWAP fires at conv=3 (real bet)."
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-05-03T13:34:19.078532+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
       "closed_at": null,
       "close_reason": null
     },
@@ -886,8 +922,14 @@
         "plan": "docs/plans/lab-microstructure-roadmap.md",
         "no_capital_risk": "reporting and metadata only; no conviction, order, sizing, or execution behavior changes"
       },
-      "latest_check": null,
-      "post_stats": null,
+      "latest_check": "2026-05-03T13:34:19.078532+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
       "closed_at": null,
       "close_reason": null
     },
@@ -1068,6 +1110,32 @@
       "min_sample": 50,
       "latest_check": null,
       "post_stats": null,
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "name": "btc5m_quiet_daily_tape_shadow",
+      "description": "Shadow promotion cohort for BTC 5m bets on completed BTC daily regimes with range_zscore < -0.5 and abs(velocity_zscore) < 0.75. Tests the thesis that quiet daily tape with tradable 5m micro-streaks is the healthiest production lane.",
+      "registered_at": "2026-05-03T13:32:05.690812+00:00",
+      "pipeline": "5m",
+      "status": "active",
+      "min_sample": 50,
+      "revert_condition": "post_bets >= 50 and post_wr < baseline_wr - 2",
+      "baseline": {
+        "bets": 275,
+        "wins": 175,
+        "wr": 63.6,
+        "pnl": 1794.61,
+        "wagered": 6875.0
+      },
+      "latest_check": "2026-05-03T13:34:19.078532+00:00",
+      "post_stats": {
+        "bets": 0,
+        "wins": 0,
+        "wr": 0,
+        "pnl": 0,
+        "wagered": 0
+      },
       "closed_at": null,
       "close_reason": null
     }
