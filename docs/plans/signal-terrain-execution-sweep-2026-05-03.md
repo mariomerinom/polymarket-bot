@@ -66,3 +66,16 @@ Run this sweep before any production-promotion decision:
 - No paper data collection was paused.
 - No production capital was enabled.
 - No hard terrain threshold was added to prediction logic.
+
+## Evening Register
+
+Detailed evening gate posture and the proposed #15 micro-canary shape now live
+in `docs/plans/evening-promotion-sprint-2026-05-03.md`. The key change is not
+signal behavior; it is decision hygiene:
+
+- BTC5M judge-accepted and quiet-tape remain promotion lanes, but not ready.
+- Bybit BTC favorable regimes are a testnet/live-equivalent execution lane.
+- ETH low-vol is rehab only while the 7d aggregate is weak.
+- BTC high-range remains a protection lane.
+- Issue #15 remains the live-capital blocker until execution metrics are
+  explicit enough to approve or reject a canary.

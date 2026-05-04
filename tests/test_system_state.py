@@ -189,7 +189,7 @@ class TestDailyLoss:
 
     def test_daily_loss_only_today(self, db):
         from system_state import get_system_state
-        _insert_order(db, pnl=-50, minutes_ago=30)          # today
+        _insert_order(db, pnl=-50, minutes_ago=0)           # today, even near UTC midnight
         _insert_order(db, pnl=-75, minutes_ago=60 * 48)     # 2 days ago — excluded
         state = get_system_state(db, "btc_5m")
         assert state.daily_loss == 50.0
