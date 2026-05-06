@@ -13,6 +13,7 @@ from daily_report import (
     analyze_summary,
     analyze_regime_distribution,
     analyze_direction,
+    analyze_side_regime_cohorts,
     analyze_price_buckets,
     analyze_conviction_tiers,
     analyze_orders,
@@ -148,6 +149,45 @@ def test_analyze_direction():
     assert result["DOWN"]["wins"] == 1
 
 
+def test_analyze_side_regime_cohorts():
+    """Direction × regime cells preserve side-specific terrain behavior."""
+    resolved = [
+        {
+            "estimate": 0.62,
+            "outcome": 0,
+            "price_yes": 0.50,
+            "conviction_score": 3,
+            "regime": "MEDIUM_VOL / NEUTRAL",
+        },
+        {
+            "estimate": 0.61,
+            "outcome": 1,
+            "price_yes": 0.50,
+            "conviction_score": 3,
+            "regime": "MEDIUM_VOL / NEUTRAL",
+        },
+        {
+            "estimate": 0.38,
+            "outcome": 0,
+            "price_yes": 0.50,
+            "conviction_score": 3,
+            "regime": "MEDIUM_VOL / TRENDING",
+        },
+        {
+            "estimate": 0.39,
+            "outcome": 1,
+            "price_yes": 0.50,
+            "conviction_score": 2,
+            "regime": "MEDIUM_VOL / TRENDING",
+        },
+    ]
+    result = analyze_side_regime_cohorts(resolved)
+    assert result["UP / MEDIUM_VOL / NEUTRAL"]["total"] == 2
+    assert result["UP / MEDIUM_VOL / NEUTRAL"]["wr"] == 50.0
+    assert result["DOWN / MEDIUM_VOL / TRENDING"]["total"] == 1
+    assert result["DOWN / MEDIUM_VOL / TRENDING"]["wr"] == 100.0
+
+
 def test_analyze_price_buckets():
     """Price bucket analysis groups by range."""
     resolved = [
@@ -179,6 +219,48 @@ def test_alerts_no_bets():
     rolling = [{"date": "2026-03-26", "bets": 0, "wr": 0, "pnl": 0}]
     alerts = generate_alerts(summary, rolling)
     assert any("No bets" in a for a in alerts)
+
+
+def test_side_regime_guardrail_alerts_for_weak_cohort():
+    """Weak side/regime cells surface as promotion blockers."""
+    summary = {"resolved_bets": 5, "wr": 40, "pnl": -125, "bets": 5}
+    cohorts = {
+        "UP / MEDIUM_VOL / NEUTRAL": {
+            "direction": "UP",
+            "regime": "MEDIUM_VOL / NEUTRAL",
+            "total": 5,
+            "wins": 1,
+            "losses": 4,
+            "wr": 20.0,
+            "pnl": -75.0,
+        }
+    }
+    alerts = generate_alerts(summary, [], side_regime_cohorts=cohorts)
+    assert any("side/regime promotion guardrail" in a for a in alerts)
+    assert any("UP in MEDIUM_VOL / NEUTRAL" in a for a in alerts)
+
+
+def test_side_regime_guardrail_can_be_disabled_for_kalshi():
+    """Kalshi keeps separate parser validation gates, not generic cohort guardrails."""
+    summary = {"resolved_bets": 5, "wr": 40, "pnl": -125, "bets": 5}
+    cohorts = {
+        "UP / MEDIUM_VOL / NEUTRAL": {
+            "direction": "UP",
+            "regime": "MEDIUM_VOL / NEUTRAL",
+            "total": 5,
+            "wins": 0,
+            "losses": 5,
+            "wr": 0.0,
+            "pnl": -125.0,
+        }
+    }
+    alerts = generate_alerts(
+        summary,
+        [],
+        side_regime_cohorts=cohorts,
+        side_regime_guardrail=False,
+    )
+    assert not any("side/regime promotion guardrail" in a for a in alerts)
 
 
 def test_alerts_consecutive_losses():
@@ -303,11 +385,8 @@ def test_decision_1_is_closed():
         "re-evaluating the check logic against the current flat-sizing regime"
 
 
-def test_decision_alert_fires_when_ready():
-    """Decision alert fires when stats cross the threshold.
-    Uses Decision #6 (0.15-0.30 bucket) as the exemplar since
-    Decision #1 was closed 2026-04-19.
-    """
+def test_decision_6_monitoring_triggered_before_promotion_sample():
+    """Decision #6 should not render as READY at the 20-bet attention threshold."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # 25 predictions in 0.15-0.30 bucket, predicting NO (est<0.5).
         # 20 markets resolve NO (outcome=0) = wins, 5 resolve YES = losses.
@@ -333,9 +412,35 @@ def test_decision_alert_fires_when_ready():
         assert stats["bucket_15_30_bets"] == 25
         assert stats["bucket_15_30_wr"] == 80.0
 
-        # Decision #6 should fire (bucket_15_30 bets >= 20 AND WR > 65%)
-        fired = [d for d in DECISIONS if d["id"] == 6 and d["check"](stats)]
-        assert len(fired) == 1, f"Decision #6 should fire, stats: {stats}"
+        alerts = check_decisions(db_path, "/nonexistent/15m.db")
+        decision_6 = [a for a in alerts if "Decision #6" in a]
+        assert len(decision_6) == 1, f"Decision #6 should fire, alerts: {alerts}"
+        assert "MONITORING TRIGGERED" in decision_6[0]
+        assert "READY" not in decision_6[0]
+        assert "25/50" in decision_6[0]
+
+
+def test_decision_6_ready_after_promotion_sample():
+    """Decision #6 renders READY only after the 50-bet promotion sample."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        markets = []
+        predictions = []
+        for i in range(50):
+            mid = f"m{i}"
+            outcome = 0 if i < 40 else 1
+            markets.append({"id": mid, "price_yes": 0.22, "resolved": 1, "outcome": outcome})
+            predictions.append({
+                "market_id": mid, "estimate": 0.22,
+                "predicted_at": f"2026-03-26T{10 + i // 60}:{i % 60:02d}:00",
+                "conviction_score": 3, "regime": "MEDIUM_VOL / NEUTRAL",
+            })
+        db_path = _create_test_db(tmpdir, predictions, markets)
+
+        alerts = check_decisions(db_path, "/nonexistent/15m.db")
+        decision_6 = [a for a in alerts if "Decision #6" in a]
+        assert len(decision_6) == 1, f"Decision #6 should fire, alerts: {alerts}"
+        assert "READY" in decision_6[0]
+        assert "MONITORING TRIGGERED" not in decision_6[0]
 
 
 def test_decision_alert_silent_when_monitoring():

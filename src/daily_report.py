@@ -196,6 +196,43 @@ def analyze_direction(resolved):
     return dict(directions)
 
 
+def analyze_side_regime_cohorts(resolved):
+    """Performance by direction × regime for promotion guardrails."""
+    cohorts = defaultdict(lambda: {"wins": 0, "losses": 0, "total": 0, "pnl": 0.0})
+    for r in resolved:
+        conv = r.get("conviction_score") or 0
+        if conv < 3:
+            continue
+
+        direction = "UP" if r["estimate"] >= 0.5 else "DOWN"
+        regime = r.get("regime") or "UNKNOWN"
+        key = f"{direction} / {regime}"
+        c = cohorts[key]
+        c["direction"] = direction
+        c["regime"] = regime
+        c["total"] += 1
+
+        correct = is_correct(r["estimate"], r["outcome"])
+        if correct:
+            c["wins"] += 1
+        else:
+            c["losses"] += 1
+
+        bet_size = _get_bet_size_dr(conv, r.get("predicted_at"))
+        if r["estimate"] >= 0.5:
+            if 0 < r["price_yes"] < 1:
+                c["pnl"] += bet_size * (1.0 / r["price_yes"] - 1.0) if r["outcome"] == 1 else -bet_size
+        else:
+            price_no = 1.0 - r["price_yes"]
+            if 0 < price_no < 1:
+                c["pnl"] += bet_size * (1.0 / price_no - 1.0) if r["outcome"] == 0 else -bet_size
+
+    for c in cohorts.values():
+        c["wr"] = round(c["wins"] / c["total"] * 100, 1) if c["total"] > 0 else 0
+        c["pnl"] = round(c["pnl"], 2)
+    return dict(cohorts)
+
+
 def analyze_price_buckets(resolved):
     """WR and P&L by market price range."""
     buckets = {
@@ -730,7 +767,8 @@ def analyze_bybit_positions(db_path, date_str):
         return None
 
 
-def generate_alerts(summary, rolling, orders=None, integrity_issues=None, ehr=None):
+def generate_alerts(summary, rolling, orders=None, integrity_issues=None, ehr=None,
+                    side_regime_cohorts=None, side_regime_guardrail=True):
     """Flag concerning patterns."""
     alerts = []
 
@@ -814,6 +852,23 @@ def generate_alerts(summary, rolling, orders=None, integrity_issues=None, ehr=No
             f"🚨 Signal EHR negative: {ehr['rolling_signal']:+.4f} "
             f"over {ehr['rolling_n']} bets (7-day) — model may be buying overpriced contracts"
         )
+
+    # Promotion guardrail: weak side/regime cells should be visible before
+    # any pipeline is considered healthy. Kalshi is excluded by caller because
+    # its strike-aware parser has separate validation gates.
+    if side_regime_guardrail and side_regime_cohorts:
+        weak = [
+            c for c in side_regime_cohorts.values()
+            if c["total"] >= 5 and c["wr"] < 45
+        ]
+        if weak:
+            weak.sort(key=lambda c: (c["wr"], -c["total"], c["pnl"]))
+            c = weak[0]
+            alerts.append(
+                f"🧯 side/regime promotion guardrail: {c['direction']} in "
+                f"{c['regime']} is {c['wr']}% WR on {c['total']} bets "
+                f"(${c['pnl']:+.2f}); require cohort review before promotion"
+            )
 
     return alerts
 
@@ -943,7 +998,13 @@ DECISIONS = [
         "check": lambda s: s["bucket_15_30_bets"] >= 20 and s["bucket_15_30_wr"] > 65,
         "describe": lambda s: (
             f"0.15-0.30 WR is {s['bucket_15_30_wr']}% over {s['bucket_15_30_bets']} bets "
-            f"(threshold: >65% at 20+)"
+            f"(attention threshold: >65% at 20+; promotion threshold: >65% at 50+)"
+        ),
+        "alert": lambda s, d: (
+            f"\U0001f4ca Decision #{d['id']} MONITORING TRIGGERED: {d['decision']} — "
+            f"{d['describe'](s)}; keep collecting ({s['bucket_15_30_bets']}/50)"
+            if s["bucket_15_30_bets"] < 50
+            else f"\U0001f514 Decision #{d['id']} READY: {d['decision']} — {d['describe'](s)}"
         ),
     },
 ]
@@ -1001,7 +1062,7 @@ def check_decisions(db_5m_path, db_15m_path):
             try:
                 if d["check"](stats):
                     alerts.append(
-                        f"\U0001f514 Decision #{d['id']} READY: {d['decision']} — {d['describe'](stats)}"
+                        d.get("alert", _format_ready_decision_alert)(stats, d)
                     )
             except (KeyError, ZeroDivisionError):
                 pass
@@ -1016,12 +1077,19 @@ def check_decisions(db_5m_path, db_15m_path):
             try:
                 if d["check"](stats):
                     alerts.append(
-                        f"\U0001f514 Decision #{d['id']} READY: {d['decision']} — {d['describe'](stats)}"
+                        d.get("alert", _format_ready_decision_alert)(stats, d)
                     )
             except (KeyError, ZeroDivisionError):
                 pass
 
     return alerts
+
+
+def _format_ready_decision_alert(stats, decision):
+    return (
+        f"\U0001f514 Decision #{decision['id']} READY: {decision['decision']} — "
+        f"{decision['describe'](stats)}"
+    )
 
 
 def _generate_fill_diagnostic_section(min_samples=20):
@@ -1359,6 +1427,24 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
             ])
             for direction, d in sorted(data["directions"].items()):
                 lines.append(f"| {direction} | {d['total']} | {d['wr']}% | ${d['pnl']:+.2f} |")
+            lines.append("")
+
+        # Side × regime cohorts
+        if data.get("side_regime_cohorts"):
+            lines.extend([
+                "### Side / Regime Cohorts",
+                "| Side | Regime | Bets | WR | P&L |",
+                "|------|--------|------|----|-----|",
+            ])
+            cohorts = sorted(
+                data["side_regime_cohorts"].values(),
+                key=lambda c: (-c["total"], c["direction"], c["regime"]),
+            )
+            for c in cohorts:
+                lines.append(
+                    f"| {c['direction']} | {c['regime']} | {c['total']} | "
+                    f"{c['wr']}% | ${c['pnl']:+.2f} |"
+                )
             lines.append("")
 
         # Price buckets
@@ -2335,6 +2421,7 @@ def analyze_pipeline(db_path, date_str):
         summary = analyze_summary(predictions, resolved)
         regimes = analyze_regime_distribution(predictions)
         directions = analyze_direction(resolved)
+        side_regime_cohorts = analyze_side_regime_cohorts(resolved)
         price_buckets = analyze_price_buckets(resolved)
         conviction = analyze_conviction_tiers(resolved)
         liquidity = analyze_liquidity(predictions)
@@ -2369,12 +2456,21 @@ def analyze_pipeline(db_path, date_str):
         pass  # Table doesn't exist yet or DB issue
 
     # Re-generate alerts with integrity data
-    alerts = generate_alerts(summary, rolling, orders=orders, integrity_issues=integrity_issues, ehr=ehr)
+    alerts = generate_alerts(
+        summary,
+        rolling,
+        orders=orders,
+        integrity_issues=integrity_issues,
+        ehr=ehr,
+        side_regime_cohorts=side_regime_cohorts,
+        side_regime_guardrail=not is_kalshi,
+    )
 
     return {
         "summary": summary,
         "regimes": regimes,
         "directions": directions,
+        "side_regime_cohorts": side_regime_cohorts,
         "price_buckets": price_buckets,
         "conviction": conviction,
         "liquidity": liquidity,
