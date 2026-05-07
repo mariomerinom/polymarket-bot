@@ -113,15 +113,15 @@ Hypothetical maker fills — what would have filled if we posted passively.
 | Feed | Status | Reconnects (24h) |
 |------|--------|-----------------:|
 | bybit_spot | connected | 24 |
-| bybit_linear | connected | 33 |
+| bybit_linear | connected | 34 |
 | polymarket | connected | 23 |
 
 | Metric | p50 | p95 | Samples |
 |--------|----:|----:|--------:|
-| Dispatch latency (ms) | 58210 | 187773 | 60 |
+| Dispatch latency (ms) | 58210 | 159464 | 61 |
 | Orderbook age (ms) | 0 | 0 | 802 |
 
-- Cycles: 128
+- Cycles: 130
 - Fallback fires (24h): 4
 - Engine start: 2026-05-06T22:17:32.644743+00:00
 
