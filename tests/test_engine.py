@@ -10,6 +10,39 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
+def test_polymarket_microstructure_capture_is_opt_in_by_default():
+    """Research-only Polymarket microstructure capture must not fill disk by default."""
+    import importlib
+    import botsy_engine
+
+    original = os.environ.pop("POLYMARKET_MICROSTRUCTURE_ENABLED", None)
+    try:
+        module = importlib.reload(botsy_engine)
+        assert module.POLYMARKET_MICROSTRUCTURE_ENABLED is False
+    finally:
+        if original is not None:
+            os.environ["POLYMARKET_MICROSTRUCTURE_ENABLED"] = original
+        importlib.reload(botsy_engine)
+
+
+def test_polymarket_microstructure_capture_can_be_enabled_explicitly():
+    """Operators can still enable the research writer with an explicit flag."""
+    import importlib
+    import botsy_engine
+
+    original = os.environ.get("POLYMARKET_MICROSTRUCTURE_ENABLED")
+    os.environ["POLYMARKET_MICROSTRUCTURE_ENABLED"] = "true"
+    try:
+        module = importlib.reload(botsy_engine)
+        assert module.POLYMARKET_MICROSTRUCTURE_ENABLED is True
+    finally:
+        if original is None:
+            os.environ.pop("POLYMARKET_MICROSTRUCTURE_ENABLED", None)
+        else:
+            os.environ["POLYMARKET_MICROSTRUCTURE_ENABLED"] = original
+        importlib.reload(botsy_engine)
+
+
 class _SkipEngineHealthData:
     """Tests for dashboard engine health data reader."""
 

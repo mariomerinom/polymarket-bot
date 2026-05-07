@@ -122,6 +122,10 @@ FALLBACK_TIMEOUT_S = 360  # 6 minutes
 # Metrics write interval
 METRICS_INTERVAL_S = 60
 POLYMARKET_MICROSTRUCTURE_INTERVAL_S = 30
+POLYMARKET_MICROSTRUCTURE_ENABLED = (
+    os.environ.get("POLYMARKET_MICROSTRUCTURE_ENABLED", "").lower()
+    in {"1", "true", "yes", "on"}
+)
 
 # Git commit interval
 GIT_COMMIT_INTERVAL_S = 300  # 5 minutes
@@ -211,11 +215,19 @@ class BotsyEngine:
             self._supervise(self.daily_report_check, name="daily_report"),
             self._supervise(self.fallback_timer, name="fallback"),
             self._supervise(self.metrics_writer, name="metrics"),
-            self._supervise(self.microstructure_writer, name="poly_microstructure"),
             self._supervise(self.memory_profiler, name="memory_profiler"),
             self._supervise(self.log_rotator, name="log_rotator"),
             self._verify_orderbook_cache_format(),  # one-shot, no supervision
         ]
+        if POLYMARKET_MICROSTRUCTURE_ENABLED:
+            tasks.append(
+                self._supervise(
+                    self.microstructure_writer,
+                    name="poly_microstructure",
+                )
+            )
+        else:
+            log("[POLY_MICRO] disabled; set POLYMARKET_MICROSTRUCTURE_ENABLED=true to enable")
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _supervise(self, coro_func, *args, name="task"):
