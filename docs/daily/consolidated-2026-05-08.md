@@ -130,7 +130,7 @@ Hypothetical maker fills — what would have filled if we posted passively.
 | Dispatch latency (ms) | 79422 | 287511 | 68 |
 | Orderbook age (ms) | 0 | 0 | 934 |
 
-- Cycles: 142
+- Cycles: 143
 - Fallback fires (24h): 4
 - Engine start: 2026-05-08T21:30:33.780748+00:00
 
