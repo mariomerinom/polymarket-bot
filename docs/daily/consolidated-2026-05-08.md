@@ -6,12 +6,12 @@ Cross-pipeline aggregation across all 12 BOTSY pipelines. Per-pipeline drill-dow
 
 | Metric | Value |
 |--------|-------|
-| Total bets | 127 |
-| Total wins | 91 |
+| Total bets | 129 |
+| Total wins | 93 |
 | Total losses | 36 |
-| Aggregate WR | 71.7% |
-| Total P&L | **+$1,461.86** |
-| Total wagered | $3,175.00 |
+| Aggregate WR | 72.1% |
+| Total P&L | **+$1,517.88** |
+| Total wagered | $3,225.00 |
 | Pipelines with resolved bets | 11 of 12 |
 
 ## 2. Pipeline Leaderboard
@@ -20,7 +20,7 @@ All pipelines, sorted by today's P&L (descending).
 
 | Pipeline | Asset | Mode | Bets | WR | P&L | Signal EHR | Exec EHR | Wagered |
 |----------|-------|------|-----:|----|-----|-----------:|---------:|--------:|
-| kalshi | BTC | paper | 51 | 100.0% | +$1,389.91 | — | — | $1,275.00 |
+| kalshi | BTC | paper | 53 | 100.0% | +$1,445.93 | — | — | $1,325.00 |
 | btc_5m | BTC | paper | 8 | 75.0% | +$72.68 | +0.073 | -0.163 | $200.00 |
 | bybit | BTC | paper | 8 | 62.5% | +$50.00 | +0.103 | — | $200.00 |
 | sol_bybit | SOL | paper | 2 | 100.0% | +$50.00 | -0.030 | — | $50.00 |
@@ -37,7 +37,7 @@ All pipelines, sorted by today's P&L (descending).
 
 | Asset | Pipelines | Bets | WR | P&L | Wagered |
 |-------|-----------|-----:|----|-----|--------:|
-| **BTC** | btc_5m, bybit, hl, kalshi | 78 | 85.9% | +$1,487.59 | $1,950.00 |
+| **BTC** | btc_5m, bybit, hl, kalshi | 80 | 86.2% | +$1,543.61 | $2,000.00 |
 | **ETH** | eth_5m, eth_bybit, eth_hl | 41 | 43.9% | -$125.73 | $1,025.00 |
 | **SOL** | sol_bybit, sol_hl | 4 | 100.0% | +$100.00 | $100.00 |
 | **DOGE** | doge_bybit, doge_hl | 4 | 50.0% | $0.00 | $100.00 |
@@ -122,15 +122,15 @@ Hypothetical maker fills — what would have filled if we posted passively.
 | Feed | Status | Reconnects (24h) |
 |------|--------|-----------------:|
 | bybit_spot | connected | 25 |
-| bybit_linear | connected | 37 |
-| polymarket | connected | 22 |
+| bybit_linear | connected | 40 |
+| polymarket | connected | 25 |
 
 | Metric | p50 | p95 | Samples |
 |--------|----:|----:|--------:|
-| Dispatch latency (ms) | 79422 | 287511 | 68 |
-| Orderbook age (ms) | 0 | 0 | 934 |
+| Dispatch latency (ms) | 84881 | 287511 | 71 |
+| Orderbook age (ms) | 0 | 0 | 974 |
 
-- Cycles: 143
+- Cycles: 149
 - Fallback fires (24h): 4
 - Engine start: 2026-05-08T21:30:33.780748+00:00
 
