@@ -1,18 +1,18 @@
 {
   "bybit_spot": {
     "status": "connected",
-    "last_event": "2026-05-09T16:54:33.905496+00:00",
-    "reconnects_24h": 5
+    "last_event": "2026-05-09T16:58:13.242261+00:00",
+    "reconnects_24h": 6
   },
   "bybit_linear": {
     "status": "connected",
     "last_event": "2026-05-09T16:50:01.362384+00:00",
-    "reconnects_24h": 4
+    "reconnects_24h": 5
   },
   "polymarket": {
-    "status": "connected",
-    "last_event": "2026-05-09T16:54:33.896174+00:00",
-    "reconnects_24h": 3
+    "status": "disconnected",
+    "last_event": "2026-05-09T16:58:13.123224+00:00",
+    "reconnects_24h": 4
   },
   "dispatch_latency_ms": {
     "p50": 5169,
@@ -20,9 +20,9 @@
     "samples": 18
   },
   "event_lag_ms": {
-    "p50": 8826,
-    "p95": 190544,
-    "samples": 89
+    "p50": 12848,
+    "p95": 190543,
+    "samples": 101
   },
   "ta_build_ms": {
     "p50": 87,
@@ -46,14 +46,14 @@
   },
   "pipeline_runtime_ms": {
     "btc_15m": {
-      "p50": 4,
-      "p95": 4,
-      "samples": 1
+      "p50": 28151,
+      "p95": 28151,
+      "samples": 2
     },
     "btc_5m": {
       "p50": 62176,
-      "p95": 62176,
-      "samples": 2
+      "p95": 87140,
+      "samples": 3
     },
     "bybit": {
       "p50": 1717,
@@ -71,9 +71,9 @@
       "samples": 3
     },
     "eth_5m": {
-      "p50": 64332,
-      "p95": 65569,
-      "samples": 3
+      "p50": 65569,
+      "p95": 83617,
+      "samples": 4
     },
     "eth_bybit": {
       "p50": 3982,
@@ -107,22 +107,22 @@
     }
   },
   "slowest_pipeline_runtime_ms": {
-    "pipeline": "eth_5m",
-    "p50": 64332,
-    "p95": 65569,
+    "pipeline": "btc_5m",
+    "p50": 62176,
+    "p95": 87140,
     "samples": 3
   },
   "orderbook_age_ms": {
-    "p50": 180564,
-    "p95": 2569447103,
-    "samples": 968
+    "p50": 374975,
+    "p95": 2570155189,
+    "samples": 599
   },
   "orderbook_cache": {
     "tokens": 50,
     "refreshes_24h": 8,
     "token_set_changes_24h": 5
   },
-  "fallback_fires_24h": 0,
+  "fallback_fires_24h": 1,
   "engine_start": "2026-05-09T16:25:34.905345+00:00",
   "cycles": 35
 }
