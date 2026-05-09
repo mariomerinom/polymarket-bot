@@ -1339,7 +1339,9 @@ class BotsyEngine:
         """Measure true cache freshness from token updated_at timestamps."""
         now = datetime.now(timezone.utc)
         ages = []
-        for entry in self._orderbook_cache.values():
+        token_ids = self._subscribed_token_ids or set(self._orderbook_cache.keys())
+        for token_id in token_ids:
+            entry = self._orderbook_cache.get(token_id)
             updated_at = entry.get("updated_at") if isinstance(entry, dict) else None
             if not updated_at:
                 continue

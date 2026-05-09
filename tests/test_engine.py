@@ -220,6 +220,30 @@ class TestBotsyEngineInit:
         engine._compute_percentiles()
         assert engine.metrics["orderbook_age_ms"]["p50"] >= 2500
 
+    def test_orderbook_age_samples_only_active_subscribed_tokens(self):
+        from datetime import datetime, timedelta, timezone
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._subscribed_token_ids = {"active"}
+        engine._orderbook_cache = {
+            "active": {
+                "mid": 0.55,
+                "updated_at": (
+                    datetime.now(timezone.utc) - timedelta(seconds=1)
+                ).isoformat(),
+            },
+            "inactive_old": {
+                "mid": 0.44,
+                "updated_at": (
+                    datetime.now(timezone.utc) - timedelta(days=1)
+                ).isoformat(),
+            },
+        }
+        engine._sample_orderbook_cache_ages()
+        engine._compute_percentiles()
+        assert engine.metrics["orderbook_age_ms"]["p95"] < 2000
+
     def test_polymarket_subscription_refresh_requests_reconnect_on_token_change(self):
         from botsy_engine import BotsyEngine
 
