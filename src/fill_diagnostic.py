@@ -8,8 +8,9 @@ fill_diagnostic.py — Two complementary tools.
     Reference: docs/specs/stochastic/spec_fill_adverse_selection.md
 
 (2) Phase-2 LOG PARSER — parses DIAG| lines emitted by trade.py and
-    produces snapshot_age, order_rtt, conviction-vs-drift verdicts. Older
-    feature, kept intact for backward compatibility.
+    produces decision_delay, orderbook_age, order_rtt, and
+    conviction-vs-drift verdicts. Legacy snapshot_age_ms lines are still
+    accepted as decision_delay_ms for backward compatibility.
 
 CLI usage (log parser):
     python src/fill_diagnostic.py --log-file logs/loop.log
@@ -234,7 +235,8 @@ def fill_outcome_correlation(db, pipeline):
 
 def parse_diag_lines(log_path):
     """Parse all DIAG| lines from a log file into structured data."""
-    snapshot_ages = []
+    decision_delays = []
+    orderbook_ages = []
     rtt_values = []
     drift_by_conv = defaultdict(list)
 
@@ -243,14 +245,22 @@ def parse_diag_lines(log_path):
             if "DIAG|" not in line:
                 continue
 
-            # Diagnostic A: snapshot_age_ms
-            m = re.search(r"DIAG\|snapshot_age_ms=(\d+)", line)
+            # Diagnostic A: decision delay from candle close to decision time.
+            m = re.search(r"DIAG\|decision_delay_ms=(\d+)", line)
+            if not m:
+                # Backward compatibility: old name measured the same thing.
+                m = re.search(r"DIAG\|snapshot_age_ms=(\d+)", line)
             if m and "conv=" not in line and "order_rtt" not in line:
-                snapshot_ages.append(float(m.group(1)))
+                decision_delays.append(float(m.group(1)))
+
+            # Diagnostic A2: true orderbook age from token updated_at.
+            m = re.search(r"DIAG\|orderbook_age_ms=(\d+)", line)
+            if m:
+                orderbook_ages.append(float(m.group(1)))
 
             # Diagnostic B: conviction + drift
             m = re.search(
-                r"DIAG\|conv=(\d+)\|drift=([\d.]+)\|snapshot_age_ms=(\d+)",
+                r"DIAG\|conv=(\d+)\|drift=([\d.]+)",
                 line,
             )
             if m:
@@ -263,13 +273,27 @@ def parse_diag_lines(log_path):
             if m:
                 rtt_values.append(float(m.group(1)))
 
-    return snapshot_ages, rtt_values, drift_by_conv
+    return decision_delays, orderbook_ages, rtt_values, drift_by_conv
 
 
 def percentiles(values, label=""):
     """Compute p50, p95, p99 for a list of values."""
     if not values:
         return {"p50": None, "p95": None, "p99": None, "count": 0}
+    if np is None:
+        arr = sorted(values)
+        n = len(arr)
+
+        def pick(p):
+            idx = min(n - 1, max(0, round((p / 100) * (n - 1))))
+            return float(arr[idx])
+
+        return {
+            "p50": pick(50),
+            "p95": pick(95),
+            "p99": pick(99),
+            "count": n,
+        }
     arr = np.array(values)
     return {
         "p50": float(np.percentile(arr, 50)),
@@ -292,15 +316,13 @@ def mann_whitney_test(a, b):
         return None
 
 
-def staleness_verdict(p95):
-    """Apply spec decision rule for snapshot staleness."""
+def decision_delay_verdict(p95):
+    """Apply decision-delay rule."""
     if p95 is None:
         return "insufficient data"
-    if p95 < 500:
-        return "minor — websocket rewrite is optimization, not urgent"
-    if p95 <= 2000:
-        return "gray zone — deploy formula now, accelerate Phase 3"
-    return "root cause — Phase 3 websocket rewrite is mandatory"
+    if p95 < 30_000:
+        return "acceptable for paper promotion review"
+    return "root cause — dispatch/pipeline fanout is delaying decisions"
 
 
 def conviction_verdict(mw_result, drift_by_conv):
@@ -327,21 +349,26 @@ def rtt_verdict(p95):
     return "impractical on this API — skip cancel-replace"
 
 
-def generate_report(snapshot_ages, rtt_values, drift_by_conv, min_samples=20):
+def generate_report(decision_delays, orderbook_ages, rtt_values, drift_by_conv, min_samples=20):
     """Generate the full diagnostic report as markdown."""
-    snap_stats = percentiles(snapshot_ages)
+    delay_stats = percentiles(decision_delays)
+    ob_stats = percentiles(orderbook_ages)
     rtt_stats = percentiles(rtt_values)
 
     lines = []
     lines.append("## Fill Diagnostic (Phase 2)\n")
 
-    # Snapshot age + RTT table
+    # Decision delay + true orderbook freshness + RTT table
     lines.append("| Metric | p50 | p95 | p99 | Samples |")
     lines.append("|--------|-----|-----|-----|---------|")
-    if snap_stats["count"] > 0:
-        lines.append(f"| Snapshot age (ms) | {snap_stats['p50']:.0f} | {snap_stats['p95']:.0f} | {snap_stats['p99']:.0f} | {snap_stats['count']} |")
+    if delay_stats["count"] > 0:
+        lines.append(f"| Decision delay (ms) | {delay_stats['p50']:.0f} | {delay_stats['p95']:.0f} | {delay_stats['p99']:.0f} | {delay_stats['count']} |")
     else:
-        lines.append("| Snapshot age (ms) | — | — | — | 0 |")
+        lines.append("| Decision delay (ms) | — | — | — | 0 |")
+    if ob_stats["count"] > 0:
+        lines.append(f"| Orderbook age at read (ms) | {ob_stats['p50']:.0f} | {ob_stats['p95']:.0f} | {ob_stats['p99']:.0f} | {ob_stats['count']} |")
+    else:
+        lines.append("| Orderbook age at read (ms) | — | — | — | 0 |")
     if rtt_stats["count"] > 0:
         lines.append(f"| Order RTT (ms) | {rtt_stats['p50']:.0f} | {rtt_stats['p95']:.0f} | {rtt_stats['p99']:.0f} | {rtt_stats['count']} |")
     else:
@@ -353,8 +380,16 @@ def generate_report(snapshot_ages, rtt_values, drift_by_conv, min_samples=20):
     lines.append("|-----------|-------------|------------|-----|---------|")
     for conv in sorted(drift_by_conv.keys()):
         vals = drift_by_conv[conv]
-        arr = np.array(vals)
-        lines.append(f"| {conv} | {np.median(arr):.4f} | {np.mean(arr):.4f} | {np.std(arr):.4f} | {len(vals)} |")
+        if np is None:
+            ordered = sorted(vals)
+            mid = ordered[len(ordered) // 2]
+            mean = sum(vals) / len(vals)
+            variance = sum((v - mean) ** 2 for v in vals) / len(vals)
+            std = variance ** 0.5
+            lines.append(f"| {conv} | {mid:.4f} | {mean:.4f} | {std:.4f} | {len(vals)} |")
+        else:
+            arr = np.array(vals)
+            lines.append(f"| {conv} | {np.median(arr):.4f} | {np.mean(arr):.4f} | {np.std(arr):.4f} | {len(vals)} |")
     if not drift_by_conv:
         lines.append("| — | — | — | — | 0 |")
     lines.append("")
@@ -373,14 +408,18 @@ def generate_report(snapshot_ages, rtt_values, drift_by_conv, min_samples=20):
 
     # Decision verdicts
     lines.append("### Decisions")
-    total_samples = snap_stats["count"] + rtt_stats["count"] + sum(len(v) for v in drift_by_conv.values())
+    total_samples = delay_stats["count"] + ob_stats["count"] + rtt_stats["count"] + sum(len(v) for v in drift_by_conv.values())
     if total_samples < min_samples:
         lines.append(f"Collecting data ({total_samples} samples so far, need >= {min_samples})\n")
     else:
-        sv = staleness_verdict(snap_stats["p95"])
+        dv = decision_delay_verdict(delay_stats["p95"])
         cv = conviction_verdict(mw, drift_by_conv)
         rv = rtt_verdict(rtt_stats["p95"])
-        lines.append(f"- Snapshot staleness p95={snap_stats['p95']:.0f}ms: **{sv}**")
+        lines.append(f"- Decision delay p95={delay_stats['p95']:.0f}ms: **{dv}**" if delay_stats["p95"] else "- Decision delay: **insufficient data**")
+        if ob_stats["p95"] is not None:
+            lines.append(f"- Orderbook age p95={ob_stats['p95']:.0f}ms: **true cache freshness at read time**")
+        else:
+            lines.append("- Orderbook age: **insufficient data**")
         lines.append(f"- Conviction vs drift: **{cv}**")
         lines.append(f"- Order RTT p95={rtt_stats['p95']:.0f}ms: **{rv}**" if rtt_stats["p95"] else f"- Order RTT: **{rv}**")
     lines.append("")
@@ -400,13 +439,16 @@ def main():
         print(f"Log file not found: {log_path}")
         sys.exit(1)
 
-    snapshot_ages, rtt_values, drift_by_conv = parse_diag_lines(log_path)
+    decision_delays, orderbook_ages, rtt_values, drift_by_conv = parse_diag_lines(log_path)
 
-    print(f"Parsed: {len(snapshot_ages)} snapshot_age, {len(rtt_values)} rtt, "
+    print(f"Parsed: {len(decision_delays)} decision_delay, "
+          f"{len(orderbook_ages)} orderbook_age, {len(rtt_values)} rtt, "
           f"{sum(len(v) for v in drift_by_conv.values())} drift samples")
     print()
 
-    report = generate_report(snapshot_ages, rtt_values, drift_by_conv, args.min_samples)
+    report = generate_report(
+        decision_delays, orderbook_ages, rtt_values, drift_by_conv, args.min_samples
+    )
     print(report)
 
 

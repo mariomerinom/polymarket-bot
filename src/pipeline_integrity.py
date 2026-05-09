@@ -166,19 +166,26 @@ def _check_orphaned_predictions(db, pipeline, cycle) -> dict:
 
     if diag_table_exists:
         rows = db.execute("""
-            SELECT p.id, p.market_id, p.conviction_score
+            SELECT p.id, p.market_id, p.conviction_score,
+                   CASE
+                     WHEN EXISTS (
+                       SELECT 1 FROM fill_diagnostic fd
+                       WHERE fd.cycle = ? AND fd.prediction_id = p.id
+                     )
+                     THEN 'classified_skip'
+                     ELSE 'missing_terminal_classification'
+                   END AS cause
             FROM predictions p
             WHERE p.cycle = ? AND p.conviction_score >= 3
               AND p.id NOT IN (
                 SELECT prediction_id FROM orders
                 WHERE cycle = ? AND prediction_id IS NOT NULL)
-              AND p.id NOT IN (
-                SELECT prediction_id FROM fill_diagnostic
-                WHERE cycle = ? AND prediction_id IS NOT NULL)
         """, (cycle, cycle, cycle)).fetchall()
+        rows = [r for r in rows if r[3] != "classified_skip"]
     else:
         rows = db.execute("""
-            SELECT p.id, p.market_id, p.conviction_score
+            SELECT p.id, p.market_id, p.conviction_score,
+                   'missing_fill_diagnostic_table' AS cause
             FROM predictions p
             WHERE p.cycle = ? AND p.conviction_score >= 3
               AND p.id NOT IN (
@@ -187,11 +194,19 @@ def _check_orphaned_predictions(db, pipeline, cycle) -> dict:
         """, (cycle, cycle)).fetchall()
 
     if rows:
-        ids = [str(r[0]) for r in rows]
+        by_cause = {}
+        for row in rows:
+            cause = row[3] if len(row) > 3 else "unexplained"
+            by_cause.setdefault(cause, []).append(str(row[0]))
+        parts = []
+        for cause, ids in sorted(by_cause.items()):
+            shown = ",".join(ids[:5])
+            suffix = f"; +{len(ids) - 5} more" if len(ids) > 5 else ""
+            parts.append(f"{cause}: {len(ids)} prediction(s) ids={shown}{suffix}")
         result["status"] = "WARN"
         result["detail"] = (
-            f"{len(rows)} conv>=3 prediction(s) with no order: "
-            f"ids={','.join(ids[:5])}"
+            f"{len(rows)} conv>=3 prediction(s) with no terminal execution "
+            f"classification: {'; '.join(parts)}"
         )
 
     return result

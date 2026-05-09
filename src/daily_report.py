@@ -1102,13 +1102,20 @@ def _generate_fill_diagnostic_section(min_samples=20):
         return None
 
     from fill_diagnostic import parse_diag_lines, generate_report as diag_report
-    snapshot_ages, rtt_values, drift_by_conv = parse_diag_lines(log_path)
+    decision_delays, orderbook_ages, rtt_values, drift_by_conv = parse_diag_lines(log_path)
 
-    total = len(snapshot_ages) + len(rtt_values) + sum(len(v) for v in drift_by_conv.values())
+    total = (
+        len(decision_delays)
+        + len(orderbook_ages)
+        + len(rtt_values)
+        + sum(len(v) for v in drift_by_conv.values())
+    )
     if total == 0:
         return None
 
-    return "\n" + diag_report(snapshot_ages, rtt_values, drift_by_conv, min_samples)
+    return "\n" + diag_report(
+        decision_delays, orderbook_ages, rtt_values, drift_by_conv, min_samples
+    )
 
 
 def _get_engine_metrics():
@@ -1130,7 +1137,15 @@ def _get_engine_metrics():
             "polymarket_last": (data.get("polymarket") or {}).get("last_event"),
             "polymarket_reconnects": (data.get("polymarket") or {}).get("reconnects_24h", 0),
             "dispatch_latency": data.get("dispatch_latency_ms", {}),
+            "event_lag": data.get("event_lag_ms", {}),
+            "ta_build": data.get("ta_build_ms", {}),
+            "pipeline_fanout": data.get("pipeline_fanout_ms", {}),
+            "strategy_lab": data.get("strategy_lab_ms", {}),
+            "total_dispatch_wall": data.get("total_dispatch_wall_ms", {}),
+            "slowest_pipeline_runtime": data.get("slowest_pipeline_runtime_ms", {}),
+            "pipeline_runtime": data.get("pipeline_runtime_ms", {}),
             "orderbook_age": data.get("orderbook_age_ms", {}),
+            "orderbook_cache": data.get("orderbook_cache", {}),
             "fallback_fires": data.get("fallback_fires_24h", 0),
             "cycles": data.get("cycles", 0),
         }
@@ -1643,11 +1658,25 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
             "",
         ])
         lat = engine_metrics.get("dispatch_latency", {})
+        event_lag = engine_metrics.get("event_lag", {})
+        ta = engine_metrics.get("ta_build", {})
+        fanout = engine_metrics.get("pipeline_fanout", {})
+        lab = engine_metrics.get("strategy_lab", {})
+        total_wall = engine_metrics.get("total_dispatch_wall", {})
+        slowest = engine_metrics.get("slowest_pipeline_runtime", {})
         ob = engine_metrics.get("orderbook_age", {})
+        cache = engine_metrics.get("orderbook_cache", {})
         fb = engine_metrics.get("fallback_fires", 0)
         lines.extend([
-            f"- **Dispatch latency:** {lat.get('p50', 0)}ms p50 / {lat.get('p95', 0)}ms p95 ({lat.get('samples', 0)} samples)",
-            f"- **Orderbook freshness:** {ob.get('p50', 0)}ms p50 / {ob.get('p95', 0)}ms p95",
+            f"- **Production dispatch latency:** {lat.get('p50', 0)}ms p50 / {lat.get('p95', 0)}ms p95 ({lat.get('samples', 0)} samples)",
+            f"- **Bybit event lag:** {event_lag.get('p50', 0)}ms p50 / {event_lag.get('p95', 0)}ms p95",
+            f"- **TA build:** {ta.get('p50', 0)}ms p50 / {ta.get('p95', 0)}ms p95",
+            f"- **Pipeline fanout:** {fanout.get('p50', 0)}ms p50 / {fanout.get('p95', 0)}ms p95",
+            f"- **Strategy Lab runtime:** {lab.get('p50', 0)}ms p50 / {lab.get('p95', 0)}ms p95",
+            f"- **Total dispatch wall time:** {total_wall.get('p50', 0)}ms p50 / {total_wall.get('p95', 0)}ms p95",
+            f"- **Slowest pipeline runtime:** {slowest.get('pipeline') or 'N/A'} {slowest.get('p95', 0)}ms p95",
+            f"- **True orderbook age:** {ob.get('p50', 0)}ms p50 / {ob.get('p95', 0)}ms p95",
+            f"- **Orderbook cache coverage:** {cache.get('tokens', 0)} tokens, {cache.get('token_set_changes_24h', 0)} token-set changes",
             f"- **Fallback fires (24h):** {fb}",
             f"- **Cycles:** {engine_metrics.get('cycles', 0)}",
             "",

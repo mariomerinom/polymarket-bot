@@ -896,11 +896,31 @@ def resolve_clob_prices(pred, tokens):
     gamma_no = round(1 - gamma_yes, 4)
 
     if not tokens:
+        market_row["_orderbook_cache"] = {"yes": "missing", "no": "missing"}
         return market_row, tokens
 
     # Try WS cache first — get full entry (bid/ask/spread/mid)
-    yes_entry = _get_live_token_entry(tokens.get("yes", ""))
-    no_entry = _get_live_token_entry(tokens.get("no", ""))
+    yes_token = tokens.get("yes", "")
+    no_token = tokens.get("no", "")
+    yes_entry = _get_live_token_entry(yes_token)
+    no_entry = _get_live_token_entry(no_token)
+    from orderbook_cache import OrderbookCache
+    cache = OrderbookCache.load(LIVE_ORDERBOOK_PATH, LIVE_ORDERBOOK_MAX_AGE_S)
+    yes_status = (
+        {"status": "fresh", "age_ms": yes_entry.age_ms()}
+        if yes_entry else cache.entry_status(yes_token, LIVE_ORDERBOOK_MAX_AGE_S)
+    )
+    no_status = (
+        {"status": "fresh", "age_ms": no_entry.age_ms()}
+        if no_entry else cache.entry_status(no_token, LIVE_ORDERBOOK_MAX_AGE_S)
+    )
+    market_row["_orderbook_cache"] = {
+        "yes": yes_status["status"],
+        "no": no_status["status"],
+        "yes_age_ms": yes_status["age_ms"],
+        "no_age_ms": no_status["age_ms"],
+        "rest_fallback": False,
+    }
 
     yes_mid = yes_entry.valid_mid() if yes_entry else None
     no_mid = no_entry.valid_mid() if no_entry else None
@@ -928,6 +948,7 @@ def resolve_clob_prices(pred, tokens):
                         market_row["_yes_best_bid"] = depth.get("best_bid")
                         market_row["_yes_best_ask"] = depth.get("best_ask")
                         market_row["_yes_spread"] = depth.get("spread")
+                    market_row["_orderbook_cache"]["rest_fallback"] = True
             if no_mid is None and tokens.get("no"):
                 book = get_order_book(tokens["no"])
                 if book:
@@ -937,6 +958,7 @@ def resolve_clob_prices(pred, tokens):
                         market_row["_no_best_bid"] = depth.get("best_bid")
                         market_row["_no_best_ask"] = depth.get("best_ask")
                         market_row["_no_spread"] = depth.get("spread")
+                    market_row["_orderbook_cache"]["rest_fallback"] = True
         except Exception as e:
             print(f"    [CLOB_REST] Fallback failed: {e}")
 
@@ -973,6 +995,23 @@ def resolve_clob_prices(pred, tokens):
     return market_row, tokens
 
 
+def _emit_orderbook_cache_diag(market_row):
+    """Log true orderbook freshness and cache coverage at consumer read time."""
+    meta = market_row.get("_orderbook_cache") or {}
+    ages = [
+        age for age in (meta.get("yes_age_ms"), meta.get("no_age_ms"))
+        if age is not None
+    ]
+    if ages:
+        print(f"    DIAG|orderbook_age_ms={max(ages):.0f}")
+    print(
+        "    DIAG|orderbook_cache="
+        f"yes:{meta.get('yes', 'unknown')},"
+        f"no:{meta.get('no', 'unknown')},"
+        f"rest_fallback:{str(bool(meta.get('rest_fallback'))).lower()}"
+    )
+
+
 def run_shadow_logging(db, cycle):
     """
     Run shadow indicators and shadow conviction scorer.
@@ -1000,20 +1039,21 @@ def run_shadow_logging(db, cycle):
         print(f"    [shadow] skipped: {e}")
 
 
-def record_diagnostics(pred, clob_token_id, snapshot_age_ms=None):
+def record_diagnostics(pred, clob_token_id, market_data_age_ms=None):
     """
-    Log Phase 2 diagnostics: snapshot staleness and conviction-vs-drift.
+    Log Phase 2 diagnostics: market data age and conviction-vs-drift.
 
     Log-only, no execution change. Helps measure CLOB price reliability
     and detect when conviction doesn't match live price movement.
     """
-    # Diagnostic A: Snapshot staleness (Tension 2)
+    # Diagnostic A: Gamma/market-row data age. This is intentionally not
+    # decision_delay_ms, which is emitted by predict.py from candle close time.
     fetched_at_str = pred.get("fetched_at")
     if fetched_at_str:
         try:
             fetched_at_dt = datetime.fromisoformat(fetched_at_str)
-            snapshot_age_ms = (datetime.now(timezone.utc) - fetched_at_dt).total_seconds() * 1000
-            print(f"    DIAG|snapshot_age_ms={snapshot_age_ms:.0f}|market={pred['market_id'][:12]}")
+            market_data_age_ms = (datetime.now(timezone.utc) - fetched_at_dt).total_seconds() * 1000
+            print(f"    DIAG|market_data_age_ms={market_data_age_ms:.0f}|market={pred['market_id'][:12]}")
         except (ValueError, TypeError):
             pass
 
@@ -1029,12 +1069,12 @@ def record_diagnostics(pred, clob_token_id, snapshot_age_ms=None):
                     price_drift = abs(live_mid - pred["price_yes"])
                     conv = pred["conviction_score"]
                     print(f"    DIAG|conv={conv}|drift={price_drift:.4f}"
-                          f"|snapshot_age_ms={snapshot_age_ms or 0:.0f}"
+                          f"|market_data_age_ms={market_data_age_ms or 0:.0f}"
                           f"|live_mid={live_mid:.4f}|stored={pred['price_yes']:.4f}")
         except Exception as e:
             print(f"    DIAG|drift_fetch_failed={e}")
 
-    return snapshot_age_ms
+    return market_data_age_ms
 
 
 # ── Execution hook (called from ci_run.py) ────────────────────────────────────
@@ -1115,6 +1155,7 @@ def execute_trades(db, cycle, pipeline_name=None):
             print(f"    CLOB token lookup failed: {e}")
 
         market_row, tokens = resolve_clob_prices(pred, tokens)
+        _emit_orderbook_cache_diag(market_row)
 
         order_params, order_reason = compute_order(pred, market_row, liquidity) if ok else (None, reason)
 

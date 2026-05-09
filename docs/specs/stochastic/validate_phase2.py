@@ -34,11 +34,11 @@ import numpy as np
 # ---------------------------------------------------------------------------
 
 DIAG_PATTERNS = {
-    "snapshot": re.compile(
-        r"DIAG\|snapshot_age_ms=(?P<age>[\d.]+)\|market=(?P<market>\S+)"
+    "decision_delay": re.compile(
+        r"DIAG\|(?:decision_delay_ms|snapshot_age_ms)=(?P<age>[\d.]+)\|market=(?P<market>\S+)"
     ),
     "drift": re.compile(
-        r"DIAG\|conv=(?P<conv>\d+)\|drift=(?P<drift>[\d.]+)\|snapshot_age_ms=(?P<age>[\d.]+)"
+        r"DIAG\|conv=(?P<conv>\d+)\|drift=(?P<drift>[\d.]+)"
     ),
     "rtt": re.compile(
         r"DIAG\|order_rtt_ms=(?P<rtt>[\d.]+)\|status=(?P<status>\S+)"
@@ -48,7 +48,7 @@ DIAG_PATTERNS = {
 
 @dataclass
 class DiagData:
-    snapshot_ages: list = field(default_factory=list)
+    decision_delays: list = field(default_factory=list)
     drift_by_conv: dict = field(default_factory=lambda: defaultdict(list))
     rtts: list = field(default_factory=list)
     rtt_statuses: list = field(default_factory=list)
@@ -66,9 +66,9 @@ def parse_logs(log_path: str) -> DiagData:
             data.line_count += 1
             matched = False
 
-            m = DIAG_PATTERNS["snapshot"].search(line)
+            m = DIAG_PATTERNS["decision_delay"].search(line)
             if m:
-                data.snapshot_ages.append(float(m.group("age")))
+                data.decision_delays.append(float(m.group("age")))
                 data.markets_seen.add(m.group("market"))
                 matched = True
 
@@ -112,11 +112,11 @@ def run_quality_checks(data: DiagData, min_samples: int) -> list[QualityResult]:
         f"{data.line_count} lines parsed, {data.parse_errors} errors"
     ))
 
-    # Check 2: Enough snapshot samples?
+    # Check 2: Enough decision-delay samples?
     checks.append(QualityResult(
-        "Snapshot age samples",
-        len(data.snapshot_ages) >= min_samples,
-        f"{len(data.snapshot_ages)} samples (need {min_samples})"
+        "Decision delay samples",
+        len(data.decision_delays) >= min_samples,
+        f"{len(data.decision_delays)} samples (need {min_samples})"
     ))
 
     # Check 3: Enough drift samples per conviction tier?
@@ -136,11 +136,11 @@ def run_quality_checks(data: DiagData, min_samples: int) -> list[QualityResult]:
         f"{len(data.rtts)} samples (need >= 1; 0 is expected if no orders submitted)"
     ))
 
-    # Check 5: Snapshot ages are plausible (not negative, not > 1 hour)
-    if data.snapshot_ages:
-        bad = [a for a in data.snapshot_ages if a < 0 or a > 3_600_000]
+    # Check 5: Decision delays are plausible (not negative, not > 1 hour)
+    if data.decision_delays:
+        bad = [a for a in data.decision_delays if a < 0 or a > 3_600_000]
         checks.append(QualityResult(
-            "Snapshot age plausibility",
+            "Decision delay plausibility",
             len(bad) == 0,
             f"{len(bad)} implausible values (negative or > 1h)"
         ))
@@ -226,7 +226,7 @@ def _erf(x):
 
 @dataclass
 class AnalysisResult:
-    snapshot_pcts: dict
+    decision_delay_pcts: dict
     rtt_pcts: dict
     drift_stats: dict  # {conv: {median, mean, std, n}}
     mw_u: float
@@ -236,7 +236,7 @@ class AnalysisResult:
 
 
 def run_analysis(data: DiagData) -> AnalysisResult:
-    snapshot_pcts = percentiles(data.snapshot_ages)
+    decision_delay_pcts = percentiles(data.decision_delays)
     rtt_pcts = percentiles(data.rtts)
 
     drift_stats = {}
@@ -255,7 +255,7 @@ def run_analysis(data: DiagData) -> AnalysisResult:
     u, p = mann_whitney_u(conv3, conv5)
 
     return AnalysisResult(
-        snapshot_pcts=snapshot_pcts,
+        decision_delay_pcts=decision_delay_pcts,
         rtt_pcts=rtt_pcts,
         drift_stats=drift_stats,
         mw_u=u,
@@ -282,40 +282,31 @@ class Verdict:
 def apply_decisions(analysis: AnalysisResult) -> list[Verdict]:
     verdicts = []
 
-    # --- Tension 2: Snapshot staleness ---
-    p95_snap = analysis.snapshot_pcts.get(95)
-    if p95_snap is not None:
-        if p95_snap < 500:
+    # --- Tension 2: Decision delay ---
+    p95_delay = analysis.decision_delay_pcts.get(95)
+    if p95_delay is not None:
+        if p95_delay < 30_000:
             verdicts.append(Verdict(
-                "Snapshot Staleness",
-                "p95 snapshot age",
-                f"{p95_snap:.0f}ms",
-                "Staleness is minor",
-                "Deploy fill formula now. Phase 3 websocket is optimization, not blocker.",
+                "Decision Delay",
+                "p95 decision delay",
+                f"{p95_delay:.0f}ms",
+                "Decision delay is acceptable",
+                "Continue collecting; investigate true orderbook age separately.",
                 "high"
-            ))
-        elif p95_snap < 2000:
-            verdicts.append(Verdict(
-                "Snapshot Staleness",
-                "p95 snapshot age",
-                f"{p95_snap:.0f}ms",
-                "Gray zone — staleness is a contributing factor",
-                "Deploy fill formula now AND accelerate Phase 3 websocket rewrite.",
-                "medium"
             ))
         else:
             verdicts.append(Verdict(
-                "Snapshot Staleness",
-                "p95 snapshot age",
-                f"{p95_snap:.0f}ms",
-                "Staleness is the root cause",
-                "Phase 3 websocket rewrite is MANDATORY before fill formula matters.",
+                "Decision Delay",
+                "p95 decision delay",
+                f"{p95_delay:.0f}ms",
+                "Dispatch/pipeline fanout is delaying decisions",
+                "Decompose engine runtime before changing execution formulas.",
                 "high"
             ))
     else:
         verdicts.append(Verdict(
-            "Snapshot Staleness",
-            "p95 snapshot age",
+            "Decision Delay",
+            "p95 decision delay",
             "NO DATA",
             "Cannot determine",
             "Continue collecting data.",
@@ -412,7 +403,7 @@ def composite_recommendation(verdicts: list[Verdict]) -> str:
     """
     Combine the three verdicts into a single recommended fill strategy.
     """
-    staleness = next((v for v in verdicts if v.tension == "Snapshot Staleness"), None)
+    staleness = next((v for v in verdicts if v.tension == "Decision Delay"), None)
     conviction = next((v for v in verdicts if v.tension == "Conviction vs Drift"), None)
     rtt = next((v for v in verdicts if v.tension == "Cancel-Replace Feasibility"), None)
 
@@ -494,12 +485,12 @@ def format_report(
     # Statistics
     lines.append("## 2. Statistics")
     lines.append("")
-    lines.append("### Snapshot Staleness")
+    lines.append("### Decision Delay")
     lines.append("")
     lines.append("| Percentile | Value |")
     lines.append("|------------|-------|")
     for p in (50, 95, 99):
-        v = analysis.snapshot_pcts.get(p)
+        v = analysis.decision_delay_pcts.get(p)
         lines.append(f"| p{p} | {v:.0f}ms |" if v is not None else f"| p{p} | — |")
     lines.append("")
 

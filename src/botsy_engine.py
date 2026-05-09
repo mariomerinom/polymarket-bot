@@ -167,16 +167,38 @@ class BotsyEngine:
                 "reconnects_24h": 0,
             },
             "dispatch_latency_ms": {"p50": 0, "p95": 0, "samples": 0},
+            "event_lag_ms": {"p50": 0, "p95": 0, "samples": 0},
+            "ta_build_ms": {"p50": 0, "p95": 0, "samples": 0},
+            "pipeline_fanout_ms": {"p50": 0, "p95": 0, "samples": 0},
+            "strategy_lab_ms": {"p50": 0, "p95": 0, "samples": 0},
+            "total_dispatch_wall_ms": {"p50": 0, "p95": 0, "samples": 0},
+            "pipeline_runtime_ms": {},
+            "slowest_pipeline_runtime_ms": {
+                "pipeline": None, "p50": 0, "p95": 0, "samples": 0,
+            },
             "orderbook_age_ms": {"p50": 0, "p95": 0, "samples": 0},
+            "orderbook_cache": {
+                "tokens": 0,
+                "refreshes_24h": 0,
+                "token_set_changes_24h": 0,
+            },
             "fallback_fires_24h": 0,
             "engine_start": datetime.now(timezone.utc).isoformat(),
             "cycles": 0,
         }
         self._latencies: list = []  # recent dispatch latencies in ms
+        self._event_lags: list = []
+        self._ta_build_times: list = []
+        self._pipeline_fanout_times: list = []
+        self._strategy_lab_times: list = []
+        self._total_dispatch_times: list = []
+        self._pipeline_runtime_samples: dict = {}
         self._orderbook_ages: list = []  # recent orderbook ages in ms
         self._orderbook_cache: dict = {}  # in-memory: asset_id → entry dict
         self._orderbook_dirty = False     # flag: needs disk flush
         self._token_context: dict = {}     # token_id → {market_id, side, pipeline}
+        self._subscribed_token_ids: set = set()
+        self._polymarket_resubscribe_requested = False
 
         # Daily regime metrics: track last recorded UTC date per asset so we
         # only fire the rollover fetch once per asset per day. See asset_daily.py.
@@ -333,6 +355,7 @@ class BotsyEngine:
                                 candle_ts = int(kline["end"])
                                 candle_ts = int(kline["end"])
                                 latency = int(time.time() * 1000) - candle_ts
+                                self._record_sample("_event_lags", latency)
                                 self.metrics["bybit_spot"]["last_event"] = \
                                     datetime.now(timezone.utc).isoformat()
 
@@ -343,6 +366,14 @@ class BotsyEngine:
                                     await self.dispatch(
                                         "bybit_spot", symbol, interval, candle_ts
                                     )
+                                    if interval in {"5", "15"} and symbol in {"BTCUSDT", "ETHUSDT"}:
+                                        try:
+                                            await asyncio.to_thread(
+                                                self.refresh_polymarket_subscriptions,
+                                                f"{symbol}_{interval}m_close",
+                                            )
+                                        except Exception as e:
+                                            log(f"[WS] Polymarket subscription refresh failed: {e}")
                                     # Daily regime metrics rollover (once/day per asset)
                                     if interval == "5":
                                         asset = None
@@ -416,6 +447,7 @@ class BotsyEngine:
                             if candle is not None and interval == "5":
                                 candle_ts = int(kline["end"])
                                 latency = int(time.time() * 1000) - candle_ts
+                                self._record_sample("_event_lags", latency)
                                 log(f"[ENGINE] Bybit linear {symbol} {interval}m close | "
                                     f"latency={latency}ms")
                                 self.metrics["bybit_linear"]["last_event"] = \
@@ -464,6 +496,9 @@ class BotsyEngine:
                             "retrying in 60s...")
                         await asyncio.sleep(60)
                         continue
+                    self._subscribed_token_ids = set(token_ids)
+                    self._polymarket_resubscribe_requested = False
+                    self.metrics["orderbook_cache"]["tokens"] = len(token_ids)
 
                     # Subscribe to orderbook for active markets
                     sub_msg = {
@@ -488,6 +523,9 @@ class BotsyEngine:
                                     self._update_orderbook_cache(data)
                                     self.metrics["polymarket"]["last_event"] = \
                                         datetime.now(timezone.utc).isoformat()
+                            if self._polymarket_resubscribe_requested:
+                                log("[WS] Polymarket active token set changed; reconnecting to resubscribe")
+                                break
                         except (json.JSONDecodeError, KeyError):
                             continue
 
@@ -566,6 +604,27 @@ class BotsyEngine:
         self._token_context = token_context
         return list(token_ids)
 
+    def refresh_polymarket_subscriptions(self, reason: str = "active_market_refresh") -> bool:
+        """Request a safe reconnect when active Polymarket tokens changed.
+
+        The CLOB websocket subscription shape is simple, but reconnecting is
+        the safest first implementation: it avoids relying on undocumented
+        dynamic unsubscribe behavior and guarantees the next connection uses
+        the current active market set.
+        """
+        token_ids = set(self._get_active_token_ids())
+        self.metrics["orderbook_cache"]["refreshes_24h"] += 1
+        self.metrics["orderbook_cache"]["tokens"] = len(token_ids)
+        if token_ids != self._subscribed_token_ids:
+            self.metrics["orderbook_cache"]["token_set_changes_24h"] += 1
+            self._polymarket_resubscribe_requested = True
+            log(
+                f"[WS] Polymarket token set changed via {reason}: "
+                f"{len(self._subscribed_token_ids)} → {len(token_ids)}"
+            )
+            return True
+        return False
+
     def _update_orderbook_cache(self, data: dict):
         """Update in-memory orderbook cache from WS book event.
 
@@ -598,11 +657,6 @@ class BotsyEngine:
                 "asks": asks[:5],
             }
             self._orderbook_dirty = True
-
-            if mid:
-                self._orderbook_ages.append(0)  # just written
-                if len(self._orderbook_ages) > 1000:
-                    self._orderbook_ages = self._orderbook_ages[-500:]
 
         except (IndexError, KeyError, ValueError, TypeError) as e:
             log(f"[WS] Polymarket orderbook cache update failed: {e}")
@@ -646,6 +700,7 @@ class BotsyEngine:
     async def dispatch(self, source: str, symbol: str, interval: str,
                        candle_ts: int):
         """Route candle-close event to pipelines. Dedup by (source, symbol, candle_ts)."""
+        dispatch_wall_start = time.time()
         dedup_key = (source, symbol, candle_ts)
         if dedup_key in self._dispatched:
             return
@@ -665,6 +720,7 @@ class BotsyEngine:
 
         # Compute TA indicators from buffer
         indicators = None
+        ta_start = time.time()
         try:
             if self.ta_engine is None:
                 raise RuntimeError("TA engine not initialized")
@@ -679,6 +735,7 @@ class BotsyEngine:
                 log(f"[TA] {symbol}/{interval}m: insufficient data ({buf_depth} candles)")
         except Exception as e:
             log(f"[TA] {symbol}/{interval}m computation failed: {e}")
+        self._record_sample("_ta_build_times", (time.time() - ta_start) * 1000)
 
         # Build candle data dict from buffer (replaces REST fetch in pipelines)
         candle_data = None
@@ -699,7 +756,7 @@ class BotsyEngine:
             }
             log(f"[BUFFER] {symbol}/{interval}m: {len(buf_candles)} candles → pipeline data built")
 
-        dispatch_start = time.time()
+        fanout_start = time.time()
         log(f"[ENGINE] {source} {symbol} {interval}m close | "
             f"dispatching: {', '.join(pipelines)}")
 
@@ -708,8 +765,11 @@ class BotsyEngine:
             self.metrics["cycles"] = self.cycle
             await self.run_pipeline(pipeline, candle_data=candle_data,
                                     indicators=indicators)
+        fanout_ms = (time.time() - fanout_start) * 1000
+        self._record_sample("_pipeline_fanout_times", fanout_ms)
 
         # Run Strategy Lab (shadow strategies, never affects production)
+        lab_start = time.time()
         try:
             from strategy_lab import strategy_lab_run
             cycle_close_at = None
@@ -724,12 +784,14 @@ class BotsyEngine:
             )
         except Exception as e:
             log(f"[STRATEGY_LAB] {e}")
+        lab_ms = (time.time() - lab_start) * 1000
+        self._record_sample("_strategy_lab_times", lab_ms)
 
-        # Track dispatch latency
-        latency_ms = (time.time() - dispatch_start) * 1000
-        self._latencies.append(latency_ms)
-        if len(self._latencies) > 1000:
-            self._latencies = self._latencies[-500:]
+        # Track production dispatch separately from Strategy Lab/research cost.
+        production_ms = (time.time() - dispatch_wall_start) * 1000 - lab_ms
+        total_ms = (time.time() - dispatch_wall_start) * 1000
+        self._record_sample("_latencies", production_ms)
+        self._record_sample("_total_dispatch_times", total_ms)
 
     async def run_pipeline(self, name: str, candle_data: dict = None,
                            indicators: dict = None):
@@ -756,6 +818,7 @@ class BotsyEngine:
 
         try:
             import importlib
+            runtime_start = time.time()
             if isinstance(runner, tuple):
                 # (module_name, function_name) — generic perp pipelines
                 module_name, func_name = runner
@@ -768,6 +831,8 @@ class BotsyEngine:
                 mod = importlib.import_module(runner)
                 await asyncio.to_thread(mod.main, candle_data=candle_data,
                                         indicators=indicators)
+            runtime_ms = (time.time() - runtime_start) * 1000
+            self._record_pipeline_runtime(name, runtime_ms)
             log(f"[{name}] OK")
         except Exception as e:
             log(f"[{name}] FAILED: {e}")
@@ -1187,6 +1252,7 @@ class BotsyEngine:
         Also persists candle buffer and orderbook cache to disk."""
         while True:
             await asyncio.sleep(METRICS_INTERVAL_S)
+            self._sample_orderbook_cache_ages()
             self._compute_percentiles()
             try:
                 tmp = METRICS_FILE.with_suffix(".tmp")
@@ -1227,22 +1293,65 @@ class BotsyEngine:
 
     def _compute_percentiles(self):
         """Compute p50/p95 from recent latency samples."""
-        if self._latencies:
-            sorted_lat = sorted(self._latencies)
-            n = len(sorted_lat)
-            self.metrics["dispatch_latency_ms"] = {
-                "p50": round(sorted_lat[n // 2]),
-                "p95": round(sorted_lat[int(n * 0.95)]) if n >= 20 else round(sorted_lat[-1]),
-                "samples": n,
-            }
-        if self._orderbook_ages:
-            sorted_ages = sorted(self._orderbook_ages)
-            n = len(sorted_ages)
-            self.metrics["orderbook_age_ms"] = {
-                "p50": round(sorted_ages[n // 2]),
-                "p95": round(sorted_ages[int(n * 0.95)]) if n >= 20 else round(sorted_ages[-1]),
-                "samples": n,
-            }
+        self.metrics["dispatch_latency_ms"] = self._percentiles(self._latencies)
+        self.metrics["event_lag_ms"] = self._percentiles(self._event_lags)
+        self.metrics["ta_build_ms"] = self._percentiles(self._ta_build_times)
+        self.metrics["pipeline_fanout_ms"] = self._percentiles(self._pipeline_fanout_times)
+        self.metrics["strategy_lab_ms"] = self._percentiles(self._strategy_lab_times)
+        self.metrics["total_dispatch_wall_ms"] = self._percentiles(self._total_dispatch_times)
+        self.metrics["orderbook_age_ms"] = self._percentiles(self._orderbook_ages)
+
+        per_pipeline = {}
+        slowest = {"pipeline": None, "p50": 0, "p95": 0, "samples": 0}
+        for pipeline, samples in sorted(self._pipeline_runtime_samples.items()):
+            stats = self._percentiles(samples)
+            per_pipeline[pipeline] = stats
+            if stats["p95"] > slowest["p95"]:
+                slowest = {"pipeline": pipeline, **stats}
+        self.metrics["pipeline_runtime_ms"] = per_pipeline
+        self.metrics["slowest_pipeline_runtime_ms"] = slowest
+
+    @staticmethod
+    def _percentiles(values: list) -> dict:
+        if not values:
+            return {"p50": 0, "p95": 0, "samples": 0}
+        sorted_values = sorted(values)
+        n = len(sorted_values)
+        return {
+            "p50": round(sorted_values[n // 2]),
+            "p95": round(sorted_values[int(n * 0.95)]) if n >= 20 else round(sorted_values[-1]),
+            "samples": n,
+        }
+
+    def _record_sample(self, attr_name: str, value_ms: float):
+        samples = getattr(self, attr_name)
+        samples.append(value_ms)
+        if len(samples) > 1000:
+            setattr(self, attr_name, samples[-500:])
+
+    def _record_pipeline_runtime(self, pipeline: str, value_ms: float):
+        samples = self._pipeline_runtime_samples.setdefault(pipeline, [])
+        samples.append(value_ms)
+        if len(samples) > 1000:
+            self._pipeline_runtime_samples[pipeline] = samples[-500:]
+
+    def _sample_orderbook_cache_ages(self):
+        """Measure true cache freshness from token updated_at timestamps."""
+        now = datetime.now(timezone.utc)
+        ages = []
+        for entry in self._orderbook_cache.values():
+            updated_at = entry.get("updated_at") if isinstance(entry, dict) else None
+            if not updated_at:
+                continue
+            try:
+                dt = datetime.fromisoformat(updated_at)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                ages.append(max(0.0, (now - dt).total_seconds() * 1000))
+            except (TypeError, ValueError):
+                continue
+        for age in ages:
+            self._record_sample("_orderbook_ages", age)
 
     # ── Log Rotation ──────────���────────────────────────────────────────
 

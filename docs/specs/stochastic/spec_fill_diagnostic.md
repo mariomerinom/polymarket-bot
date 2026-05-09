@@ -9,28 +9,32 @@
 
 ---
 
-## Measurement A: Snapshot Staleness (Resolves Tension 2)
+## Measurement A: Decision Delay And Orderbook Freshness (Resolves Tension 2)
 
-**Question:** How old is the `market_price` when `compute_order()` uses it?
+**Question:** Is execution suffering from delayed prediction dispatch, stale orderbook reads, or both?
 
 ### Implementation
 
-Add one timestamp comparison at the top of `compute_order()`:
+Log decision delay from candle close separately from true orderbook freshness:
 
 ```python
-snapshot_age_ms = (datetime.utcnow() - market_row["updated_at"]).total_seconds() * 1000
-log.info(f"DIAG|snapshot_age_ms={snapshot_age_ms:.0f}|market={market_row['market_id']}")
+decision_delay_ms = now_ms - candle_ts_ms
+log.info(f"DIAG|decision_delay_ms={decision_delay_ms:.0f}|market={market_id}")
+
+orderbook_age_ms = now_ms - token_entry.updated_at_ms
+log.info(f"DIAG|orderbook_age_ms={orderbook_age_ms:.0f}|market={market_id}")
 ```
 
 Log every invocation, including skips and filters.
 
 ### Decision Rules
 
-| Snapshot Age (p95) | Conclusion |
+| Metric | Conclusion |
 |---------------------|------------|
-| < 500ms | Staleness is not the bottleneck. Deploy formula change directly (Grok/Gemini are right). |
-| 500ms - 2s | Gray zone. Deploy formula change now, plan real-time feed as follow-up. |
-| > 2s | Infrastructure is the root cause. Real-time feed must come first (Claude is right). |
+| Decision delay p95 < 30s | Dispatch delay is acceptable for paper promotion review. |
+| Decision delay p95 >= 30s | Pipeline fanout or research work is delaying decisions. |
+| Orderbook age p95 < 2s | CLOB cache freshness is acceptable. |
+| Orderbook age p95 >= 2s | Polymarket cache coverage/freshness is a production blocker. |
 
 ### Bonus: API Latency
 
@@ -97,10 +101,11 @@ That's it. One file, four log lines, 24 hours.
 Run this analysis script against the logs:
 
 ```
-1. Histogram of snapshot_age_ms (p50, p95, p99)
-2. Histogram of order_rtt_ms (feasibility of cancel-replace)
-3. Box plot of price_drift grouped by conviction tier
-4. Mann-Whitney U test: conv=3 drift vs conv=5 drift
+1. Histogram of decision_delay_ms (p50, p95, p99)
+2. Histogram of orderbook_age_ms (p50, p95, p99)
+3. Histogram of order_rtt_ms (feasibility of cancel-replace)
+4. Box plot of price_drift grouped by conviction tier
+5. Mann-Whitney U test: conv=3 drift vs conv=5 drift
 ```
 
 The output is a one-page table that tells you exactly which of the three approaches (Grok/Gemini/Claude) is correct for your specific market conditions. Ship the formula change that the data supports.

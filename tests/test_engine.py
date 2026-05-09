@@ -190,7 +190,43 @@ class TestBotsyEngineInit:
         engine = BotsyEngine()
         engine._latencies = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
                              110, 120, 130, 140, 150, 160, 170, 180, 190, 200]
+        engine._strategy_lab_times = [1000, 2000]
+        engine._pipeline_runtime_samples = {
+            "btc_5m": [100, 200],
+            "kalshi": [300, 900],
+        }
         engine._compute_percentiles()
         assert engine.metrics["dispatch_latency_ms"]["p50"] == 110
         assert engine.metrics["dispatch_latency_ms"]["p95"] == 200  # int(20 * 0.95) = 19 → index 19 = 200
         assert engine.metrics["dispatch_latency_ms"]["samples"] == 20
+        assert engine.metrics["strategy_lab_ms"]["p95"] == 2000
+        assert engine.metrics["pipeline_runtime_ms"]["btc_5m"]["p95"] == 200
+        assert engine.metrics["slowest_pipeline_runtime_ms"]["pipeline"] == "kalshi"
+
+    def test_orderbook_age_samples_use_updated_at_not_zero(self):
+        from datetime import datetime, timedelta, timezone
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._orderbook_cache = {
+            "tok": {
+                "mid": 0.55,
+                "updated_at": (
+                    datetime.now(timezone.utc) - timedelta(seconds=3)
+                ).isoformat(),
+            }
+        }
+        engine._sample_orderbook_cache_ages()
+        engine._compute_percentiles()
+        assert engine.metrics["orderbook_age_ms"]["p50"] >= 2500
+
+    def test_polymarket_subscription_refresh_requests_reconnect_on_token_change(self):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._subscribed_token_ids = {"old"}
+        engine._get_active_token_ids = lambda: ["new"]
+        changed = engine.refresh_polymarket_subscriptions("test")
+        assert changed is True
+        assert engine._polymarket_resubscribe_requested is True
+        assert engine.metrics["orderbook_cache"]["token_set_changes_24h"] == 1

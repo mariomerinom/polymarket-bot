@@ -52,6 +52,12 @@ class TestTokenEntry:
         assert entry.is_fresh(max_age_s=10) is False
         assert entry.is_fresh(max_age_s=20) is True
 
+    def test_age_ms_uses_updated_at(self):
+        """True orderbook freshness is measured from token updated_at."""
+        ts = (datetime.now(timezone.utc) - timedelta(seconds=2)).isoformat()
+        entry = TokenEntry(mid=0.55, updated_at=ts)
+        assert 1500 <= entry.age_ms() <= 2500
+
     def test_valid_mid_in_range(self):
         """Mid in [0.01, 0.99] returned."""
         assert TokenEntry(mid=0.55).valid_mid() == 0.55
@@ -216,6 +222,26 @@ class TestGetFreshEntry:
         """Empty string returns None."""
         cache = OrderbookCache()
         assert cache.get_fresh_entry("") is None
+
+
+class TestEntryStatus:
+    def test_missing_token_status(self):
+        cache = OrderbookCache()
+        assert cache.entry_status("missing") == {"status": "missing", "age_ms": None}
+
+    def test_stale_token_status_includes_age(self):
+        old = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+        cache = OrderbookCache(tokens={"tok": TokenEntry(mid=0.55, updated_at=old)})
+        status = cache.entry_status("tok")
+        assert status["status"] == "stale"
+        assert status["age_ms"] >= 29000
+
+    def test_fresh_token_status_includes_age(self):
+        now = datetime.now(timezone.utc).isoformat()
+        cache = OrderbookCache(tokens={"tok": TokenEntry(mid=0.55, updated_at=now)})
+        status = cache.entry_status("tok")
+        assert status["status"] == "fresh"
+        assert status["age_ms"] >= 0
 
 
 # ── OrderbookCache.save tests ─────────────────────────────────────────────

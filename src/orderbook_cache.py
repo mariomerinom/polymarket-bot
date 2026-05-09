@@ -33,14 +33,25 @@ class TokenEntry:
 
     def is_fresh(self, max_age_s: float = DEFAULT_MAX_AGE_S) -> bool:
         """Check if this entry is fresh enough to use."""
-        if not self.updated_at:
+        age = self.age_ms()
+        if age is None:
             return False
+        return age <= max_age_s * 1000
+
+    def age_ms(self) -> Optional[float]:
+        """Return snapshot age in milliseconds, or None when unknown."""
+        if not self.updated_at:
+            return None
         try:
             cache_dt = datetime.fromisoformat(self.updated_at)
-            age_s = (datetime.now(timezone.utc) - cache_dt).total_seconds()
-            return age_s <= max_age_s
+            if cache_dt.tzinfo is None:
+                cache_dt = cache_dt.replace(tzinfo=timezone.utc)
+            return max(
+                0.0,
+                (datetime.now(timezone.utc) - cache_dt).total_seconds() * 1000,
+            )
         except (ValueError, TypeError):
-            return False
+            return None
 
     def valid_mid(self) -> Optional[float]:
         """Return mid if it's in valid range (0.01-0.99), else None."""
@@ -95,6 +106,20 @@ class OrderbookCache:
         if not entry or not entry.is_fresh(max_age_s):
             return None
         return entry
+
+    def entry_status(self, token_id: str, max_age_s: float = DEFAULT_MAX_AGE_S) -> dict:
+        """Classify cache coverage for observability."""
+        if not token_id:
+            return {"status": "missing", "age_ms": None}
+        entry = self.tokens.get(token_id)
+        if not entry:
+            return {"status": "missing", "age_ms": None}
+        age = entry.age_ms()
+        if age is None:
+            return {"status": "stale", "age_ms": None}
+        if age > max_age_s * 1000:
+            return {"status": "stale", "age_ms": round(age)}
+        return {"status": "fresh", "age_ms": round(age)}
 
     def save(self, path: Path = DEFAULT_PATH):
         """Write cache to disk atomically (temp file + rename)."""

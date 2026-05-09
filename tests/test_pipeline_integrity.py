@@ -116,6 +116,8 @@ class TestOrphanedPredictions:
         )
         result = _check_orphaned_predictions(db, "btc_5m", 1)
         assert result["status"] == "WARN"
+        assert "no terminal execution classification" in result["detail"]
+        assert "missing_fill_diagnostic_table" in result["detail"]
         assert "1" in result["detail"]
         db.close()
 
@@ -236,6 +238,32 @@ class TestOrphanedPredictions:
         result = _check_orphaned_predictions(db, "btc_5m", 1)
         assert result["status"] == "WARN", \
             f"Expected WARN with no matching diag entry, got {result}"
+        assert "missing_terminal_classification" in result["detail"]
+        db.close()
+
+    def test_orphans_grouped_by_terminal_classification_cause(self):
+        """Unexplained conv>=3 predictions are grouped by root cause."""
+        import os
+        from pipeline_integrity import _check_orphaned_predictions
+        import fill_diagnostic as fd
+
+        os.environ.pop("KILL_SWITCH", None)
+
+        db = _make_db()
+        fd.init_table(db)
+        for pid in (1, 2):
+            db.execute(
+                "INSERT INTO predictions (id, market_id, agent, estimate, "
+                "cycle, conviction_score) "
+                "VALUES (?, ?, 'momentum', 0.65, 1, 3)",
+                (pid, f"m{pid}"),
+            )
+
+        result = _check_orphaned_predictions(db, "btc_5m", 1)
+
+        assert result["status"] == "WARN"
+        assert "missing_terminal_classification: 2 prediction(s)" in result["detail"]
+        assert "ids=1,2" in result["detail"]
         db.close()
 
 

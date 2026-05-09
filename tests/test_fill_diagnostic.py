@@ -121,3 +121,29 @@ class TestQueryHelpers:
         # 3 filled (full+partial), 1 killed → 4 fired → 75%
         # skip is excluded from denominator
         assert rate == pytest.approx(0.75, abs=0.01)
+
+
+class TestDiagParser:
+    def test_parses_decision_delay_and_orderbook_age_separately(self, tmp_path):
+        from fill_diagnostic import parse_diag_lines, generate_report
+
+        log = tmp_path / "loop.log"
+        log.write_text(
+            "DIAG|decision_delay_ms=31000|market=m1\n"
+            "DIAG|orderbook_age_ms=1200\n"
+            "DIAG|conv=3|drift=0.0100|decision_delay_ms=31000\n"
+        )
+
+        decision_delays, orderbook_ages, rtt_values, drift_by_conv = parse_diag_lines(log)
+        assert decision_delays == [31000.0]
+        assert orderbook_ages == [1200.0]
+        assert rtt_values == []
+        assert drift_by_conv[3] == [0.01]
+
+        report = generate_report(
+            decision_delays, orderbook_ages, rtt_values, drift_by_conv,
+            min_samples=1,
+        )
+        assert "Decision delay (ms)" in report
+        assert "Orderbook age at read (ms)" in report
+        assert "Snapshot age" not in report

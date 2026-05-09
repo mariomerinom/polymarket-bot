@@ -405,13 +405,26 @@ def _render_engine_health_section() -> list:
     lines.append("")
 
     dispatch = m.get("dispatch_latency_ms", {})
+    event_lag = m.get("event_lag_ms", {})
+    ta_build = m.get("ta_build_ms", {})
+    fanout = m.get("pipeline_fanout_ms", {})
+    lab = m.get("strategy_lab_ms", {})
+    total_wall = m.get("total_dispatch_wall_ms", {})
+    slowest = m.get("slowest_pipeline_runtime_ms", {})
     orderbook = m.get("orderbook_age_ms", {})
     lines.extend([
         "| Metric | p50 | p95 | Samples |",
         "|--------|----:|----:|--------:|",
-        f"| Dispatch latency (ms) | {dispatch.get('p50','?')} | {dispatch.get('p95','?')} | {dispatch.get('samples',0)} |",
-        f"| Orderbook age (ms) | {orderbook.get('p50','?')} | {orderbook.get('p95','?')} | {orderbook.get('samples',0)} |",
+        f"| Production dispatch latency (ms) | {dispatch.get('p50','?')} | {dispatch.get('p95','?')} | {dispatch.get('samples',0)} |",
+        f"| Bybit event lag (ms) | {event_lag.get('p50','?')} | {event_lag.get('p95','?')} | {event_lag.get('samples',0)} |",
+        f"| TA build (ms) | {ta_build.get('p50','?')} | {ta_build.get('p95','?')} | {ta_build.get('samples',0)} |",
+        f"| Pipeline fanout (ms) | {fanout.get('p50','?')} | {fanout.get('p95','?')} | {fanout.get('samples',0)} |",
+        f"| Strategy Lab runtime (ms) | {lab.get('p50','?')} | {lab.get('p95','?')} | {lab.get('samples',0)} |",
+        f"| Total dispatch wall time (ms) | {total_wall.get('p50','?')} | {total_wall.get('p95','?')} | {total_wall.get('samples',0)} |",
+        f"| True orderbook age (ms) | {orderbook.get('p50','?')} | {orderbook.get('p95','?')} | {orderbook.get('samples',0)} |",
         "",
+        f"- Slowest pipeline runtime: {slowest.get('pipeline') or 'N/A'} p95={slowest.get('p95', 0)}ms ({slowest.get('samples', 0)} samples)",
+        f"- Orderbook cache: {(m.get('orderbook_cache') or {}).get('tokens', 0)} tokens, {(m.get('orderbook_cache') or {}).get('token_set_changes_24h', 0)} token-set changes (24h)",
         f"- Cycles: {m.get('cycles', 0)}",
         f"- Fallback fires (24h): {m.get('fallback_fires_24h', 0)}",
         f"- Engine start: {m.get('engine_start', '?')}",

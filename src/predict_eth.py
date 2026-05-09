@@ -220,10 +220,10 @@ _eth_logger = logging.getLogger("predict_eth")
 def _emit_diag_eth(market_id, conviction, candle_ts_ms, candle_close, current_price):
     """Emit Phase 2 DIAG lines for every ETH prediction cycle."""
     now_ms = time.time() * 1000
-    snapshot_age_ms = max(0, now_ms - candle_ts_ms)
-    _eth_logger.info(f"DIAG|snapshot_age_ms={snapshot_age_ms:.0f}|market={market_id}")
+    decision_delay_ms = max(0, now_ms - candle_ts_ms)
+    _eth_logger.info(f"DIAG|decision_delay_ms={decision_delay_ms:.0f}|market={market_id}")
     drift = abs(current_price - candle_close) / candle_close if candle_close > 0 else 0.0
-    _eth_logger.info(f"DIAG|conv={conviction}|drift={drift:.4f}|snapshot_age_ms={snapshot_age_ms:.0f}")
+    _eth_logger.info(f"DIAG|conv={conviction}|drift={drift:.4f}|decision_delay_ms={decision_delay_ms:.0f}")
 
 
 def run_predictions_eth(cycle=1, market_limit=1, eth_data=None, db_path=None,

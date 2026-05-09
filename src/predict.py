@@ -611,17 +611,17 @@ def _emit_diag(market_id, conviction, candle_ts_ms, candle_close, current_price)
     """Emit Phase 2 DIAG lines for every prediction cycle.
 
     Format must match validate_phase2.py regex exactly:
-        DIAG|snapshot_age_ms=<number>|market=<string>
-        DIAG|conv=<integer>|drift=<decimal>|snapshot_age_ms=<number>
+        DIAG|decision_delay_ms=<number>|market=<string>
+        DIAG|conv=<integer>|drift=<decimal>|decision_delay_ms=<number>
     """
     now_ms = time.time() * 1000
-    snapshot_age_ms = now_ms - candle_ts_ms
-    if snapshot_age_ms < 0:
-        snapshot_age_ms = 0
-    logger.info(f"DIAG|snapshot_age_ms={snapshot_age_ms:.0f}|market={market_id}")
+    decision_delay_ms = now_ms - candle_ts_ms
+    if decision_delay_ms < 0:
+        decision_delay_ms = 0
+    logger.info(f"DIAG|decision_delay_ms={decision_delay_ms:.0f}|market={market_id}")
 
     drift = abs(current_price - candle_close) / candle_close if candle_close > 0 else 0.0
-    logger.info(f"DIAG|conv={conviction}|drift={drift:.4f}|snapshot_age_ms={snapshot_age_ms:.0f}")
+    logger.info(f"DIAG|conv={conviction}|drift={drift:.4f}|decision_delay_ms={decision_delay_ms:.0f}")
 
 
 def run_predictions(cycle=1, market_limit=5, btc_data=None, db_path=None,
