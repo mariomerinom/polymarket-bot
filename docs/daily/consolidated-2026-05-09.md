@@ -122,23 +122,23 @@ Hypothetical maker fills — what would have filled if we posted passively.
 
 | Feed | Status | Reconnects (24h) |
 |------|--------|-----------------:|
-| bybit_spot | connected | 6 |
-| bybit_linear | connected | 6 |
-| polymarket | connected | 4 |
+| bybit_spot | connected | 10 |
+| bybit_linear | connected | 13 |
+| polymarket | connected | 10 |
 
 | Metric | p50 | p95 | Samples |
 |--------|----:|----:|--------:|
-| Production dispatch latency (ms) | 34508 | 133256 | 18 |
-| Bybit event lag (ms) | 19442 | 159316 | 50 |
-| TA build (ms) | 96 | 2582 | 19 |
-| Pipeline fanout (ms) | 34412 | 133181 | 18 |
-| Strategy Lab runtime (ms) | 4403 | 61091 | 18 |
-| Total dispatch wall time (ms) | 54021 | 139522 | 18 |
-| True orderbook age (ms) | 107120 | 2595655607 | 830 |
+| Production dispatch latency (ms) | 36840 | 191194 | 30 |
+| Bybit event lag (ms) | 23903 | 493957 | 95 |
+| TA build (ms) | 83 | 119 | 31 |
+| Pipeline fanout (ms) | 36728 | 191116 | 30 |
+| Strategy Lab runtime (ms) | 4067 | 61091 | 30 |
+| Total dispatch wall time (ms) | 67469 | 238914 | 30 |
+| True orderbook age (ms) | 204649 | 2597516496 | 532 |
 
-- Slowest pipeline runtime: sol_bybit p95=69218ms (3 samples)
-- Orderbook cache: 50 tokens, 6 token-set changes (24h)
-- Cycles: 38
+- Slowest pipeline runtime: doge_bybit p95=121475ms (6 samples)
+- Orderbook cache: 50 tokens, 7 token-set changes (24h)
+- Cycles: 60
 - Fallback fires (24h): 0
 - Engine start: 2026-05-09T23:44:08.295935+00:00
 
