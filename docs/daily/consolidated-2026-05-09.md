@@ -123,22 +123,22 @@ Hypothetical maker fills — what would have filled if we posted passively.
 | Feed | Status | Reconnects (24h) |
 |------|--------|-----------------:|
 | bybit_spot | connected | 6 |
-| bybit_linear | connected | 5 |
-| polymarket | connected | 3 |
+| bybit_linear | connected | 6 |
+| polymarket | connected | 4 |
 
 | Metric | p50 | p95 | Samples |
 |--------|----:|----:|--------:|
-| Production dispatch latency (ms) | 27070 | 133256 | 16 |
-| Bybit event lag (ms) | 19442 | 159316 | 48 |
-| TA build (ms) | 96 | 2582 | 18 |
-| Pipeline fanout (ms) | 27009 | 133181 | 17 |
-| Strategy Lab runtime (ms) | 4403 | 32623 | 16 |
-| Total dispatch wall time (ms) | 39188 | 139522 | 16 |
-| True orderbook age (ms) | 121783 | 2595640185 | 786 |
+| Production dispatch latency (ms) | 34508 | 133256 | 18 |
+| Bybit event lag (ms) | 19442 | 159316 | 50 |
+| TA build (ms) | 96 | 2582 | 19 |
+| Pipeline fanout (ms) | 34412 | 133181 | 18 |
+| Strategy Lab runtime (ms) | 4403 | 61091 | 18 |
+| Total dispatch wall time (ms) | 54021 | 139522 | 18 |
+| True orderbook age (ms) | 107120 | 2595655607 | 830 |
 
 - Slowest pipeline runtime: sol_bybit p95=69218ms (3 samples)
 - Orderbook cache: 50 tokens, 6 token-set changes (24h)
-- Cycles: 37
+- Cycles: 38
 - Fallback fires (24h): 0
 - Engine start: 2026-05-09T23:44:08.295935+00:00
 
