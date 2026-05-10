@@ -1,33 +1,33 @@
 {
   "bybit_spot": {
     "status": "connected",
-    "last_event": "2026-05-10T05:30:30.491463+00:00",
+    "last_event": "2026-05-10T05:34:18.795702+00:00",
     "reconnects_24h": 5
   },
   "bybit_linear": {
     "status": "disconnected",
     "last_event": "2026-05-10T05:30:30.403086+00:00",
-    "reconnects_24h": 7
+    "reconnects_24h": 9
   },
   "polymarket": {
-    "status": "connected",
+    "status": "disconnected",
     "last_event": "2026-05-10T05:28:48.948567+00:00",
-    "reconnects_24h": 3
+    "reconnects_24h": 5
   },
   "dispatch_latency_ms": {
-    "p50": 39307,
-    "p95": 153872,
-    "samples": 17
+    "p50": 40036,
+    "p95": 189097,
+    "samples": 18
   },
   "event_lag_ms": {
-    "p50": 21173,
+    "p50": 21727,
     "p95": 519931,
-    "samples": 51
+    "samples": 53
   },
   "ta_build_ms": {
     "p50": 81,
     "p95": 3299,
-    "samples": 18
+    "samples": 19
   },
   "pipeline_fanout_ms": {
     "p50": 39930,
@@ -35,20 +35,20 @@
     "samples": 18
   },
   "strategy_lab_ms": {
-    "p50": 5338,
+    "p50": 33220,
     "p95": 149871,
-    "samples": 17
+    "samples": 18
   },
   "total_dispatch_wall_ms": {
-    "p50": 70942,
-    "p95": 198189,
-    "samples": 17
+    "p50": 76836,
+    "p95": 228303,
+    "samples": 18
   },
   "pipeline_runtime_ms": {
     "btc_5m": {
-      "p50": 42401,
-      "p95": 72304,
-      "samples": 3
+      "p50": 72304,
+      "p95": 157319,
+      "samples": 4
     },
     "bybit": {
       "p50": 37652,
@@ -86,9 +86,9 @@
       "samples": 3
     },
     "kalshi": {
-      "p50": 1033,
-      "p95": 1235,
-      "samples": 3
+      "p50": 1235,
+      "p95": 73647,
+      "samples": 4
     },
     "sol_bybit": {
       "p50": 1308,
@@ -102,15 +102,15 @@
     }
   },
   "slowest_pipeline_runtime_ms": {
-    "pipeline": "doge_hl",
-    "p50": 33224,
-    "p95": 149878,
+    "pipeline": "btc_5m",
+    "p50": 72304,
+    "p95": 157319,
     "samples": 4
   },
   "orderbook_age_ms": {
-    "p50": 175301,
-    "p95": 2614958812,
-    "samples": 814
+    "p50": 187395,
+    "p95": 2615042487,
+    "samples": 902
   },
   "orderbook_cache": {
     "tokens": 50,
@@ -119,5 +119,5 @@
   },
   "fallback_fires_24h": 0,
   "engine_start": "2026-05-10T05:04:16.950756+00:00",
-  "cycles": 37
+  "cycles": 40
 }
