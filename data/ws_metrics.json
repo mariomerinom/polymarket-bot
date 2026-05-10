@@ -1,18 +1,18 @@
 {
   "bybit_spot": {
-    "status": "connected",
+    "status": "disconnected",
     "last_event": "2026-05-10T09:39:23.283902+00:00",
-    "reconnects_24h": 6
+    "reconnects_24h": 10
   },
   "bybit_linear": {
-    "status": "connected",
+    "status": "disconnected",
     "last_event": "2026-05-10T09:35:30.419142+00:00",
-    "reconnects_24h": 4
+    "reconnects_24h": 8
   },
   "polymarket": {
-    "status": "connected",
+    "status": "disconnected",
     "last_event": "2026-05-10T09:39:23.103846+00:00",
-    "reconnects_24h": 7
+    "reconnects_24h": 8
   },
   "dispatch_latency_ms": {
     "p50": 33187,
@@ -45,10 +45,15 @@
     "samples": 17
   },
   "pipeline_runtime_ms": {
+    "btc_15m": {
+      "p50": 32090,
+      "p95": 32090,
+      "samples": 1
+    },
     "btc_5m": {
-      "p50": 66553,
-      "p95": 67931,
-      "samples": 3
+      "p50": 67931,
+      "p95": 97168,
+      "samples": 4
     },
     "bybit": {
       "p50": 3323,
@@ -102,22 +107,22 @@
     }
   },
   "slowest_pipeline_runtime_ms": {
-    "pipeline": "eth_5m",
-    "p50": 70941,
-    "p95": 71941,
-    "samples": 3
+    "pipeline": "btc_5m",
+    "p50": 67931,
+    "p95": 97168,
+    "samples": 4
   },
   "orderbook_age_ms": {
-    "p50": 124956,
-    "p95": 2629780386,
-    "samples": 836
+    "p50": 131636,
+    "p95": 2629884353,
+    "samples": 968
   },
   "orderbook_cache": {
     "tokens": 50,
     "refreshes_24h": 8,
     "token_set_changes_24h": 8
   },
-  "fallback_fires_24h": 0,
+  "fallback_fires_24h": 1,
   "engine_start": "2026-05-10T09:12:12.153660+00:00",
   "cycles": 35
 }
