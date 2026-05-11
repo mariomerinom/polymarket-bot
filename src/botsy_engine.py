@@ -39,7 +39,7 @@ import subprocess
 import sys
 import time
 import tracemalloc
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # libc.malloc_trim(0) returns freed memory back to the OS (Linux/glibc only).
@@ -126,6 +126,7 @@ POLYMARKET_MICROSTRUCTURE_ENABLED = (
     os.environ.get("POLYMARKET_MICROSTRUCTURE_ENABLED", "").lower()
     in {"1", "true", "yes", "on"}
 )
+PIPELINE_FANOUT_CONCURRENCY = int(os.environ.get("PIPELINE_FANOUT_CONCURRENCY", "4"))
 
 # Git commit interval
 GIT_COMMIT_INTERVAL_S = 300  # 5 minutes
@@ -553,6 +554,8 @@ class BotsyEngine:
         from clob_depth import get_clob_tokens
 
         market_ids = {}
+        now = datetime.now(timezone.utc)
+        cutoff = now + timedelta(hours=24)
         for db_name in self._POLYMARKET_DB_PATHS:
             db_path = DATA_DIR / db_name
             if not db_path.exists():
@@ -561,13 +564,23 @@ class BotsyEngine:
                 db = sqlite3.connect(str(db_path))
                 db.row_factory = sqlite3.Row
                 rows = db.execute("""
-                    SELECT DISTINCT m.id FROM markets m
+                    SELECT DISTINCT m.id, m.end_date FROM markets m
                     WHERE m.resolved = 0
                     ORDER BY m.fetched_at DESC
-                    LIMIT 10
+                    LIMIT 100
                 """).fetchall()
                 db.close()
                 for row in rows:
+                    try:
+                        end_dt = datetime.fromisoformat(
+                            str(row["end_date"]).replace("Z", "+00:00")
+                        )
+                        if end_dt.tzinfo is None:
+                            end_dt = end_dt.replace(tzinfo=timezone.utc)
+                    except (TypeError, ValueError):
+                        continue
+                    if end_dt <= now or end_dt > cutoff:
+                        continue
                     pipeline = {
                         "predictions.db": "btc_5m",
                         "predictions_15m.db": "btc_15m",
@@ -760,11 +773,9 @@ class BotsyEngine:
         log(f"[ENGINE] {source} {symbol} {interval}m close | "
             f"dispatching: {', '.join(pipelines)}")
 
-        for pipeline in pipelines:
-            self.cycle += 1
-            self.metrics["cycles"] = self.cycle
-            await self.run_pipeline(pipeline, candle_data=candle_data,
-                                    indicators=indicators)
+        await self._run_pipeline_fanout(
+            pipelines, candle_data=candle_data, indicators=indicators
+        )
         fanout_ms = (time.time() - fanout_start) * 1000
         self._record_sample("_pipeline_fanout_times", fanout_ms)
 
@@ -792,6 +803,23 @@ class BotsyEngine:
         total_ms = (time.time() - dispatch_wall_start) * 1000
         self._record_sample("_latencies", production_ms)
         self._record_sample("_total_dispatch_times", total_ms)
+
+    async def _run_pipeline_fanout(self, pipelines: list, candle_data: dict = None,
+                                   indicators: dict = None):
+        """Run independent pipeline DBs concurrently with bounded fanout."""
+        limit = max(1, PIPELINE_FANOUT_CONCURRENCY)
+        sem = asyncio.Semaphore(limit)
+
+        async def run_one(pipeline: str):
+            async with sem:
+                await self.run_pipeline(
+                    pipeline, candle_data=candle_data, indicators=indicators
+                )
+
+        for _ in pipelines:
+            self.cycle += 1
+        self.metrics["cycles"] = self.cycle
+        await asyncio.gather(*(run_one(pipeline) for pipeline in pipelines))
 
     async def run_pipeline(self, name: str, candle_data: dict = None,
                            indicators: dict = None):
@@ -849,10 +877,11 @@ class BotsyEngine:
                     f"fallback firing all pipelines")
                 self.metrics["fallback_fires_24h"] += 1
                 self.last_event_time = time.time()
-                for name in ["btc_5m", "btc_15m", "eth_5m", "bybit", "kalshi", "hl",
-                             "eth_bybit", "eth_hl", "sol_bybit", "sol_hl",
-                             "doge_bybit", "doge_hl"]:
-                    await self.run_pipeline(name)
+                await self._run_pipeline_fanout([
+                    "btc_5m", "btc_15m", "eth_5m", "bybit", "kalshi", "hl",
+                    "eth_bybit", "eth_hl", "sol_bybit", "sol_hl",
+                    "doge_bybit", "doge_hl",
+                ])
 
     # ── Git Commit Loop ─────────���──────────────────────────────────────
 

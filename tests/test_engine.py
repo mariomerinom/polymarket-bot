@@ -1,5 +1,6 @@
 """Tests for botsy_engine.py and engine health integration."""
 
+import asyncio
 import json
 import os
 import sys
@@ -254,3 +255,34 @@ class TestBotsyEngineInit:
         assert changed is True
         assert engine._polymarket_resubscribe_requested is True
         assert engine.metrics["orderbook_cache"]["token_set_changes_24h"] == 1
+
+    @pytest.mark.asyncio
+    async def test_dispatch_runs_independent_pipelines_with_bounded_parallelism(self):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        starts = {}
+        releases = {}
+
+        async def fake_run_pipeline(name, candle_data=None, indicators=None):
+            starts[name] = asyncio.Event()
+            releases[name] = asyncio.Event()
+            starts[name].set()
+            await releases[name].wait()
+
+        engine.run_pipeline = fake_run_pipeline
+        task = asyncio.create_task(
+            engine._run_pipeline_fanout(
+                ["btc_5m", "kalshi", "hl"],
+                candle_data={"candles": [{"close": 1}, {"close": 2}]},
+                indicators=None,
+            )
+        )
+
+        while len(starts) < 3:
+            await asyncio.sleep(0)
+
+        assert set(starts) == {"btc_5m", "kalshi", "hl"}
+        for event in releases.values():
+            event.set()
+        await task

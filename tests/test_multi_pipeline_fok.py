@@ -14,7 +14,7 @@ import json
 import os
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
@@ -37,9 +37,13 @@ def _make_market_db(db_path, market_ids):
     )""")
     for mid in market_ids:
         db.execute(
-            "INSERT OR IGNORE INTO markets (id, question, fetched_at, resolved) "
-            "VALUES (?, 'Test', ?, 0)",
-            (mid, datetime.now(timezone.utc).isoformat()),
+            "INSERT OR IGNORE INTO markets (id, question, end_date, fetched_at, resolved) "
+            "VALUES (?, 'Test', ?, ?, 0)",
+            (
+                mid,
+                (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
     db.commit()
     db.close()
@@ -116,6 +120,44 @@ class TestTokenSubscription:
         # Should have exactly 2 unique tokens, not 4
         assert len(ids) == 2
         assert set(ids) == {"tok_shared_yes", "tok_shared_no"}
+
+    def test_expired_unresolved_markets_are_not_subscribed(self, tmp_path):
+        """Expired rows that failed settlement must not poison WS subscriptions."""
+        stale = "stale_unresolved"
+        current = "current_unresolved"
+        _make_market_db(tmp_path / "predictions.db", [stale, current])
+
+        db = sqlite3.connect(str(tmp_path / "predictions.db"))
+        db.execute(
+            "UPDATE markets SET end_date = ? WHERE id = ?",
+            (
+                (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
+                stale,
+            ),
+        )
+        db.execute(
+            "UPDATE markets SET end_date = ? WHERE id = ?",
+            (
+                (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+                current,
+            ),
+        )
+        db.commit()
+        db.close()
+
+        token_map = {
+            stale: {"yes": "tok_stale_yes", "no": "tok_stale_no"},
+            current: {"yes": "tok_current_yes", "no": "tok_current_no"},
+        }
+
+        from botsy_engine import BotsyEngine
+        engine = BotsyEngine.__new__(BotsyEngine)
+
+        with patch("botsy_engine.DATA_DIR", tmp_path), \
+             patch("clob_depth.get_clob_tokens", side_effect=lambda mid: token_map.get(mid)):
+            ids = set(engine._get_active_token_ids())
+
+        assert ids == {"tok_current_yes", "tok_current_no"}
 
 
 # ── TestBtc15mTradeExecution ───────────────────────────────────────────
