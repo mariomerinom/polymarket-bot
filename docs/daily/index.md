@@ -2,6 +2,7 @@
 
 Daily analysis of prediction performance.
 
+- [Consolidated 2026-05-09 to 2026-05-10](consolidated-2026-05-09-to-2026-05-10.md)
 - [2026-05-10](2026-05-10.md)
 - [2026-05-09](2026-05-09.md)
 - [2026-05-08](2026-05-08.md)
