@@ -1,18 +1,18 @@
 {
   "bybit_spot": {
-    "status": "disconnected",
-    "last_event": "2026-05-11T09:41:44.276337+00:00",
-    "reconnects_24h": 6
+    "status": "connected",
+    "last_event": "2026-05-11T09:49:12.635637+00:00",
+    "reconnects_24h": 8
   },
   "bybit_linear": {
-    "status": "disconnected",
+    "status": "connected",
     "last_event": "2026-05-11T09:36:22.076418+00:00",
-    "reconnects_24h": 9
+    "reconnects_24h": 11
   },
   "polymarket": {
-    "status": "disconnected",
-    "last_event": "2026-05-11T09:33:45.245353+00:00",
-    "reconnects_24h": 6
+    "status": "connected",
+    "last_event": "2026-05-11T09:47:27.628990+00:00",
+    "reconnects_24h": 7
   },
   "dispatch_latency_ms": {
     "p50": 42230,
@@ -20,9 +20,9 @@
     "samples": 16
   },
   "event_lag_ms": {
-    "p50": 19352,
-    "p95": 373213,
-    "samples": 58
+    "p50": 12636,
+    "p95": 373212,
+    "samples": 62
   },
   "ta_build_ms": {
     "p50": 81,
@@ -45,10 +45,15 @@
     "samples": 16
   },
   "pipeline_runtime_ms": {
+    "btc_15m": {
+      "p50": 38424,
+      "p95": 38424,
+      "samples": 1
+    },
     "btc_5m": {
-      "p50": 79976,
-      "p95": 80045,
-      "samples": 3
+      "p50": 80045,
+      "p95": 113315,
+      "samples": 4
     },
     "bybit": {
       "p50": 2298,
@@ -102,22 +107,22 @@
     }
   },
   "slowest_pipeline_runtime_ms": {
-    "pipeline": "eth_bybit",
-    "p50": 38258,
-    "p95": 84778,
-    "samples": 3
+    "pipeline": "btc_5m",
+    "p50": 80045,
+    "p95": 113315,
+    "samples": 4
   },
   "orderbook_age_ms": {
-    "p50": 205580,
-    "p95": 2716200731,
-    "samples": 956
+    "p50": 210407,
+    "p95": 2716992066,
+    "samples": 587
   },
   "orderbook_cache": {
     "tokens": 50,
     "refreshes_24h": 8,
     "token_set_changes_24h": 4
   },
-  "fallback_fires_24h": 0,
+  "fallback_fires_24h": 1,
   "engine_start": "2026-05-11T09:10:19.633023+00:00",
   "cycles": 34
 }
