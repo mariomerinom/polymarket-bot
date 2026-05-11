@@ -256,6 +256,21 @@ class TestBotsyEngineInit:
         assert engine._polymarket_resubscribe_requested is True
         assert engine.metrics["orderbook_cache"]["token_set_changes_24h"] == 1
 
+    def test_orderbook_cache_prunes_to_active_subscription_tokens(self):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._orderbook_cache = {
+            "active": {"mid": 0.55},
+            "expired": {"mid": 0.44},
+        }
+        engine._orderbook_dirty = False
+
+        engine._prune_orderbook_cache({"active"})
+
+        assert set(engine._orderbook_cache) == {"active"}
+        assert engine._orderbook_dirty is True
+
     @pytest.mark.asyncio
     async def test_dispatch_runs_independent_pipelines_with_bounded_parallelism(self):
         from botsy_engine import BotsyEngine

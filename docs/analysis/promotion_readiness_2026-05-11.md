@@ -29,6 +29,10 @@ subscriptions. If market discovery is broken, the websocket should now surface
 that as missing/current-token coverage instead of silently subscribing to old
 markets.
 
+The engine also prunes the in-memory/disk orderbook cache to the active
+subscription set on connect or token-set change. That keeps historical token
+books out of runtime diagnostics and reduces the stale cache footprint.
+
 ### Dispatch Latency
 
 Pipeline fanout now runs independent pipeline runners concurrently with bounded

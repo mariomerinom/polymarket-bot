@@ -500,6 +500,7 @@ class BotsyEngine:
                     self._subscribed_token_ids = set(token_ids)
                     self._polymarket_resubscribe_requested = False
                     self.metrics["orderbook_cache"]["tokens"] = len(token_ids)
+                    self._prune_orderbook_cache(self._subscribed_token_ids)
 
                     # Subscribe to orderbook for active markets
                     sub_msg = {
@@ -631,12 +632,27 @@ class BotsyEngine:
         if token_ids != self._subscribed_token_ids:
             self.metrics["orderbook_cache"]["token_set_changes_24h"] += 1
             self._polymarket_resubscribe_requested = True
+            self._prune_orderbook_cache(token_ids)
             log(
                 f"[WS] Polymarket token set changed via {reason}: "
                 f"{len(self._subscribed_token_ids)} → {len(token_ids)}"
             )
             return True
         return False
+
+    def _prune_orderbook_cache(self, active_token_ids: set):
+        """Drop expired/historical token books outside the active subscription."""
+        active_token_ids = set(active_token_ids or [])
+        if not active_token_ids:
+            return
+        before = len(self._orderbook_cache)
+        self._orderbook_cache = {
+            token_id: entry
+            for token_id, entry in self._orderbook_cache.items()
+            if token_id in active_token_ids
+        }
+        if len(self._orderbook_cache) != before:
+            self._orderbook_dirty = True
 
     def _update_orderbook_cache(self, data: dict):
         """Update in-memory orderbook cache from WS book event.
