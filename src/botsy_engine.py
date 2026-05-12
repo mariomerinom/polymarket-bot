@@ -525,6 +525,10 @@ class BotsyEngine:
                                     self._update_orderbook_cache(data)
                                     self.metrics["polymarket"]["last_event"] = \
                                         datetime.now(timezone.utc).isoformat()
+                                elif event_type == "price_change":
+                                    self._update_orderbook_price_change(data)
+                                    self.metrics["polymarket"]["last_event"] = \
+                                        datetime.now(timezone.utc).isoformat()
                             if self._polymarket_resubscribe_requested:
                                 log("[WS] Polymarket active token set changed; reconnecting to resubscribe")
                                 break
@@ -673,8 +677,12 @@ class BotsyEngine:
             asks = data.get("asks", [])
             best_bid = float(bids[0]["price"]) if bids else None
             best_ask = float(asks[0]["price"]) if asks else None
-            mid = (best_bid + best_ask) / 2 if (best_bid and best_ask) else None
-            spread = (best_ask - best_bid) if (best_bid and best_ask) else None
+            mid, spread = self._compute_bbo(best_bid, best_ask)
+            if best_bid is not None and best_ask is not None and mid is None:
+                self._mark_orderbook_token_stale(
+                    asset_id, "invalid_bbo_from_book"
+                )
+                return
 
             self._orderbook_cache[asset_id] = {
                 "mid": mid,
@@ -682,6 +690,7 @@ class BotsyEngine:
                 "best_bid": best_bid,
                 "best_ask": best_ask,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
+                "status": "fresh" if mid is not None else "partial",
                 "bids": bids[:5],  # top 5 levels
                 "asks": asks[:5],
             }
@@ -689,6 +698,144 @@ class BotsyEngine:
 
         except (IndexError, KeyError, ValueError, TypeError) as e:
             log(f"[WS] Polymarket orderbook cache update failed: {e}")
+
+    def _update_orderbook_price_change(self, data: dict):
+        """Apply Polymarket incremental price_change events to cached BBO.
+
+        Full `book` snapshots initialize and repair the local book. Incremental
+        `price_change` messages keep the cache fresh between snapshots. If a
+        delta arrives before a snapshot, or yields an invalid BBO, mark the
+        token stale so execution falls back to REST or blocks promotion.
+        """
+        changes = data.get("price_changes")
+        if changes is None:
+            changes = [data]
+        if not isinstance(changes, list):
+            return
+
+        for change in changes:
+            if not isinstance(change, dict):
+                continue
+            asset_id = (
+                change.get("asset_id")
+                or change.get("token_id")
+                or data.get("asset_id")
+                or data.get("token_id")
+                or ""
+            )
+            if not asset_id:
+                continue
+
+            entry = self._orderbook_cache.get(asset_id)
+            if not isinstance(entry, dict) or not entry.get("updated_at"):
+                self._mark_orderbook_token_stale(asset_id, "missing_snapshot_for_price_change")
+                continue
+
+            bids = list(entry.get("bids") or [])
+            asks = list(entry.get("asks") or [])
+            self._apply_price_level_change(bids, asks, change)
+
+            best_bid = self._float_or_none(change.get("best_bid"))
+            best_ask = self._float_or_none(change.get("best_ask"))
+            if best_bid is None:
+                best_bid = self._best_level_price(bids, reverse=True)
+            if best_ask is None:
+                best_ask = self._best_level_price(asks, reverse=False)
+
+            mid, spread = self._compute_bbo(best_bid, best_ask)
+            if mid is None:
+                self._mark_orderbook_token_stale(asset_id, "invalid_bbo_from_price_change")
+                continue
+
+            entry.update({
+                "mid": mid,
+                "spread": spread,
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "status": "fresh",
+                "stale_reason": None,
+                "bids": self._sort_levels(bids, reverse=True)[:5],
+                "asks": self._sort_levels(asks, reverse=False)[:5],
+            })
+            self._orderbook_dirty = True
+
+    def _mark_orderbook_token_stale(self, asset_id: str, reason: str):
+        """Mark token unusable without pretending the cache is fresh."""
+        entry = self._orderbook_cache.get(asset_id)
+        if not isinstance(entry, dict):
+            entry = {}
+            self._orderbook_cache[asset_id] = entry
+        entry.update({
+            "updated_at": None,
+            "status": "stale",
+            "stale_reason": reason,
+        })
+        self._orderbook_dirty = True
+
+    @staticmethod
+    def _float_or_none(value):
+        try:
+            if value is None or value == "":
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _compute_bbo(best_bid, best_ask):
+        if best_bid is None or best_ask is None:
+            return None, None
+        if best_bid <= 0 or best_ask <= 0 or best_bid >= best_ask:
+            return None, None
+        return (best_bid + best_ask) / 2, best_ask - best_bid
+
+    def _apply_price_level_change(self, bids: list, asks: list, change: dict):
+        price = self._float_or_none(change.get("price"))
+        size = self._float_or_none(change.get("size"))
+        side = str(change.get("side") or "").lower()
+        if price is None or size is None or not side:
+            return
+
+        if side in {"buy", "bid", "bids"}:
+            levels = bids
+            reverse = True
+        elif side in {"sell", "ask", "asks"}:
+            levels = asks
+            reverse = False
+        else:
+            return
+
+        remaining = []
+        for level in levels:
+            level_price = self._float_or_none(level.get("price"))
+            if level_price is None or abs(level_price - price) > 1e-9:
+                remaining.append(level)
+        if size > 0:
+            remaining.append({"price": str(price), "size": str(size)})
+        levels[:] = self._sort_levels(remaining, reverse=reverse)[:5]
+
+    def _best_level_price(self, levels: list, reverse: bool):
+        sorted_levels = self._sort_levels(levels, reverse=reverse)
+        if not sorted_levels:
+            return None
+        return self._float_or_none(sorted_levels[0].get("price"))
+
+    def _sort_levels(self, levels: list, reverse: bool):
+        valid = []
+        for level in levels:
+            if not isinstance(level, dict):
+                continue
+            price = self._float_or_none(level.get("price"))
+            size = self._float_or_none(level.get("size"))
+            if price is None or size is None or size <= 0:
+                continue
+            valid.append(level)
+        return sorted(
+            valid,
+            key=lambda level: self._float_or_none(level.get("price")) or 0,
+            reverse=reverse,
+        )
 
     def _flush_orderbook_cache(self):
         """Write in-memory orderbook cache to disk. Called every 5s by metrics_writer."""

@@ -72,6 +72,19 @@ class TestLoadPipelineConfig:
         result = pipeline_control.load_pipeline_config("btc_5m")
         assert result["mode"] == "paper"
 
+    def test_live_canary_mode_is_valid_but_not_full_live(self, tmp_path, monkeypatch):
+        config = {"pipelines": {"btc_5m": {"mode": "live_canary", "bet_size": 10}}}
+        cfg_file = tmp_path / "pipelines.json"
+        cfg_file.write_text(json.dumps(config))
+
+        import pipeline_control
+        monkeypatch.setattr(pipeline_control, "CONFIG_PATH", cfg_file)
+
+        result = pipeline_control.load_pipeline_config("btc_5m")
+        assert result["mode"] == "live_canary"
+        assert pipeline_control.is_pipeline_live_canary("btc_5m") is True
+        assert pipeline_control.is_pipeline_live("btc_5m") is False
+
     def test_bet_size_null_returns_none(self, tmp_path, monkeypatch):
         config = {"pipelines": {"eth_5m": {"mode": "paused", "bet_size": None}}}
         cfg_file = tmp_path / "pipelines.json"
@@ -123,6 +136,22 @@ class TestModeHelpers:
         assert pipeline_control.is_pipeline_live("btc_15m") is False
         assert pipeline_control.is_pipeline_live("eth_5m") is False
 
+    def test_is_pipeline_live_canary(self, tmp_path, monkeypatch):
+        config = {"pipelines": {
+            "btc_5m": {"mode": "live_canary"},
+            "btc_15m": {"mode": "live"},
+            "eth_5m": {"mode": "paper"},
+        }}
+        cfg_file = tmp_path / "pipelines.json"
+        cfg_file.write_text(json.dumps(config))
+
+        import pipeline_control
+        monkeypatch.setattr(pipeline_control, "CONFIG_PATH", cfg_file)
+
+        assert pipeline_control.is_pipeline_live_canary("btc_5m") is True
+        assert pipeline_control.is_pipeline_live_canary("btc_15m") is False
+        assert pipeline_control.is_pipeline_live_canary("eth_5m") is False
+
 
 class TestRealConfig:
     """Test the actual config/pipelines.json in the repo."""
@@ -153,7 +182,7 @@ class TestRealConfig:
             data = json.load(f)
         for name, cfg in data["pipelines"].items():
             assert "mode" in cfg, f"{name} missing 'mode'"
-            assert cfg["mode"] in ("live", "paper", "paused"), \
+            assert cfg["mode"] in ("live", "live_canary", "paper", "paused"), \
                 f"{name} has invalid mode '{cfg['mode']}'"
             assert "bet_size" in cfg, f"{name} missing 'bet_size'"
 

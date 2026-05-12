@@ -4,9 +4,10 @@ pipeline_control.py — Load per-pipeline mode, bet size, and status.
 Reads config/pipelines.json (checked into git, picked up by CI).
 
 Mode values:
-  "live"   — predictions run, real orders placed
-  "paper"  — predictions run, orders logged but not submitted
-  "paused" — pipeline exits immediately, nothing runs
+  "live"        — predictions run, real orders placed
+  "live_canary" — live-capable canary mode; execution must apply extra gates
+  "paper"       — predictions run, orders logged but not submitted
+  "paused"      — pipeline exits immediately, nothing runs
 
 Falls back to "paper" if the file is missing or the pipeline key is absent,
 so a broken config never accidentally places live trades.
@@ -18,7 +19,7 @@ from pathlib import Path
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "pipelines.json"
 
 _DEFAULT = {"mode": "paper", "bet_size": None, "notes": ""}
-_VALID_MODES = {"live", "paper", "paused"}
+_VALID_MODES = {"live", "live_canary", "paper", "paused"}
 
 
 def load_pipeline_config(pipeline_name: str) -> dict:
@@ -55,6 +56,11 @@ def is_pipeline_paused(pipeline_name: str) -> bool:
 def is_pipeline_live(pipeline_name: str) -> bool:
     """True if pipeline should place real orders."""
     return load_pipeline_config(pipeline_name)["mode"] == "live"
+
+
+def is_pipeline_live_canary(pipeline_name: str) -> bool:
+    """True if pipeline is in explicit live-canary mode."""
+    return load_pipeline_config(pipeline_name)["mode"] == "live_canary"
 
 
 def get_bet_size_override(pipeline_name: str):

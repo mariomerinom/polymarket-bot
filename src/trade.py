@@ -1093,8 +1093,23 @@ def execute_trades(db, cycle, pipeline_name=None):
     """
     # Resolve trading mode per-pipeline (Fix 1: isolation by construction)
     if pipeline_name:
-        from pipeline_control import is_pipeline_live
-        trading_enabled = is_pipeline_live(pipeline_name)
+        from pipeline_control import is_pipeline_live, is_pipeline_live_canary
+        if is_pipeline_live_canary(pipeline_name):
+            try:
+                from canary_readiness import btc5m_live_canary_blockers
+                blockers = btc5m_live_canary_blockers(db)
+            except Exception as exc:
+                blockers = [f"canary_readiness_unavailable ({exc})"]
+            if blockers:
+                print(
+                    "  [CANARY] live_canary blocked; staying PAPER: "
+                    + "; ".join(blockers[:5])
+                )
+                trading_enabled = False
+            else:
+                trading_enabled = True
+        else:
+            trading_enabled = is_pipeline_live(pipeline_name)
     else:
         trading_enabled = TRADING_ENABLED  # Legacy fallback
 
@@ -1206,7 +1221,7 @@ def execute_trades(db, cycle, pipeline_name=None):
                 import fill_diagnostic
                 fill_diagnostic.init_table(db)
                 if "cushion_eats_edge" in order_reason:
-                    result_code = "skipped_cushion"
+                    result_code = "skipped_cushion_eats_edge"
                 elif "low_edge" in order_reason:
                     result_code = "skipped_low_edge"
                 elif "book_too_thin" in order_reason:
