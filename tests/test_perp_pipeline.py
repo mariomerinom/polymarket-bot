@@ -286,21 +286,23 @@ class TestPipelineControl:
                 "doge_bybit", "doge_hl"]
 
     def test_all_in_pipelines_json(self):
-        """All 6 new pipelines are in config/pipelines.json as paper."""
+        """All 6 new pipelines are in config/pipelines.json and non-live."""
         config_path = Path(__file__).parent.parent / "config" / "pipelines.json"
         data = json.loads(config_path.read_text())
         pipelines = data.get("pipelines", {})
         for name in self.EXPECTED:
             assert name in pipelines, f"Missing in pipelines.json: {name}"
-            assert pipelines[name]["mode"] == "paper", \
-                f"{name} should be paper mode"
+            assert pipelines[name]["mode"] in ("paper", "paused"), \
+                f"{name} should be paper or paused"
+        assert pipelines["eth_bybit"]["mode"] == "paused"
+        assert pipelines["eth_hl"]["mode"] == "paused"
 
     def test_pipeline_control_loads(self):
-        """pipeline_control.load_pipeline_config returns paper for new pipelines."""
+        """pipeline_control.load_pipeline_config returns non-live for new pipelines."""
         from pipeline_control import load_pipeline_config
         for name in self.EXPECTED:
             cfg = load_pipeline_config(name)
-            assert cfg["mode"] == "paper"
+            assert cfg["mode"] in ("paper", "paused")
 
 
 # ── TestKillSwitchRouting ───────────────────────────────────────────────────
