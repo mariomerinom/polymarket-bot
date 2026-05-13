@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS multi_poll_predictions (
     spot_at_poll REAL,
     in_flight_return_pct REAL,
     poll_succeeded INTEGER DEFAULT 1,
+    conviction_score INTEGER,
     market_resolved INTEGER,
     market_outcome INTEGER,
     won INTEGER,
@@ -75,6 +76,7 @@ CREATE INDEX IF NOT EXISTS idx_mpp_market_time
 # log the price the signal would have transacted against. Phase B's
 # realistic-entry P&L analysis depends on these.
 _MIGRATION_COLUMNS = [
+    ("conviction_score", "INTEGER"),
     ("mkt_mid", "REAL"),
     ("mkt_best_bid", "REAL"),
     ("mkt_best_ask", "REAL"),
@@ -162,7 +164,8 @@ def log_poll(
     mkt_best_ask: Optional[float] = None,
     mkt_spread: Optional[float] = None,
     orderbook_age_ms: Optional[int] = None,
-) -> None:
+    conviction_score: Optional[int] = None,
+) -> int:
     """Write a single poll row. Pure DB call, no signal computation.
 
     Orderbook fields (mkt_*, orderbook_age_ms) are optional — write
@@ -176,9 +179,10 @@ def log_poll(
            (cycle, cycle_close_at, offset_seconds, predicted_at,
             market_id, asset, estimate, regime, spot_at_poll,
             in_flight_return_pct, poll_succeeded,
+            conviction_score,
             mkt_mid, mkt_best_bid, mkt_best_ask, mkt_spread,
             orderbook_age_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             cycle,
             cycle_close_at,
@@ -191,6 +195,7 @@ def log_poll(
             spot_at_poll,
             in_flight_return_pct,
             1 if poll_succeeded else 0,
+            conviction_score,
             mkt_mid,
             mkt_best_bid,
             mkt_best_ask,
@@ -198,7 +203,9 @@ def log_poll(
             orderbook_age_ms,
         ),
     )
+    poll_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
     db.commit()
+    return poll_id
 
 
 # ── Signal computation (pure, reuses predict.py functions) ─────────
@@ -275,7 +282,57 @@ def compute_poll_predictions(
         "regime_label": regime_label,
         "spot_at_poll": spot,
         "in_flight_return_pct": in_flight,
+        "signal": signal if "signal" in locals() else None,
+        "regime": regime if "regime" in locals() else None,
     }
+
+
+def compute_poll_conviction(
+    signal: Optional[dict],
+    regime: Optional[dict],
+    *,
+    mkt_price: Optional[float] = None,
+    asset: str = "BTC",
+) -> int:
+    """Mirror the existing BTC/ETH conviction gate for multi-poll snapshots.
+
+    This does not change signal logic. It captures the conviction tier the
+    delayed execution path needs in order to distinguish executable timing
+    evidence from research-grid directional polls.
+    """
+    if not signal:
+        return 0
+    if signal.get("conviction_score") is not None:
+        return int(signal["conviction_score"])
+    if signal.get("conviction_tier") is not None:
+        return int(signal["conviction_tier"])
+
+    should_trade = bool(signal.get("should_trade"))
+    confidence = signal.get("confidence", "low")
+    if should_trade and confidence not in ("medium", "high"):
+        return 2
+    if not should_trade:
+        return 0
+
+    direction = signal.get("direction", "")
+    regime_label = (regime or {}).get("label", "")
+
+    if asset == "ETH":
+        # Keep ETH conservative; delayed execution promotion is BTC-only.
+        return 3 if direction == "UP" else 2
+
+    if "HIGH_VOL" in regime_label and "TRENDING" not in regime_label:
+        return 2
+    if direction == "DOWN" and "NEUTRAL" in regime_label:
+        return 2
+    if direction == "UP" and mkt_price is not None:
+        try:
+            from predict import PRICE_SWEET_SPOT_HIGH, PRICE_SWEET_SPOT_LOW
+            if PRICE_SWEET_SPOT_LOW <= float(mkt_price) <= PRICE_SWEET_SPOT_HIGH:
+                return 4
+        except Exception:
+            pass
+    return 3
 
 
 # ── Async orchestrator ─────────────────────────────────────────────
@@ -491,7 +548,13 @@ async def schedule_polls(
                     mkt_mid = mkt_bid = mkt_ask = mkt_spread = ob_age = None
 
                 try:
-                    log_poll(
+                    conviction = compute_poll_conviction(
+                        computed.get("signal"),
+                        computed.get("regime"),
+                        mkt_price=mkt_mid,
+                        asset=asset,
+                    )
+                    poll_id = log_poll(
                         db,
                         cycle=cycle,
                         cycle_close_at=cycle_close_at,
@@ -510,7 +573,19 @@ async def schedule_polls(
                         mkt_best_ask=mkt_ask,
                         mkt_spread=mkt_spread,
                         orderbook_age_ms=ob_age,
+                        conviction_score=conviction,
                     )
+                    try:
+                        import delayed_execution
+                        if asset == "BTC":
+                            delayed_execution.process_delayed_poll(
+                                db, poll_id, pipeline_name="btc_5m"
+                            )
+                    except Exception as e:
+                        _log.warning(
+                            "schedule_polls: delayed candidate failed for %s: %s",
+                            market_id, e,
+                        )
                 except Exception as e:
                     _log.warning(
                         "schedule_polls: log_poll failed for %s: %s",

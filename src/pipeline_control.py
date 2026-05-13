@@ -20,6 +20,15 @@ CONFIG_PATH = Path(__file__).parent.parent / "config" / "pipelines.json"
 
 _DEFAULT = {"mode": "paper", "bet_size": None, "notes": ""}
 _VALID_MODES = {"live", "live_canary", "paper", "paused"}
+_VALID_TIMING_POLICIES = {
+    "immediate",
+    "delay_180_shadow",
+    "delay_240_shadow",
+    "delay_180_paper",
+    "delay_240_paper",
+    "delay_180_live_canary",
+    "delay_240_live_canary",
+}
 
 
 def load_pipeline_config(pipeline_name: str) -> dict:
@@ -41,6 +50,9 @@ def load_pipeline_config(pipeline_name: str) -> dict:
             "mode": mode,
             "bet_size": pipeline.get("bet_size"),
             "notes": pipeline.get("notes", ""),
+            "timing_policy": _normalize_timing_policy(
+                pipeline.get("timing_policy", "immediate")
+            ),
         }
     except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
         print(f"  [pipeline_control] WARNING: Could not load config for "
@@ -66,6 +78,21 @@ def is_pipeline_live_canary(pipeline_name: str) -> bool:
 def get_bet_size_override(pipeline_name: str):
     """Return bet_size override or None if pipeline uses defaults."""
     return load_pipeline_config(pipeline_name)["bet_size"]
+
+
+def get_timing_policy(pipeline_name: str) -> str:
+    """Return BTC timing policy; defaults fail-closed to immediate."""
+    return load_pipeline_config(pipeline_name).get("timing_policy", "immediate")
+
+
+def _normalize_timing_policy(policy: str) -> str:
+    if policy in _VALID_TIMING_POLICIES:
+        return policy
+    print(
+        f"  [pipeline_control] WARNING: invalid timing_policy '{policy}', "
+        "defaulting to 'immediate'"
+    )
+    return "immediate"
 
 
 # ── Pipeline → DB path mapping ──────────────────────────────────────

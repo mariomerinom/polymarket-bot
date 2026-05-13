@@ -22,6 +22,7 @@ ORDERBOOK_AGE_P95_MAX_MS = 2_000
 DISK_USED_MAX_PCT = 85.0
 MIN_EHR_SAMPLE = 50
 MIN_EXECUTION_EHR_SAMPLE = 10
+MIN_DELAYED_EXECUTION_SAMPLE = 50
 
 
 def btc5m_live_canary_blockers(
@@ -67,6 +68,102 @@ def btc5m_live_canary_blockers(
 def btc5m_live_canary_ready(db: sqlite3.Connection, **kwargs) -> bool:
     """True only when all BTC 5m canary gates are green."""
     return not btc5m_live_canary_blockers(db, **kwargs)
+
+
+def btc5m_delayed_policy_blockers(db: sqlite3.Connection) -> list[str]:
+    """Return blockers specific to delayed BTC 5m FAK promotion."""
+    try:
+        tables = {
+            r[0] for r in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        if "btc5m_timing_candidates" not in tables:
+            return [
+                f"delayed_ehr_insufficient_sample (0/{MIN_DELAYED_EXECUTION_SAMPLE})"
+            ]
+        candidate_cols = {
+            r[1] for r in db.execute(
+                "PRAGMA table_info(btc5m_timing_candidates)"
+            ).fetchall()
+        }
+        if {"orders", "markets"}.issubset(tables) and "order_id" in candidate_cols:
+            rows = db.execute(
+                """
+                SELECT COALESCE(c.pnl, o.pnl) AS pnl,
+                       COALESCE(
+                           c.ehr,
+                           CASE
+                             WHEN o.direction = 'UP'
+                               THEN m.outcome - COALESCE(o.price_filled, o.price_limit)
+                             WHEN o.direction = 'DOWN'
+                               THEN (1 - m.outcome) - COALESCE(o.price_filled, o.price_limit)
+                           END
+                       ) AS ehr,
+                       c.orderbook_age_ms,
+                       c.skip_reason
+                FROM btc5m_timing_candidates c
+                LEFT JOIN orders o ON o.id = c.order_id
+                LEFT JOIN markets m ON m.id = c.market_id AND m.resolved = 1
+                WHERE c.state IN ('paper_ordered', 'live_ordered')
+                  AND c.would_fire = 1
+                ORDER BY c.id DESC
+                LIMIT 200
+                """
+            ).fetchall()
+        else:
+            rows = db.execute(
+                """
+                SELECT pnl, ehr, orderbook_age_ms, skip_reason
+                FROM btc5m_timing_candidates
+                WHERE state IN ('paper_ordered', 'live_ordered')
+                  AND would_fire = 1
+                  AND ehr IS NOT NULL
+                ORDER BY id DESC
+                LIMIT 200
+                """
+            ).fetchall()
+    except Exception as exc:
+        return [f"delayed_candidates_unavailable ({exc})"]
+
+    rows = [r for r in rows if r[1] is not None]
+    blockers = []
+    n = len(rows)
+    if n < MIN_DELAYED_EXECUTION_SAMPLE:
+        blockers.append(
+            f"delayed_ehr_insufficient_sample ({n}/{MIN_DELAYED_EXECUTION_SAMPLE})"
+        )
+        return blockers
+
+    avg_ehr = sum(float(r[1]) for r in rows) / n
+    pnl = sum(float(r[0] or 0) for r in rows)
+    ages = sorted(int(r[2]) for r in rows if r[2] is not None)
+    p95_age = ages[int(len(ages) * 0.95)] if len(ages) >= 20 else (ages[-1] if ages else None)
+    if avg_ehr < 0:
+        blockers.append(f"delayed_ehr_negative ({avg_ehr:+.4f} over {n})")
+    if pnl < 0:
+        blockers.append(f"delayed_pnl_negative ({pnl:+.2f})")
+    if p95_age is None or p95_age >= ORDERBOOK_AGE_P95_MAX_MS:
+        blockers.append(f"delayed_orderbook_age_p95_too_high ({p95_age})")
+
+    unexplained = _delayed_unexplained_count(db)
+    if unexplained:
+        blockers.append(f"delayed_unexplained_candidates ({unexplained})")
+    return blockers
+
+
+def _delayed_unexplained_count(db: sqlite3.Connection) -> int:
+    try:
+        row = db.execute(
+            """
+            SELECT COUNT(*)
+            FROM btc5m_timing_candidates
+            WHERE skip_reason IN ('unexpected_error', 'unexplained_no_order')
+            """
+        ).fetchone()
+        return int(row[0] or 0)
+    except Exception:
+        return 0
 
 
 def _metrics_blockers(metrics_path: Path) -> list[str]:

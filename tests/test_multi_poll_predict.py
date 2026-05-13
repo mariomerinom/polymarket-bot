@@ -275,8 +275,46 @@ class TestLogPoll:
         assert "mkt_best_ask" in cols
         assert "mkt_spread" in cols
         assert "orderbook_age_ms" in cols
+        assert "conviction_score" in cols
         # And idempotent: second call shouldn't error
         multi_poll_predict.init_table(db)
+
+    def test_log_poll_stores_conviction_score(self, tmp_path):
+        import multi_poll_predict
+
+        db = sqlite3.connect(str(tmp_path / "t.db"))
+        multi_poll_predict.init_table(db)
+        poll_id = multi_poll_predict.log_poll(
+            db,
+            cycle=1,
+            cycle_close_at="2026-05-13T12:00:00+00:00",
+            offset_seconds=180,
+            market_id="0xabc",
+            asset="BTC",
+            estimate=0.64,
+            regime_label="MEDIUM_VOL / NEUTRAL",
+            spot_at_poll=100000.0,
+            conviction_score=4,
+        )
+        row = db.execute(
+            "SELECT id, conviction_score FROM multi_poll_predictions"
+        ).fetchone()
+        assert row == (poll_id, 4)
+
+    def test_compute_poll_conviction_uses_market_price_sweet_spot(self):
+        import multi_poll_predict
+
+        signal = {
+            "estimate": 0.64,
+            "should_trade": True,
+            "confidence": "medium",
+            "direction": "UP",
+        }
+        regime = {"label": "MEDIUM_VOL / NEUTRAL"}
+
+        assert multi_poll_predict.compute_poll_conviction(
+            signal, regime, mkt_price=0.55
+        ) == 4
 
     def test_log_poll_failure_marks_succeeded_zero(self, tmp_path):
         import multi_poll_predict

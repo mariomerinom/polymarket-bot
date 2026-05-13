@@ -978,4 +978,76 @@ def test_analyze_multi_poll_finds_best_t180():
         assert result["best_t180"] is not None
         assert result["best_t180"]["regime"] == "HIGH_VOL / NEUTRAL"
         assert result["best_t180"]["wr_pct"] == 70.0
+
+
+def test_analyze_timing_replay_summarizes_executable_rows():
+    from daily_report import analyze_timing_replay
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = sqlite3.connect(os.path.join(tmpdir, "timing.db"))
+        db.execute("""
+            CREATE TABLE btc5m_timing_replay (
+                trade_date TEXT,
+                policy TEXT,
+                would_fire INTEGER,
+                skip_reason TEXT,
+                won INTEGER,
+                pnl REAL,
+                ehr REAL,
+                orderbook_age_ms INTEGER
+            )
+        """)
+        db.execute(
+            "INSERT INTO btc5m_timing_replay VALUES "
+            "('2026-05-13', 'delay_180', 1, NULL, 1, 19.0, 0.45, 500)"
+        )
+        db.execute(
+            "INSERT INTO btc5m_timing_replay VALUES "
+            "('2026-05-13', 'delay_180', 0, 'missing_conviction', NULL, NULL, NULL, 500)"
+        )
+        db.commit()
+
+        result = analyze_timing_replay(db, "2026-05-13")
+
+        assert result["policies"][0]["policy"] == "delay_180"
+        assert result["policies"][0]["fired"] == 1
+        assert result["policies"][0]["pnl"] == 19.0
+        assert result["skip_reasons"]["missing_conviction"] == 1
+        db.close()
+
+
+def test_analyze_delayed_execution_summarizes_fak_candidates():
+    from daily_report import analyze_delayed_execution
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = sqlite3.connect(os.path.join(tmpdir, "timing.db"))
+        db.execute("""
+            CREATE TABLE btc5m_timing_candidates (
+                created_at TEXT,
+                policy TEXT,
+                state TEXT,
+                would_fire INTEGER,
+                skip_reason TEXT,
+                orderbook_age_ms INTEGER
+            )
+        """)
+        db.execute(
+            "INSERT INTO btc5m_timing_candidates VALUES "
+            "('2026-05-13T12:03:00+00:00', 'delay_180_paper', "
+            "'paper_ordered', 1, NULL, 400)"
+        )
+        db.execute(
+            "INSERT INTO btc5m_timing_candidates VALUES "
+            "('2026-05-13T12:08:00+00:00', 'delay_180_paper', "
+            "'blocked', 0, 'stale_book', 2500)"
+        )
+        db.commit()
+
+        result = analyze_delayed_execution(db, "2026-05-13")
+
+        assert result["total_candidates"] == 2
+        assert result["states"]["paper_ordered"] == 1
+        assert result["skip_reasons"]["stale_book"] == 1
+        assert result["orderbook_age_p95"] == 2500
+        db.close()
         db.close()

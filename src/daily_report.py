@@ -1720,14 +1720,15 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 lines.append(f"| Shadow maker EHR | {sm['shadow_ehr']:+.4f} |")
             lines.extend(["", ""])
 
-        # Multi-poll Phase A — per-(offset × regime) WR snapshot.
+        # Multi-poll research grid — per-(offset × regime) WR snapshot.
         # Plan: docs/plans/multi_poll_predict_plan.md.
         mp = data.get("multi_poll")
         if mp:
             lines.extend([
-                f"## Multi-Poll Phase A ({label})",
+                f"## Multi-Poll Research Grid ({label})",
                 "",
-                "*Shadow — directional WR by (offset × regime), N≥20.*",
+                "*Research-only directional WR by (offset × regime), N≥20. "
+                "These rows are not executable promotion evidence.*",
                 "",
                 f"Total polls today: {mp['total_polls']:,}",
                 "",
@@ -1757,12 +1758,60 @@ def format_report(date_str, data_5m, data_15m, decision_alerts=None, data_eth=No
                 )
             lines.extend([
                 "",
-                "*Realistic P&L: $25 bet, entry at orderbook best_ask "
+                "*Research-grid realistic P&L: $25 bet, entry at orderbook best_ask "
                 "(or 1−best_bid for NO side) captured at poll time, less "
                 "2% taker fee. Replaces the prior fictional $0.50 "
-                "entry assumption.*",
+                "entry assumption, but still does not apply conviction or "
+                "one-order-per-cycle execution gates.*",
                 "", "",
             ])
+
+        replay = data.get("timing_replay")
+        if replay:
+            lines.extend([
+                f"## BTC 5m Timing Replay ({label})",
+                "",
+                "*Executable replay only: conviction, freshness, valid price, "
+                "resolution, and one-order-per-cycle gates applied.*",
+                "",
+                "| Policy | Candidates | Fired | WR | P&L | EHR |",
+                "|--------|-----------:|------:|---:|----:|----:|",
+            ])
+            for p in replay["policies"]:
+                wr = f"{p['wr']}%" if p["wr"] is not None else "—"
+                ehr = f"{p['ehr']:+.4f}" if p["ehr"] is not None else "—"
+                lines.append(
+                    f"| {p['policy']} | {p['candidates']} | {p['fired']} | "
+                    f"{wr} | ${p['pnl']:+,.2f} | {ehr} |"
+                )
+            if replay.get("skip_reasons"):
+                reasons = ", ".join(
+                    f"{k}: {v}" for k, v in sorted(replay["skip_reasons"].items())
+                )
+                lines.append("")
+                lines.append(f"Skipped replay rows: {reasons}")
+            lines.extend(["", ""])
+
+        delayed = data.get("delayed_execution")
+        if delayed:
+            lines.extend([
+                f"## BTC 5m Delayed FAK Execution ({label})",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Candidates | {delayed['total_candidates']} |",
+                f"| Orderbook age p95 | {delayed['orderbook_age_p95'] if delayed['orderbook_age_p95'] is not None else '—'} ms |",
+            ])
+            states = ", ".join(
+                f"{k}: {v}" for k, v in sorted(delayed["states"].items())
+            )
+            lines.append(f"| States | {states} |")
+            if delayed.get("skip_reasons"):
+                skips = ", ".join(
+                    f"{k}: {v}" for k, v in sorted(delayed["skip_reasons"].items())
+                )
+                lines.append(f"| Skip reasons | {skips} |")
+            lines.extend(["", ""])
 
         if not shadow:
             continue
@@ -2337,6 +2386,113 @@ def analyze_multi_poll(db, date_str):
         return None
 
 
+def analyze_timing_replay(db, date_str):
+    """Summarize executable BTC 5m timing replay rows."""
+    try:
+        table = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name='btc5m_timing_replay'"
+        ).fetchone()
+        if not table:
+            return None
+        rows = db.execute(
+            """
+            SELECT policy,
+                   COUNT(*) AS candidates,
+                   SUM(CASE WHEN would_fire = 1 THEN 1 ELSE 0 END) AS fired,
+                   SUM(CASE WHEN would_fire = 1 AND won = 1 THEN 1 ELSE 0 END) AS wins,
+                   SUM(CASE WHEN would_fire = 1 THEN pnl ELSE 0 END) AS pnl,
+                   AVG(CASE WHEN would_fire = 1 THEN ehr ELSE NULL END) AS ehr
+            FROM btc5m_timing_replay
+            WHERE trade_date = ?
+            GROUP BY policy
+            ORDER BY policy
+            """,
+            (date_str,),
+        ).fetchall()
+        if not rows:
+            return None
+        policies = []
+        for r in rows:
+            policy, candidates, fired, wins, pnl, ehr = r
+            fired = fired or 0
+            policies.append({
+                "policy": policy,
+                "candidates": candidates or 0,
+                "fired": fired,
+                "wins": wins or 0,
+                "wr": round((wins or 0) / fired * 100, 1) if fired else None,
+                "pnl": round(pnl or 0, 2),
+                "ehr": round(ehr, 4) if ehr is not None else None,
+            })
+        skip_rows = db.execute(
+            """
+            SELECT skip_reason, COUNT(*)
+            FROM btc5m_timing_replay
+            WHERE trade_date = ? AND would_fire = 0 AND skip_reason IS NOT NULL
+            GROUP BY skip_reason
+            """,
+            (date_str,),
+        ).fetchall()
+        return {
+            "policies": policies,
+            "skip_reasons": {r[0]: r[1] for r in skip_rows},
+        }
+    except Exception:
+        return None
+
+
+def analyze_delayed_execution(db, date_str):
+    """Summarize delayed BTC 5m FAK candidates for daily reports."""
+    try:
+        table = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name='btc5m_timing_candidates'"
+        ).fetchone()
+        if not table:
+            return None
+        rows = db.execute(
+            """
+            SELECT state, COUNT(*)
+            FROM btc5m_timing_candidates
+            WHERE date(created_at) = ?
+            GROUP BY state
+            """,
+            (date_str,),
+        ).fetchall()
+        if not rows:
+            return None
+        skip_rows = db.execute(
+            """
+            SELECT skip_reason, COUNT(*)
+            FROM btc5m_timing_candidates
+            WHERE date(created_at) = ? AND skip_reason IS NOT NULL
+            GROUP BY skip_reason
+            """,
+            (date_str,),
+        ).fetchall()
+        ages = [
+            r[0] for r in db.execute(
+                "SELECT orderbook_age_ms FROM btc5m_timing_candidates "
+                "WHERE date(created_at) = ? AND orderbook_age_ms IS NOT NULL "
+                "ORDER BY orderbook_age_ms",
+                (date_str,),
+            ).fetchall()
+        ]
+        p95 = None
+        if ages:
+            p95 = ages[int(len(ages) * 0.95)] if len(ages) >= 20 else ages[-1]
+        states = {r[0]: r[1] for r in rows}
+        return {
+            "total_candidates": sum(states.values()),
+            "states": states,
+            "skip_reasons": {r[0]: r[1] for r in skip_rows},
+            "orderbook_age_p95": p95,
+        }
+    except Exception:
+        return None
+
+
 def analyze_shadow_maker(db, date_str):
     """Shadow maker Phase 1 metrics for daily report (AC-SM-4, AC-SM-5).
 
@@ -2464,6 +2620,14 @@ def analyze_pipeline(db_path, date_str):
         ehr = analyze_ehr(db, date_str)
         shadow_maker_data = analyze_shadow_maker(db, date_str)
         multi_poll_data = analyze_multi_poll(db, date_str)
+        if multi_poll_data:
+            try:
+                from timing_replay import build_timing_replay
+                build_timing_replay(db, date_str)
+            except Exception as e:
+                print(f"  [timing_replay] build failed: {e}")
+        timing_replay_data = analyze_timing_replay(db, date_str)
+        delayed_execution_data = analyze_delayed_execution(db, date_str)
     finally:
         db.close()
         CONVICTION_BETS = old_bets
@@ -2515,6 +2679,8 @@ def analyze_pipeline(db_path, date_str):
         "ehr": ehr,
         "shadow_maker": shadow_maker_data,
         "multi_poll": multi_poll_data,
+        "timing_replay": timing_replay_data,
+        "delayed_execution": delayed_execution_data,
     }
 
 

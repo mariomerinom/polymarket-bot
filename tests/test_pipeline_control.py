@@ -85,6 +85,33 @@ class TestLoadPipelineConfig:
         assert pipeline_control.is_pipeline_live_canary("btc_5m") is True
         assert pipeline_control.is_pipeline_live("btc_5m") is False
 
+    def test_loads_timing_policy_default_immediate(self, tmp_path, monkeypatch):
+        config = {"pipelines": {"btc_5m": {"mode": "paper"}}}
+        cfg_file = tmp_path / "pipelines.json"
+        cfg_file.write_text(json.dumps(config))
+
+        import pipeline_control
+        monkeypatch.setattr(pipeline_control, "CONFIG_PATH", cfg_file)
+
+        assert pipeline_control.get_timing_policy("btc_5m") == "immediate"
+
+    def test_loads_valid_delay_timing_policy(self, tmp_path, monkeypatch):
+        config = {
+            "pipelines": {
+                "btc_5m": {
+                    "mode": "paper",
+                    "timing_policy": "delay_180_paper",
+                }
+            }
+        }
+        cfg_file = tmp_path / "pipelines.json"
+        cfg_file.write_text(json.dumps(config))
+
+        import pipeline_control
+        monkeypatch.setattr(pipeline_control, "CONFIG_PATH", cfg_file)
+
+        assert pipeline_control.get_timing_policy("btc_5m") == "delay_180_paper"
+
     def test_bet_size_null_returns_none(self, tmp_path, monkeypatch):
         config = {"pipelines": {"eth_5m": {"mode": "paused", "bet_size": None}}}
         cfg_file = tmp_path / "pipelines.json"

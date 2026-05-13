@@ -122,3 +122,55 @@ def test_live_canary_mode_stays_paper_when_readiness_blocks(tmp_path, monkeypatc
     rows = trade.execute_trades(db, 1, pipeline_name="btc_5m")
 
     assert rows == []
+
+
+def test_delayed_live_canary_blocks_without_paper_sample(tmp_path):
+    from canary_readiness import btc5m_delayed_policy_blockers
+
+    db = _make_db()
+    db.execute("""
+        CREATE TABLE btc5m_timing_candidates (
+            id INTEGER PRIMARY KEY,
+            state TEXT,
+            would_fire INTEGER,
+            pnl REAL,
+            ehr REAL,
+            orderbook_age_ms INTEGER,
+            skip_reason TEXT,
+            created_at TEXT
+        )
+    """)
+
+    blockers = btc5m_delayed_policy_blockers(db)
+
+    assert any("delayed_ehr_insufficient_sample" in b for b in blockers)
+
+
+def test_delayed_live_canary_blocks_negative_delayed_ehr(tmp_path):
+    from canary_readiness import btc5m_delayed_policy_blockers
+
+    db = _make_db()
+    db.execute("""
+        CREATE TABLE btc5m_timing_candidates (
+            id INTEGER PRIMARY KEY,
+            state TEXT,
+            would_fire INTEGER,
+            pnl REAL,
+            ehr REAL,
+            orderbook_age_ms INTEGER,
+            skip_reason TEXT,
+            created_at TEXT
+        )
+    """)
+    for i in range(50):
+        db.execute(
+            "INSERT INTO btc5m_timing_candidates "
+            "(state, would_fire, pnl, ehr, orderbook_age_ms, created_at) "
+            "VALUES ('paper_ordered', 1, -1.0, -0.02, 500, ?)",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+    db.commit()
+
+    blockers = btc5m_delayed_policy_blockers(db)
+
+    assert any("delayed_ehr_negative" in b for b in blockers)

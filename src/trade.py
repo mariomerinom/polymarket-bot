@@ -74,7 +74,7 @@ def ensure_orders_table(db):
             FOREIGN KEY (prediction_id) REFERENCES predictions(id)
         )
     """)
-    # FOK execution layer columns (Phase 1)
+    # FAK execution layer columns (older rows/tests may still say FOK)
     for col, typ in [("order_type", "TEXT"), ("edge", "REAL"),
                      ("best_bid", "REAL"), ("best_ask", "REAL"),
                      ("spread", "REAL"), ("action", "TEXT")]:
@@ -206,9 +206,9 @@ def compute_order(prediction_row, market_row, liquidity=None):
     """
     Compute order parameters from a prediction.
 
-    Phase 1 FOK execution: compute edge against execution price (best_ask
-    for BUY, no_best_ask for SELL). If edge >= min_edge, place FOK at
-    best_ask. If edge < min_edge, skip. Falls back to legacy GTC logic
+    Phase 1 FAK execution: compute edge against execution price (best_ask
+    for BUY, no_best_ask for SELL). If edge >= min_edge, place FAK at
+    best_ask plus cushion. If edge < min_edge, skip. Falls back to legacy GTC logic
     when bid/ask data is unavailable (paper pipelines without WS feed).
 
     Returns:
@@ -234,7 +234,7 @@ def compute_order(prediction_row, market_row, liquidity=None):
                 f"DIAG|clob_skip=true|side=YES|gamma={market_price_yes:.4f}|reason=no_clob_price")
             return None, "no CLOB price for YES token"
 
-        # FOK path: edge against execution price (AC-1.2, AC-2.1)
+        # FAK path: edge against execution price (AC-1.2, AC-2.1)
         best_ask = market_row.get("_yes_best_ask")
         best_bid = market_row.get("_yes_best_bid")
         spread = market_row.get("_yes_spread")
@@ -275,7 +275,7 @@ def compute_order(prediction_row, market_row, liquidity=None):
                 f"DIAG|clob_skip=true|side=NO|implied={round(1 - market_price_yes, 4):.4f}|reason=no_clob_price")
             return None, "no CLOB price for NO token"
 
-        # FOK path: edge against NO token execution price
+        # FAK path: edge against NO token execution price
         no_best_ask = market_row.get("_no_best_ask")
         no_best_bid = market_row.get("_no_best_bid")
         no_spread = market_row.get("_no_spread")
@@ -383,7 +383,7 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         "reason": None,
         "placed_at": now,
         "cycle": cycle,
-        # FOK metadata
+        # FAK metadata
         "order_type": order_params.get("order_type"),
         "edge": order_params.get("edge"),
         "best_bid": order_params.get("best_bid"),
@@ -518,20 +518,20 @@ def _store_order(db, order):
 
 def check_fok_rejection_rate(db):
     """
-    Check FOK rejection rate over last 50 FOK orders (AC-3.3).
+    Back-compat name: check FAK rejection rate over last 50 immediate-take orders.
 
     Returns (rate, alert) — rate is float 0-1, alert is True if > 30%.
-    Returns (0, False) if fewer than 50 FOK orders exist.
+    Returns (0, False) if fewer than 50 FAK/FOK-labeled orders exist.
     """
     rows = db.execute("""
         SELECT action FROM orders
-        WHERE order_type = 'fok'
+        WHERE order_type IN ('fak', 'fok')
         ORDER BY id DESC
         LIMIT 50
     """).fetchall()
     if len(rows) < 50:
         return 0, False
-    rejected = sum(1 for r in rows if r["action"] == "fok_rejected")
+    rejected = sum(1 for r in rows if r["action"] in ("fak_rejected", "fok_rejected"))
     rate = rejected / len(rows)
     return rate, rate > 0.30
 
@@ -619,7 +619,7 @@ def _submit_fak_order(token_id, side, amount, price):
         price: Execution price (best_ask for BUY, best_bid for SELL)
 
     Returns:
-        API response dict. FOK fills are immediate — check response for
+        API response dict. FAK fills are immediate — check response for
         fill status. No pending→filled transition needed.
     """
     from py_clob_client.clob_types import MarketOrderArgs, OrderType
@@ -649,7 +649,7 @@ def _submit_fak_order(token_id, side, amount, price):
             response = _fut.result(timeout=API_TIMEOUT_SUBMIT)
         except _FTimeout:
             raise TimeoutError(
-                f"FOK order submission timed out after {API_TIMEOUT_SUBMIT}s"
+                f"FAK order submission timed out after {API_TIMEOUT_SUBMIT}s"
             )
 
     return response
@@ -1139,6 +1139,19 @@ def execute_trades(db, cycle, pipeline_name=None):
          "agent", "price_yes", "price_no", "end_date", "fetched_at"],
         row
     )) for row in cursor.fetchall()]
+
+    try:
+        import delayed_execution
+        if delayed_execution.should_suppress_immediate(pipeline_name or "btc_5m"):
+            suppressed = len(predictions)
+            predictions = []
+            if suppressed:
+                print(
+                    "  [TIMING] immediate BTC 5m execution suppressed; "
+                    f"delayed policy owns {suppressed} candidate(s)"
+                )
+    except Exception as exc:
+        print(f"  [TIMING] suppression check failed open: {exc}")
 
     run_shadow_logging(db, cycle)
 
