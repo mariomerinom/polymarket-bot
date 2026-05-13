@@ -128,23 +128,23 @@ Hypothetical maker fills — what would have filled if we posted passively.
 
 | Feed | Status | Reconnects (24h) |
 |------|--------|-----------------:|
-| bybit_spot | connected | 208 |
+| bybit_spot | connected | 209 |
 | bybit_linear | connected | 1 |
 | polymarket | connected | 25 |
 
 | Metric | p50 | p95 | Samples |
 |--------|----:|----:|--------:|
-| Production dispatch latency (ms) | 6115 | 14686 | 702 |
-| Bybit event lag (ms) | 1083 | 36226 | 942 |
-| TA build (ms) | 87 | 147 | 702 |
-| Pipeline fanout (ms) | 6001 | 14604 | 702 |
-| Strategy Lab runtime (ms) | 147 | 648 | 702 |
-| Total dispatch wall time (ms) | 6384 | 14784 | 702 |
-| True orderbook age (ms) | 106948 | 287488 | 661 |
+| Production dispatch latency (ms) | 6121 | 14858 | 704 |
+| Bybit event lag (ms) | 1083 | 36573 | 947 |
+| TA build (ms) | 87 | 147 | 704 |
+| Pipeline fanout (ms) | 6038 | 14762 | 704 |
+| Strategy Lab runtime (ms) | 148 | 650 | 704 |
+| Total dispatch wall time (ms) | 6405 | 14988 | 704 |
+| True orderbook age (ms) | 106945 | 282805 | 731 |
 
-- Slowest pipeline runtime: eth_5m p95=17331ms (240 samples)
-- Orderbook cache: 72 tokens, 456 token-set changes (24h)
-- Cycles: 2620
+- Slowest pipeline runtime: eth_5m p95=17189ms (241 samples)
+- Orderbook cache: 70 tokens, 458 token-set changes (24h)
+- Cycles: 2625
 - Fallback fires (24h): 0
 - Engine start: 2026-05-12T04:00:01.731251+00:00
 
