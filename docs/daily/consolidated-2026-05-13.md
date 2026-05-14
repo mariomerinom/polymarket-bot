@@ -134,23 +134,23 @@ Hypothetical maker fills — what would have filled if we posted passively.
 
 | Feed | Status | Reconnects (24h) |
 |------|--------|-----------------:|
-| bybit_spot | connected | 222 |
+| bybit_spot | connected | 223 |
 | bybit_linear | connected | 2 |
 | polymarket | connected | 15 |
 
 | Metric | p50 | p95 | Samples |
 |--------|----:|----:|--------:|
-| Production dispatch latency (ms) | 7807 | 15648 | 700 |
-| Bybit event lag (ms) | 1089 | 38706 | 833 |
-| TA build (ms) | 89 | 159 | 701 |
-| Pipeline fanout (ms) | 7707 | 15539 | 700 |
-| Strategy Lab runtime (ms) | 164 | 1121 | 700 |
-| Total dispatch wall time (ms) | 8192 | 16166 | 700 |
-| True orderbook age (ms) | 34012 | 228131 | 930 |
+| Production dispatch latency (ms) | 7807 | 15564 | 703 |
+| Bybit event lag (ms) | 1094 | 39719 | 841 |
+| TA build (ms) | 89 | 159 | 703 |
+| Pipeline fanout (ms) | 7707 | 15491 | 703 |
+| Strategy Lab runtime (ms) | 164 | 1114 | 703 |
+| Total dispatch wall time (ms) | 8192 | 16092 | 703 |
+| True orderbook age (ms) | 32469 | 228130 | 986 |
 
-- Slowest pipeline runtime: btc_5m p95=19101ms (226 samples)
-- Orderbook cache: 60 tokens, 464 token-set changes (24h)
-- Cycles: 2614
+- Slowest pipeline runtime: btc_5m p95=19101ms (227 samples)
+- Orderbook cache: 56 tokens, 465 token-set changes (24h)
+- Cycles: 2619
 - Fallback fires (24h): 0
 - Engine start: 2026-05-13T04:00:03.155647+00:00
 
