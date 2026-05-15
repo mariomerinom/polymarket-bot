@@ -709,6 +709,8 @@ class BotsyEngine:
         """
         changes = data.get("price_changes")
         if changes is None:
+            changes = data.get("changes")
+        if changes is None:
             changes = [data]
         if not isinstance(changes, list):
             return

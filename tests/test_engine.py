@@ -327,6 +327,39 @@ class TestBotsyEngineInit:
         assert entry["updated_at"] != old_ts
         assert engine._orderbook_dirty is True
 
+    def test_polymarket_price_change_accepts_changes_alias(self):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._orderbook_cache = {
+            "tok": {
+                "mid": 0.53,
+                "best_bid": 0.52,
+                "best_ask": 0.54,
+                "spread": 0.02,
+                "updated_at": "2026-05-12T00:00:00+00:00",
+                "bids": [{"price": "0.52", "size": "100"}],
+                "asks": [{"price": "0.54", "size": "80"}],
+            }
+        }
+
+        engine._update_orderbook_price_change({
+            "event_type": "price_change",
+            "changes": [{
+                "asset_id": "tok",
+                "price": "0.53",
+                "size": "120",
+                "side": "BUY",
+                "best_bid": "0.53",
+                "best_ask": "0.54",
+            }],
+        })
+
+        entry = engine._orderbook_cache["tok"]
+        assert entry["best_bid"] == 0.53
+        assert entry["best_ask"] == 0.54
+        assert entry["status"] == "fresh"
+
     def test_polymarket_price_change_without_snapshot_marks_token_stale(self):
         from botsy_engine import BotsyEngine
 
@@ -371,6 +404,37 @@ class TestBotsyEngineInit:
                 "asset_id": "tok",
                 "best_bid": "0.56",
                 "best_ask": "0.54",
+            }],
+        })
+
+        entry = engine._orderbook_cache["tok"]
+        assert entry["status"] == "stale"
+        assert entry["updated_at"] is None
+        assert "invalid_bbo" in entry["stale_reason"]
+
+    def test_polymarket_price_change_empty_side_marks_token_stale(self):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._orderbook_cache = {
+            "tok": {
+                "mid": 0.53,
+                "best_bid": 0.52,
+                "best_ask": 0.54,
+                "spread": 0.02,
+                "updated_at": "2026-05-12T00:00:00+00:00",
+                "bids": [{"price": "0.52", "size": "100"}],
+                "asks": [{"price": "0.54", "size": "80"}],
+            }
+        }
+
+        engine._update_orderbook_price_change({
+            "event_type": "price_change",
+            "price_changes": [{
+                "asset_id": "tok",
+                "price": "0.54",
+                "size": "0",
+                "side": "SELL",
             }],
         })
 

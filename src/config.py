@@ -39,7 +39,8 @@ MAX_SLIPPAGE_PCT = float(_env("MAX_SLIPPAGE_PCT", "2.0"))  # 2% max
 EDGE_THRESHOLD = float(_env("EDGE_THRESHOLD", "0.05"))     # 5% min edge to trade
 MAX_SLIPPAGE_SPREAD = float(_env("MAX_SLIPPAGE_SPREAD", "0.05"))  # 5¢ max above market mid
 
-# FOK execution layer (Phase 1): min_edge = spread + FOK_EDGE_BUFFER
+# FAK/IOC execution layer (Phase 1): min_edge = spread + FOK_EDGE_BUFFER.
+# The constant name is kept for backward compatibility with older tests/config.
 FOK_EDGE_BUFFER = float(_env("FOK_EDGE_BUFFER", "0.02"))  # 2¢ above spread
 
 # Lever B (spec_fill_adverse_selection.md): minimum edge that must remain

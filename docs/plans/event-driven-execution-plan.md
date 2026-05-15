@@ -4,9 +4,9 @@
 
 The bot currently couples prediction and execution in the same 5-minute cycle. When `dispatch()` fires on a candle close, the pipeline predicts AND trades in one shot. But the Polymarket WS feed updates the orderbook cache continuously (~every second). If the orderbook improves 30 seconds after a cycle fires, we miss the edge entirely — we won't look again for another 5 minutes.
 
-This is the primary fill-rate blocker: the bot sees the right direction (67.4% WR) but often can't execute because the orderbook at cycle time doesn't meet the FOK edge threshold (`edge >= spread + 0.02`). By the time the book moves in our favor, the cycle is over.
+This is the primary fill-rate blocker: the bot sees the right direction (67.4% WR) but often can't execute because the orderbook at cycle time doesn't meet the FAK/IOC edge threshold (`edge >= spread + 0.02`). By the time the book moves in our favor, the cycle is over.
 
-**Goal:** Decouple prediction (still 5m candle-driven) from execution (reactive to WS orderbook events). When a prediction is active and the live book shows sufficient edge, fire FOK immediately — don't wait for the next 5m cycle.
+**Goal:** Decouple prediction (still 5m candle-driven) from execution (reactive to WS orderbook events). When a prediction is active and the live book shows sufficient edge, fire FAK immediately — take available liquidity now, kill the remainder, and don't wait for the next 5m cycle.
 
 ## Frozen File Check
 
@@ -22,13 +22,13 @@ The core changes are in `src/botsy_engine.py` (not frozen), `src/trade.py` (not 
 - [x] VPS deployment live with WS feeds (Bybit + Polymarket)
 - [x] Orderbook cache (`data/live_orderbook.json`) updating per-token
 - [x] Pipeline isolation landed (pipeline_name threaded to execute_trades) — see [pipeline-isolation-unification.md](pipeline-isolation-unification.md)
-- [x] FOK logic validated in compute_order()
+- [x] FAK/IOC logic validated in compute_order()
 - [ ] BTC 5m fill rate baseline measured (current: estimate ~30-40% of qualifying predictions fill)
 
 ## Backward — What Breaks?
 
 ### Affected Pipelines
-- **BTC 5m** (production) — primary beneficiary; reactive execution fires FOK between cycles
+- **BTC 5m** (production) — primary beneficiary; reactive execution fires FAK between cycles
 - **ETH 5m** (paper) — same reactive path, paper mode
 - **BTC 15m** (paper) — same reactive path, paper mode
 - **Kalshi** — NOT affected (no CLOB execution)
@@ -36,7 +36,7 @@ The core changes are in `src/botsy_engine.py` (not frozen), `src/trade.py` (not 
 ### Affected Tests
 - `tests/test_ci_run_lifecycle.py` — needs mock for reactive executor
 - `tests/test_pipeline_isolation.py` — needs reactive path isolation test
-- `tests/test_multi_pipeline_fok.py` — needs reactive FOK variant
+- `tests/test_multi_pipeline_fok.py` — needs reactive FAK variant; filename remains legacy-compatible
 
 ### Rollback Plan
 1. Set `REACTIVE_EXECUTION=false` in env (kill switch — immediate disable)
@@ -57,7 +57,7 @@ The core changes are in `src/botsy_engine.py` (not frozen), `src/trade.py` (not 
 
 ```python
 class ReactiveExecutor:
-    """Monitors active predictions and fires FOK when orderbook shows edge."""
+    """Monitors active predictions and fires FAK when orderbook shows edge."""
 
     def __init__(self, db_path, pipeline_name, min_edge_buffer=0.02):
         self.db_path = db_path
@@ -74,7 +74,7 @@ class ReactiveExecutor:
         """Called on every WS book event. Checks if any pending prediction has edge."""
 
     def _check_and_fire(self, prediction_id, book_entry):
-        """Compute edge, fire FOK if threshold met. Deregister on fill."""
+        """Compute edge, fire FAK if threshold met. Deregister on fill."""
 
     def deregister(self, prediction_id):
         """Remove prediction from monitoring (filled, expired, or resolved)."""
@@ -90,9 +90,9 @@ class ReactiveExecutor:
 - **Thread-safe** — uses `threading.Lock` since WS callbacks are on separate threads
 - **Paper mode respected** — checks `is_pipeline_live(pipeline_name)` before submitting
 
-**Commit:** `Add ReactiveExecutor: fire FOK on live orderbook edge`
+**Commit:** `Add ReactiveExecutor: fire FAK on live orderbook edge`
 **Tests:**
-- `test_fires_fok_when_edge_appears` — register prediction, simulate book update with edge → FOK fired
+- `test_fires_fak_when_edge_appears` — register prediction, simulate book update with edge → FAK fired
 - `test_no_fire_below_threshold` — book update with insufficient edge → no order
 - `test_deregister_after_fill` — filled order removes prediction from monitoring
 - `test_cooldown_prevents_spam` — two updates within 30s → only one order attempt
@@ -134,7 +134,7 @@ class ReactiveExecutor:
 - `REACTIVE_EXECUTION` env var (default: `false` — shadow mode first)
 - Metrics logged per cycle: `reactive_checks`, `reactive_fires`, `reactive_fills`, `reactive_skips`
 - Dashboard column: "Reactive" showing fills from reactive path vs cycle path
-- Log format: `[REACTIVE] btc_5m pred_123: edge=0.04 spread=0.01 → FOK fired @ 0.52`
+- Log format: `[REACTIVE] btc_5m pred_123: edge=0.04 spread=0.01 → FAK fired @ 0.52`
 
 **Commit:** `Add reactive execution kill switch and observability`
 **Tests:** Test kill switch disables all reactive firing
@@ -187,22 +187,22 @@ This lets us measure: "How many additional fills would reactive execution captur
                     │                      │                     │  │
                     │                      │ on_orderbook_update │  │
                     │                      │   → check edge     │  │
-                    │                      │   → fire FOK        │  │
+                    │                      │   → fire FAK        │  │
                     │                      │   → deregister      │  │
                     │                      └─────────────────────┘  │
                     └──────────────────────────────────────────────┘
 ```
 
-## Interaction with Existing FOK Logic
+## Interaction with Existing FAK Logic
 
-The reactive executor reuses `compute_order()` from `trade.py` — same edge threshold, same FOK parameters, same risk gates. The only difference is **when** it's called:
+The reactive executor reuses `compute_order()` from `trade.py` — same edge threshold, same FAK/IOC parameters, same risk gates. The only difference is **when** it's called:
 
 | | Cycle Execution (existing) | Reactive Execution (new) |
 |---|---|---|
 | **Trigger** | 5m candle close | Any WS book update |
 | **Prediction** | Just computed | Previously registered |
 | **Edge check** | Once per cycle | Every ~1s (book update rate) |
-| **Order type** | FOK (if WS data) or GTC | FOK only (always has WS data) |
+| **Order type** | FAK (if WS data) or GTC | FAK only (always has WS data) |
 | **Dedup** | One order per prediction per cycle | Deregister on fill, 30s cooldown |
 
 ## Risk Assessment
@@ -239,7 +239,7 @@ The reactive executor reuses `compute_order()` from `trade.py` — same edge thr
   ```bash
   python3 src/optimization_tracker.py register \
     --name reactive_execution \
-    --description "Event-driven FOK on WS book updates between 5m cycles" \
+    --description "Event-driven FAK on WS book updates between 5m cycles" \
     --revert-if "reactive_fill_rate < 0.3 or reactive_wr < 0.55" \
     --min-sample 50
   ```
