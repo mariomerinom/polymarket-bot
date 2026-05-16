@@ -337,7 +337,24 @@ The v1 fix still used a writable global, making the same class of bug inevitable
 
 ---
 
-## Summary: The 16 Rules
+## 17. Execution Evidence Must Be End-To-End
+
+**Incident:** BTC 5m production promotion stayed blocked after multiple Polymarket orderbook freshness patches. The websocket path gained counters, REST seeding, reconnect debounce, and report lines, but true orderbook p95 and delayed missing-book skips remained unresolved.
+
+**Root cause:** The system patched individual surfaces without enforcing one end-to-end execution contract. Fresh books could exist in engine memory while execution consumers read an older disk IPC snapshot. Delayed candidates could fail before writing terminal state. DOWN/NO candidates could rely on synthetic NO books derived from YES fields. Readiness could trust stale or old-schema metrics.
+
+**Remediation direction:**
+- Flush execution-critical cache IPC on its own tight cadence, not on a reporting cadence.
+- Every eligible prediction/candidate gets exactly one terminal execution classification.
+- Execution evidence must use the exact token/side that would be traded.
+- Metrics files need schema version, write timestamp, sample counts, and fail-closed readiness checks.
+- Reports must show `READY` or `BLOCKED` with blockers, not just raw diagnostics.
+
+**Best practice:** Observability is not a fix unless it changes the decision surface. For promotion, require a continuous proof chain: fresh runtime metric -> exact side-token book -> terminal execution state -> report/readiness verdict.
+
+---
+
+## Summary: The 17 Rules
 
 1. **One source of truth.** The deployed system is canonical. Local state is a cache.
 2. **Test from deployment.** If it works on your machine but not in CI, it doesn't work.
@@ -355,3 +372,4 @@ The v1 fix still used a writable global, making the same class of bug inevitable
 14. **Check the timestamp.** Historical data dilutes post-change metrics. Partition by deploy date.
 15. **Log everything, optimize later.** Hard thresholds are premature. Store full state, decide post-hoc.
 16. **Hard-sync before auto-commit.** Generated-data writers must hard-reset to remote code before staging runtime files.
+17. **Prove execution end-to-end.** Freshness, side-token evidence, terminal state, and readiness must agree.
