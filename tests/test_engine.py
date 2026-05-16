@@ -256,6 +256,48 @@ class TestBotsyEngineInit:
         assert engine._polymarket_resubscribe_requested is True
         assert engine.metrics["orderbook_cache"]["token_set_changes_24h"] == 1
 
+    def test_polymarket_unknown_event_type_is_counted(self):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._record_ignored_polymarket_event("last_trade_price")
+        engine._record_ignored_polymarket_event("last_trade_price")
+
+        assert engine.metrics["orderbook_cache"]["ignored_event_types"] == {
+            "last_trade_price": 2,
+        }
+
+    def test_polymarket_subscription_refresh_debounces_reconnect_churn(self):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._subscribed_token_ids = {"old"}
+        engine._last_polymarket_reconnect_request_at = 1000.0
+        engine._now_monotonic = lambda: 1030.0
+        engine._get_active_token_ids = lambda: ["old", "new"]
+
+        changed = engine.refresh_polymarket_subscriptions("test")
+
+        assert changed is True
+        assert engine._polymarket_resubscribe_requested is False
+        assert engine._pending_polymarket_token_ids == {"old", "new"}
+        assert engine.metrics["orderbook_cache"]["resubscribe_debounced"] == 1
+        assert engine.metrics["orderbook_cache"]["token_set_added"] == 1
+
+    def test_pending_polymarket_reconnect_executes_after_debounce_window(self):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._subscribed_token_ids = {"old"}
+        engine._pending_polymarket_token_ids = {"old", "new"}
+        engine._last_polymarket_reconnect_request_at = 1000.0
+        engine._now_monotonic = lambda: 1100.0
+
+        assert engine._maybe_request_pending_polymarket_resubscribe() is True
+        assert engine._polymarket_resubscribe_requested is True
+        assert engine._pending_polymarket_token_ids is None
+        assert engine.metrics["orderbook_cache"]["resubscribe_executed"] == 1
+
     def test_orderbook_cache_prunes_to_active_subscription_tokens(self):
         from botsy_engine import BotsyEngine
 
@@ -289,6 +331,7 @@ class TestBotsyEngineInit:
         assert entry["mid"] == 0.53
         assert entry["spread"] == pytest.approx(0.02)
         assert entry["updated_at"]
+        assert engine.metrics["orderbook_cache"]["book_events_24h"] == 1
 
     def test_polymarket_price_change_refreshes_cached_bbo(self):
         from datetime import datetime, timedelta, timezone
@@ -326,6 +369,8 @@ class TestBotsyEngineInit:
         assert entry["mid"] == 0.535
         assert entry["updated_at"] != old_ts
         assert engine._orderbook_dirty is True
+        assert engine.metrics["orderbook_cache"]["price_change_events_24h"] == 1
+        assert engine.metrics["orderbook_cache"]["price_change_tokens_updated"] == 1
 
     def test_polymarket_price_change_accepts_changes_alias(self):
         from botsy_engine import BotsyEngine
@@ -381,6 +426,7 @@ class TestBotsyEngineInit:
         assert entry["status"] == "stale"
         assert entry["updated_at"] is None
         assert "missing_snapshot" in entry["stale_reason"]
+        assert engine.metrics["orderbook_cache"]["price_change_missing_snapshot"] == 1
 
     def test_polymarket_price_change_crossed_book_marks_token_stale(self):
         from botsy_engine import BotsyEngine
@@ -411,6 +457,7 @@ class TestBotsyEngineInit:
         assert entry["status"] == "stale"
         assert entry["updated_at"] is None
         assert "invalid_bbo" in entry["stale_reason"]
+        assert engine.metrics["orderbook_cache"]["price_change_invalid_bbo"] == 1
 
     def test_polymarket_price_change_empty_side_marks_token_stale(self):
         from botsy_engine import BotsyEngine
@@ -442,6 +489,97 @@ class TestBotsyEngineInit:
         assert entry["status"] == "stale"
         assert entry["updated_at"] is None
         assert "invalid_bbo" in entry["stale_reason"]
+
+    def test_orderbook_cache_health_counts_fresh_stale_and_recent_tokens(self):
+        from datetime import datetime, timedelta, timezone
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        now = datetime.now(timezone.utc)
+        engine._subscribed_token_ids = {"fresh", "stale", "old"}
+        engine._orderbook_cache = {
+            "fresh": {
+                "updated_at": (now - timedelta(seconds=3)).isoformat(),
+                "status": "fresh",
+            },
+            "stale": {
+                "updated_at": None,
+                "status": "stale",
+                "stale_reason": "missing_snapshot_for_price_change",
+            },
+            "old": {
+                "updated_at": (now - timedelta(minutes=10)).isoformat(),
+                "status": "fresh",
+            },
+        }
+
+        engine._update_orderbook_cache_health()
+
+        cache = engine.metrics["orderbook_cache"]
+        assert cache["fresh_tokens_now"] == 1
+        assert cache["stale_tokens_now"] == 2
+        assert cache["tokens_updated_last_60s"] == 1
+        assert cache["tokens_updated_last_5m"] == 1
+        assert cache["stale_reasons"] == {
+            "missing_snapshot_for_price_change": 1,
+            "stale_updated_at": 1,
+        }
+
+    def test_seed_orderbook_snapshots_from_rest_writes_valid_book(self, monkeypatch):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        monkeypatch.setattr(
+            "clob_depth.get_order_book",
+            lambda token_id: {
+                "bids": [{"price": "0.51", "size": "10"}],
+                "asks": [{"price": "0.53", "size": "12"}],
+            },
+        )
+
+        seeded = engine._seed_orderbook_snapshots_from_rest({"tok"})
+
+        assert seeded == 1
+        entry = engine._orderbook_cache["tok"]
+        assert entry["best_bid"] == 0.51
+        assert entry["best_ask"] == 0.53
+        assert entry["status"] == "fresh"
+        assert engine.metrics["orderbook_cache"]["rest_snapshot_seed_attempts"] == 1
+        assert engine.metrics["orderbook_cache"]["rest_snapshot_seed_success"] == 1
+
+    def test_seed_orderbook_snapshots_from_rest_marks_missing_book_stale(self, monkeypatch):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        monkeypatch.setattr("clob_depth.get_order_book", lambda token_id: None)
+
+        seeded = engine._seed_orderbook_snapshots_from_rest({"tok"})
+
+        assert seeded == 0
+        entry = engine._orderbook_cache["tok"]
+        assert entry["status"] == "stale"
+        assert entry["stale_reason"] == "rest_snapshot_missing"
+        assert engine.metrics["orderbook_cache"]["rest_snapshot_seed_missing"] == 1
+
+    def test_seed_orderbook_snapshots_from_rest_marks_invalid_bbo_stale(self, monkeypatch):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        monkeypatch.setattr(
+            "clob_depth.get_order_book",
+            lambda token_id: {
+                "bids": [{"price": "0.55", "size": "10"}],
+                "asks": [{"price": "0.53", "size": "12"}],
+            },
+        )
+
+        seeded = engine._seed_orderbook_snapshots_from_rest({"tok"})
+
+        assert seeded == 0
+        entry = engine._orderbook_cache["tok"]
+        assert entry["status"] == "stale"
+        assert entry["stale_reason"] == "rest_snapshot_invalid_bbo"
+        assert engine.metrics["orderbook_cache"]["rest_snapshot_seed_invalid_bbo"] == 1
 
     @pytest.mark.asyncio
     async def test_dispatch_runs_independent_pipelines_with_bounded_parallelism(self):

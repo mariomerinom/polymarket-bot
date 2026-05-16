@@ -127,6 +127,7 @@ POLYMARKET_MICROSTRUCTURE_ENABLED = (
     in {"1", "true", "yes", "on"}
 )
 PIPELINE_FANOUT_CONCURRENCY = int(os.environ.get("PIPELINE_FANOUT_CONCURRENCY", "4"))
+POLYMARKET_RESUBSCRIBE_DEBOUNCE_S = 90
 
 # Git commit interval
 GIT_COMMIT_INTERVAL_S = 300  # 5 minutes
@@ -182,6 +183,25 @@ class BotsyEngine:
                 "tokens": 0,
                 "refreshes_24h": 0,
                 "token_set_changes_24h": 0,
+                "book_events_24h": 0,
+                "price_change_events_24h": 0,
+                "ignored_event_types": {},
+                "price_change_tokens_updated": 0,
+                "price_change_missing_snapshot": 0,
+                "price_change_invalid_bbo": 0,
+                "fresh_tokens_now": 0,
+                "stale_tokens_now": 0,
+                "tokens_updated_last_60s": 0,
+                "tokens_updated_last_5m": 0,
+                "stale_reasons": {},
+                "rest_snapshot_seed_attempts": 0,
+                "rest_snapshot_seed_success": 0,
+                "rest_snapshot_seed_missing": 0,
+                "rest_snapshot_seed_invalid_bbo": 0,
+                "token_set_added": 0,
+                "token_set_removed": 0,
+                "resubscribe_debounced": 0,
+                "resubscribe_executed": 0,
             },
             "fallback_fires_24h": 0,
             "engine_start": datetime.now(timezone.utc).isoformat(),
@@ -200,6 +220,9 @@ class BotsyEngine:
         self._token_context: dict = {}     # token_id → {market_id, side, pipeline}
         self._subscribed_token_ids: set = set()
         self._polymarket_resubscribe_requested = False
+        self._pending_polymarket_token_ids: set | None = None
+        self._last_polymarket_reconnect_request_at = 0.0
+        self._now_monotonic = time.monotonic
 
         # Daily regime metrics: track last recorded UTC date per asset so we
         # only fire the rollover fetch once per asset per day. See asset_daily.py.
@@ -499,6 +522,8 @@ class BotsyEngine:
                         continue
                     self._subscribed_token_ids = set(token_ids)
                     self._polymarket_resubscribe_requested = False
+                    self._pending_polymarket_token_ids = None
+                    self._last_polymarket_reconnect_request_at = self._now_monotonic()
                     self.metrics["orderbook_cache"]["tokens"] = len(token_ids)
                     self._prune_orderbook_cache(self._subscribed_token_ids)
 
@@ -509,6 +534,11 @@ class BotsyEngine:
                     }
                     await ws.send(json.dumps(sub_msg))
                     log(f"[WS] Polymarket subscribed to {len(token_ids)} tokens")
+                    seeded = await asyncio.to_thread(
+                        self._seed_orderbook_snapshots_from_rest,
+                        self._subscribed_token_ids,
+                    )
+                    log(f"[WS] Polymarket REST-seeded {seeded}/{len(token_ids)} token books")
 
                     self.metrics["polymarket"]["status"] = "connected"
 
@@ -529,6 +559,9 @@ class BotsyEngine:
                                     self._update_orderbook_price_change(data)
                                     self.metrics["polymarket"]["last_event"] = \
                                         datetime.now(timezone.utc).isoformat()
+                                elif event_type:
+                                    self._record_ignored_polymarket_event(event_type)
+                            self._maybe_request_pending_polymarket_resubscribe()
                             if self._polymarket_resubscribe_requested:
                                 log("[WS] Polymarket active token set changed; reconnecting to resubscribe")
                                 break
@@ -634,15 +667,39 @@ class BotsyEngine:
         self.metrics["orderbook_cache"]["refreshes_24h"] += 1
         self.metrics["orderbook_cache"]["tokens"] = len(token_ids)
         if token_ids != self._subscribed_token_ids:
+            added = token_ids - self._subscribed_token_ids
+            removed = self._subscribed_token_ids - token_ids
             self.metrics["orderbook_cache"]["token_set_changes_24h"] += 1
-            self._polymarket_resubscribe_requested = True
+            self.metrics["orderbook_cache"]["token_set_added"] += len(added)
+            self.metrics["orderbook_cache"]["token_set_removed"] += len(removed)
             self._prune_orderbook_cache(token_ids)
+            now = self._now_monotonic()
+            since_last = now - self._last_polymarket_reconnect_request_at
+            if since_last < POLYMARKET_RESUBSCRIBE_DEBOUNCE_S:
+                self._pending_polymarket_token_ids = token_ids
+                self.metrics["orderbook_cache"]["resubscribe_debounced"] += 1
+            else:
+                self._polymarket_resubscribe_requested = True
+                self._last_polymarket_reconnect_request_at = now
+                self.metrics["orderbook_cache"]["resubscribe_executed"] += 1
             log(
                 f"[WS] Polymarket token set changed via {reason}: "
                 f"{len(self._subscribed_token_ids)} → {len(token_ids)}"
             )
             return True
         return False
+
+    def _maybe_request_pending_polymarket_resubscribe(self) -> bool:
+        if not self._pending_polymarket_token_ids:
+            return False
+        now = self._now_monotonic()
+        if now - self._last_polymarket_reconnect_request_at < POLYMARKET_RESUBSCRIBE_DEBOUNCE_S:
+            return False
+        self._polymarket_resubscribe_requested = True
+        self._last_polymarket_reconnect_request_at = now
+        self.metrics["orderbook_cache"]["resubscribe_executed"] += 1
+        self._pending_polymarket_token_ids = None
+        return True
 
     def _prune_orderbook_cache(self, active_token_ids: set):
         """Drop expired/historical token books outside the active subscription."""
@@ -668,6 +725,7 @@ class BotsyEngine:
         Issue #77: this was likely a major contributor to the ~50MB/hour
         memory growth (transient json.loads/dumps allocations pressuring GC).
         """
+        self.metrics["orderbook_cache"]["book_events_24h"] += 1
         try:
             asset_id = data.get("asset_id", "")
             if not asset_id:
@@ -707,6 +765,7 @@ class BotsyEngine:
         delta arrives before a snapshot, or yields an invalid BBO, mark the
         token stale so execution falls back to REST or blocks promotion.
         """
+        self.metrics["orderbook_cache"]["price_change_events_24h"] += 1
         changes = data.get("price_changes")
         if changes is None:
             changes = data.get("changes")
@@ -730,6 +789,7 @@ class BotsyEngine:
 
             entry = self._orderbook_cache.get(asset_id)
             if not isinstance(entry, dict) or not entry.get("updated_at"):
+                self.metrics["orderbook_cache"]["price_change_missing_snapshot"] += 1
                 self._mark_orderbook_token_stale(asset_id, "missing_snapshot_for_price_change")
                 continue
 
@@ -746,6 +806,7 @@ class BotsyEngine:
 
             mid, spread = self._compute_bbo(best_bid, best_ask)
             if mid is None:
+                self.metrics["orderbook_cache"]["price_change_invalid_bbo"] += 1
                 self._mark_orderbook_token_stale(asset_id, "invalid_bbo_from_price_change")
                 continue
 
@@ -760,6 +821,7 @@ class BotsyEngine:
                 "bids": self._sort_levels(bids, reverse=True)[:5],
                 "asks": self._sort_levels(asks, reverse=False)[:5],
             })
+            self.metrics["orderbook_cache"]["price_change_tokens_updated"] += 1
             self._orderbook_dirty = True
 
     def _mark_orderbook_token_stale(self, asset_id: str, reason: str):
@@ -774,6 +836,55 @@ class BotsyEngine:
             "stale_reason": reason,
         })
         self._orderbook_dirty = True
+
+    def _record_ignored_polymarket_event(self, event_type: str):
+        ignored = self.metrics["orderbook_cache"].setdefault("ignored_event_types", {})
+        ignored[event_type] = ignored.get(event_type, 0) + 1
+
+    def _seed_orderbook_snapshots_from_rest(self, token_ids: set) -> int:
+        """Initialize active token books from REST so deltas have a base book."""
+        if not token_ids:
+            return 0
+        try:
+            from clob_depth import get_order_book
+        except Exception as exc:
+            log(f"[WS] Could not import CLOB REST seeder: {exc}")
+            return 0
+
+        seeded = 0
+        for token_id in sorted(token_ids):
+            self.metrics["orderbook_cache"]["rest_snapshot_seed_attempts"] += 1
+            book = get_order_book(token_id)
+            if not book:
+                self.metrics["orderbook_cache"]["rest_snapshot_seed_missing"] += 1
+                self._mark_orderbook_token_stale(token_id, "rest_snapshot_missing")
+                continue
+
+            bids = book.get("bids") or []
+            asks = book.get("asks") or []
+            best_bid = self._best_level_price(bids, reverse=True)
+            best_ask = self._best_level_price(asks, reverse=False)
+            mid, spread = self._compute_bbo(best_bid, best_ask)
+            if mid is None:
+                self.metrics["orderbook_cache"]["rest_snapshot_seed_invalid_bbo"] += 1
+                self._mark_orderbook_token_stale(token_id, "rest_snapshot_invalid_bbo")
+                continue
+
+            self._orderbook_cache[token_id] = {
+                "mid": mid,
+                "spread": spread,
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "status": "fresh",
+                "stale_reason": None,
+                "bids": self._sort_levels(bids, reverse=True)[:5],
+                "asks": self._sort_levels(asks, reverse=False)[:5],
+            }
+            self.metrics["orderbook_cache"]["rest_snapshot_seed_success"] += 1
+            self._orderbook_dirty = True
+            seeded += 1
+        return seeded
 
     @staticmethod
     def _float_or_none(value):
@@ -1447,6 +1558,7 @@ class BotsyEngine:
         while True:
             await asyncio.sleep(METRICS_INTERVAL_S)
             self._sample_orderbook_cache_ages()
+            self._update_orderbook_cache_health()
             self._compute_percentiles()
             try:
                 tmp = METRICS_FILE.with_suffix(".tmp")
@@ -1548,6 +1660,63 @@ class BotsyEngine:
                 continue
         for age in ages:
             self._record_sample("_orderbook_ages", age)
+
+    def _update_orderbook_cache_health(self):
+        """Summarize current cache freshness and stale reasons for diagnostics."""
+        now = datetime.now(timezone.utc)
+        token_ids = self._subscribed_token_ids or set(self._orderbook_cache.keys())
+        fresh = 0
+        stale = 0
+        updated_60s = 0
+        updated_5m = 0
+        stale_reasons = {}
+
+        for token_id in token_ids:
+            entry = self._orderbook_cache.get(token_id)
+            if not isinstance(entry, dict):
+                stale += 1
+                stale_reasons["missing_cache_entry"] = (
+                    stale_reasons.get("missing_cache_entry", 0) + 1
+                )
+                continue
+
+            reason = entry.get("stale_reason")
+            updated_at = entry.get("updated_at")
+            age_s = None
+            if updated_at:
+                try:
+                    dt = datetime.fromisoformat(updated_at)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    age_s = max(0.0, (now - dt).total_seconds())
+                except (TypeError, ValueError):
+                    reason = reason or "invalid_updated_at"
+
+            if age_s is not None and age_s <= 60:
+                updated_60s += 1
+            if age_s is not None and age_s <= 300:
+                updated_5m += 1
+
+            if (
+                entry.get("status") == "fresh"
+                and age_s is not None
+                and age_s <= 10
+            ):
+                fresh += 1
+            else:
+                stale += 1
+                if reason is None and age_s is not None and age_s > 10:
+                    reason = "stale_updated_at"
+                if reason is None:
+                    reason = "missing_updated_at"
+                stale_reasons[reason] = stale_reasons.get(reason, 0) + 1
+
+        cache = self.metrics["orderbook_cache"]
+        cache["fresh_tokens_now"] = fresh
+        cache["stale_tokens_now"] = stale
+        cache["tokens_updated_last_60s"] = updated_60s
+        cache["tokens_updated_last_5m"] = updated_5m
+        cache["stale_reasons"] = stale_reasons
 
     # ── Log Rotation ──────────���────────────────────────────────────────
 

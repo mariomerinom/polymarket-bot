@@ -192,6 +192,32 @@ class TestRender:
         assert "btc_5m" in md
         assert "eth_5m" in md
 
+    def test_orderbook_diagnostics_render_reconnect_churn_cause(self):
+        metrics = {
+            "orderbook_age_ms": {"p95": 70000},
+            "orderbook_cache": {
+                "book_events_24h": 0,
+                "price_change_events_24h": 0,
+                "ignored_event_types": {"last_trade_price": 3},
+                "fresh_tokens_now": 0,
+                "stale_tokens_now": 24,
+                "tokens_updated_last_60s": 0,
+                "tokens_updated_last_5m": 0,
+                "stale_reasons": {"rest_snapshot_missing": 24},
+                "rest_snapshot_seed_attempts": 24,
+                "rest_snapshot_seed_success": 0,
+                "resubscribe_debounced": 40,
+                "resubscribe_executed": 12,
+            },
+        }
+
+        lines = consolidated_report._orderbook_diagnostic_lines(metrics)
+        text = "\n".join(lines)
+        assert "Polymarket events" in text
+        assert "fresh/stale tokens: 0/24" in text
+        assert "resubscribe debounced/executed: 40/12" in text
+        assert "dominant cause: no websocket book/price_change events" in text
+
     def test_circuit_breaker_false_renders_untripped_plainly(self):
         results = [
             {

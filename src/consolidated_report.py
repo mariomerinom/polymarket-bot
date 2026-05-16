@@ -430,6 +430,8 @@ def _render_engine_health_section() -> list:
         f"- Engine start: {m.get('engine_start', '?')}",
         "",
     ])
+    lines.extend(_orderbook_diagnostic_lines(m))
+    lines.append("")
 
     # Kill switch status
     kill_file = Path(__file__).parent.parent / "data" / "KILL_SWITCH"
@@ -438,6 +440,72 @@ def _render_engine_health_section() -> list:
     else:
         lines.append("✅ Kill switch clear (no `data/KILL_SWITCH` file).")
     lines.append("")
+    return lines
+
+
+def _dominant_orderbook_cause(metrics: dict) -> str | None:
+    cache = metrics.get("orderbook_cache") or {}
+    orderbook = metrics.get("orderbook_age_ms") or metrics.get("orderbook_age") or {}
+    p95 = orderbook.get("p95") or 0
+    if p95 < 2_000:
+        return None
+    if (cache.get("book_events_24h", 0) + cache.get("price_change_events_24h", 0)) == 0:
+        return "no websocket book/price_change events"
+    if cache.get("price_change_missing_snapshot", 0) > cache.get("price_change_invalid_bbo", 0):
+        return "missing snapshots before price_change"
+    if cache.get("price_change_invalid_bbo", 0):
+        return "invalid BBO from price_change"
+    stale_reasons = cache.get("stale_reasons") or {}
+    if stale_reasons:
+        reason, _ = max(stale_reasons.items(), key=lambda kv: kv[1])
+        if reason == "missing_cache_entry":
+            return "token not subscribed or not cached"
+        if reason == "stale_updated_at":
+            return "no recent websocket deltas"
+        return reason.replace("_", " ")
+    if cache.get("resubscribe_debounced", 0) or cache.get("resubscribe_executed", 0):
+        return "subscription reconnect churn"
+    return "unknown orderbook freshness cause"
+
+
+def _orderbook_diagnostic_lines(metrics: dict) -> list[str]:
+    cache = metrics.get("orderbook_cache") or {}
+    ignored = cache.get("ignored_event_types") or {}
+    stale_reasons = cache.get("stale_reasons") or {}
+    attempts = cache.get("rest_snapshot_seed_attempts", 0)
+    successes = cache.get("rest_snapshot_seed_success", 0)
+    cause = _dominant_orderbook_cause(metrics)
+    lines = [
+        (
+            "- Polymarket events: "
+            f"book={cache.get('book_events_24h', 0)}, "
+            f"price_change={cache.get('price_change_events_24h', 0)}, "
+            f"ignored={ignored}"
+        ),
+        (
+            "- Orderbook freshness detail: "
+            f"fresh/stale tokens: {cache.get('fresh_tokens_now', 0)}/"
+            f"{cache.get('stale_tokens_now', 0)}, "
+            f"updated last 60s/5m: {cache.get('tokens_updated_last_60s', 0)}/"
+            f"{cache.get('tokens_updated_last_5m', 0)}, "
+            f"stale reasons: {stale_reasons}"
+        ),
+        (
+            "- REST snapshot seed: "
+            f"{successes}/{attempts} successful "
+            f"(missing={cache.get('rest_snapshot_seed_missing', 0)}, "
+            f"invalid_bbo={cache.get('rest_snapshot_seed_invalid_bbo', 0)})"
+        ),
+        (
+            "- Polymarket resubscribe: "
+            f"resubscribe debounced/executed: {cache.get('resubscribe_debounced', 0)}/"
+            f"{cache.get('resubscribe_executed', 0)}, "
+            f"added/removed tokens: {cache.get('token_set_added', 0)}/"
+            f"{cache.get('token_set_removed', 0)}"
+        ),
+    ]
+    if cause:
+        lines.append(f"- Orderbook freshness decision: dominant cause: {cause}")
     return lines
 
 

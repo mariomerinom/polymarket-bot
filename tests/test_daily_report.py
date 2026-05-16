@@ -120,6 +120,43 @@ def test_analyze_summary():
         assert summary["losses"] == 1
 
 
+def test_orderbook_diagnostics_render_dominant_missing_snapshot_cause():
+    """High orderbook p95 should explain the dominant freshness blocker."""
+    from daily_report import _orderbook_diagnostic_lines
+
+    metrics = {
+        "orderbook_age": {"p95": 138829},
+        "orderbook_cache": {
+            "book_events_24h": 5,
+            "price_change_events_24h": 42,
+            "price_change_tokens_updated": 4,
+            "price_change_missing_snapshot": 17,
+            "price_change_invalid_bbo": 1,
+            "ignored_event_types": {"last_trade_price": 9},
+            "fresh_tokens_now": 2,
+            "stale_tokens_now": 22,
+            "tokens_updated_last_60s": 1,
+            "tokens_updated_last_5m": 3,
+            "stale_reasons": {"missing_snapshot_for_price_change": 17},
+            "rest_snapshot_seed_attempts": 24,
+            "rest_snapshot_seed_success": 2,
+            "rest_snapshot_seed_missing": 20,
+            "rest_snapshot_seed_invalid_bbo": 2,
+            "resubscribe_debounced": 11,
+            "resubscribe_executed": 3,
+        },
+    }
+
+    lines = _orderbook_diagnostic_lines(metrics)
+    text = "\n".join(lines)
+    assert "Polymarket events" in text
+    assert "book=5" in text
+    assert "price_change=42" in text
+    assert "fresh/stale tokens: 2/22" in text
+    assert "2/24 successful" in text
+    assert "dominant cause: missing snapshots before price_change" in text
+
+
 def test_analyze_regime_distribution():
     """Regime counts are correct."""
     predictions = [
