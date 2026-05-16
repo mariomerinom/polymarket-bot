@@ -144,6 +144,46 @@ def test_live_canary_policy_blocks_when_readiness_fails(tmp_path, monkeypatch):
     assert db.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
 
 
+def test_live_canary_failed_order_marks_candidate_failed(tmp_path, monkeypatch):
+    import delayed_execution
+    import pipeline_control
+
+    monkeypatch.setattr(pipeline_control, "CONFIG_PATH", _config(tmp_path, "delay_180_live_canary"))
+    monkeypatch.setattr(delayed_execution, "_get_tokens", lambda market_id: None)
+    monkeypatch.setattr(delayed_execution, "_readiness_blockers", lambda db: [])
+
+    db = _db()
+    result = delayed_execution.process_delayed_poll(db, 1, pipeline_name="btc_5m")
+
+    assert result["state"] == "live_failed"
+    assert result["skip_reason"] == "missing_clob_token_id"
+    order = db.execute("SELECT status, reason FROM orders").fetchone()
+    assert order["status"] == "failed"
+    assert order["reason"] == "missing_clob_token_id"
+
+
+def test_unexpected_delayed_exception_records_terminal_candidate():
+    import delayed_execution
+
+    db = _db()
+    row = db.execute("SELECT * FROM multi_poll_predictions WHERE id = 1").fetchone()
+
+    result = delayed_execution.record_unexpected_error(
+        db,
+        row,
+        policy="delay_180_paper",
+        error=RuntimeError("boom"),
+    )
+
+    assert result["state"] == "blocked"
+    assert result["skip_reason"].startswith("unexpected_error")
+    stored = db.execute(
+        "SELECT state, skip_reason FROM btc5m_timing_candidates"
+    ).fetchone()
+    assert stored["state"] == "blocked"
+    assert stored["skip_reason"].startswith("unexpected_error")
+
+
 def test_immediate_execution_suppressed_in_delayed_paper_policy(tmp_path, monkeypatch):
     import delayed_execution
     import pipeline_control

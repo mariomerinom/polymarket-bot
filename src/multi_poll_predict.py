@@ -374,7 +374,7 @@ def _get_market_orderbook(market_id: str, db_path: Optional[str] = None):
                     entry.best_bid,
                     entry.best_ask,
                     entry.spread,
-                    entry.age_ms,
+                    entry.age_ms(),
                 )
         except Exception:
             pass
@@ -582,6 +582,20 @@ async def schedule_polls(
                                 db, poll_id, pipeline_name="btc_5m"
                             )
                     except Exception as e:
+                        try:
+                            row = db.execute(
+                                "SELECT * FROM multi_poll_predictions WHERE id = ?",
+                                (poll_id,),
+                            ).fetchone()
+                            if row is not None:
+                                delayed_execution.record_unexpected_error(
+                                    db,
+                                    row,
+                                    policy=delayed_execution.current_policy("btc_5m"),
+                                    error=e,
+                                )
+                        except Exception:
+                            pass
                         _log.warning(
                             "schedule_polls: delayed candidate failed for %s: %s",
                             market_id, e,

@@ -121,6 +121,7 @@ FALLBACK_TIMEOUT_S = 360  # 6 minutes
 
 # Metrics write interval
 METRICS_INTERVAL_S = 60
+ORDERBOOK_CACHE_FLUSH_INTERVAL_S = 2
 POLYMARKET_MICROSTRUCTURE_INTERVAL_S = 30
 POLYMARKET_MICROSTRUCTURE_ENABLED = (
     os.environ.get("POLYMARKET_MICROSTRUCTURE_ENABLED", "").lower()
@@ -153,6 +154,8 @@ class BotsyEngine:
 
         # Metrics state
         self.metrics = {
+            "schema_version": 2,
+            "metrics_written_at": None,
             "bybit_spot": {
                 "status": "disconnected",
                 "last_event": None,
@@ -261,6 +264,7 @@ class BotsyEngine:
             self._supervise(self.daily_report_check, name="daily_report"),
             self._supervise(self.fallback_timer, name="fallback"),
             self._supervise(self.metrics_writer, name="metrics"),
+            self._supervise(self.orderbook_cache_writer, name="orderbook_cache"),
             self._supervise(self.memory_profiler, name="memory_profiler"),
             self._supervise(self.log_rotator, name="log_rotator"),
             self._verify_orderbook_cache_format(),  # one-shot, no supervision
@@ -951,14 +955,20 @@ class BotsyEngine:
         )
 
     def _flush_orderbook_cache(self):
-        """Write in-memory orderbook cache to disk. Called every 5s by metrics_writer."""
+        """Write in-memory orderbook cache to disk for execution consumers."""
         if not self._orderbook_dirty:
             return
         try:
-            cache = {"tokens": self._orderbook_cache}
+            now = datetime.now(timezone.utc).isoformat()
+            cache = {
+                "version": 2,
+                "written_at": now,
+                "tokens": self._orderbook_cache,
+            }
             tmp = ORDERBOOK_CACHE.with_suffix(".tmp")
             tmp.write_text(json.dumps(cache))
             tmp.rename(ORDERBOOK_CACHE)
+            self.metrics["orderbook_cache"]["written_at"] = now
             self._orderbook_dirty = False
         except OSError as e:
             log(f"[WS] Polymarket orderbook cache flush failed: {e}")
@@ -1554,13 +1564,14 @@ class BotsyEngine:
 
     async def metrics_writer(self):
         """Write ws_metrics.json every 60s for dashboard + daily report.
-        Also persists candle buffer and orderbook cache to disk."""
+        Also persists candle buffer; orderbook cache has its own writer."""
         while True:
             await asyncio.sleep(METRICS_INTERVAL_S)
             self._sample_orderbook_cache_ages()
             self._update_orderbook_cache_health()
             self._compute_percentiles()
             try:
+                self.metrics["metrics_written_at"] = datetime.now(timezone.utc).isoformat()
                 tmp = METRICS_FILE.with_suffix(".tmp")
                 tmp.write_text(json.dumps(self.metrics, indent=2))
                 tmp.rename(METRICS_FILE)
@@ -1571,11 +1582,21 @@ class BotsyEngine:
                 self.candle_buffer.save_to_disk(DATA_DIR / "candle_buffer.json")
             except Exception as e:
                 log(f"WARNING: buffer save failed: {e}")
-            # Flush orderbook cache to disk (was per-event, now batched)
+            self._orderbook_cache_maintenance_tick()
+
+    def _orderbook_cache_maintenance_tick(self):
+        """Run execution-cache maintenance independent of reporting cadence."""
+        self._maybe_request_pending_polymarket_resubscribe()
+        self._flush_orderbook_cache()
+
+    async def orderbook_cache_writer(self):
+        """Flush live orderbook IPC on a tight cadence for trade consumers."""
+        while True:
+            await asyncio.sleep(ORDERBOOK_CACHE_FLUSH_INTERVAL_S)
             try:
-                self._flush_orderbook_cache()
+                self._orderbook_cache_maintenance_tick()
             except Exception as e:
-                log(f"WARNING: orderbook flush failed: {e}")
+                log(f"WARNING: orderbook cache maintenance failed: {e}")
 
     async def microstructure_writer(self):
         """Write research-only Polymarket orderbook snapshots every 30s."""

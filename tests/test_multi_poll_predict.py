@@ -235,6 +235,34 @@ class TestLogPoll:
         )
         assert result == (None, None, None, None, None)
 
+    def test_get_market_orderbook_calls_age_ms_method(self, monkeypatch):
+        """Regression: orderbook_age_ms must be a number, not TokenEntry.age_ms."""
+        import multi_poll_predict
+        import orderbook_cache
+
+        class Entry:
+            mid = 0.54
+            best_bid = 0.53
+            best_ask = 0.55
+            spread = 0.02
+
+            def age_ms(self):
+                return 321
+
+        class Cache:
+            def get_fresh_entry(self, token_id):
+                return Entry()
+
+        monkeypatch.setattr(
+            "clob_depth.get_clob_tokens_safe",
+            lambda mid: {"yes": "yes-token", "no": "no-token"},
+        )
+        monkeypatch.setattr(orderbook_cache.OrderbookCache, "load", lambda: Cache())
+
+        result = multi_poll_predict._get_market_orderbook("mkt1")
+
+        assert result == (0.54, 0.53, 0.55, 0.02, 321)
+
     def test_init_table_migration_adds_orderbook_columns(self, tmp_path):
         """Pre-existing tables (from before 2026-04-30) get the new
         orderbook columns added via ALTER TABLE on next init_table call."""

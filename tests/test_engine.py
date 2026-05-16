@@ -581,6 +581,27 @@ class TestBotsyEngineInit:
         assert entry["stale_reason"] == "rest_snapshot_invalid_bbo"
         assert engine.metrics["orderbook_cache"]["rest_snapshot_seed_invalid_bbo"] == 1
 
+    def test_orderbook_cache_maintenance_flushes_without_metrics_writer(self, monkeypatch):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._orderbook_dirty = True
+        calls = {"flush": 0, "pending": 0}
+        monkeypatch.setattr(
+            engine,
+            "_flush_orderbook_cache",
+            lambda: calls.__setitem__("flush", calls["flush"] + 1),
+        )
+        monkeypatch.setattr(
+            engine,
+            "_maybe_request_pending_polymarket_resubscribe",
+            lambda: calls.__setitem__("pending", calls["pending"] + 1) or False,
+        )
+
+        engine._orderbook_cache_maintenance_tick()
+
+        assert calls == {"flush": 1, "pending": 1}
+
     @pytest.mark.asyncio
     async def test_dispatch_runs_independent_pipelines_with_bounded_parallelism(self):
         from botsy_engine import BotsyEngine

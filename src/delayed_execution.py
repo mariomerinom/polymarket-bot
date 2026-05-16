@@ -60,6 +60,14 @@ def should_suppress_immediate(pipeline_name: str = "btc_5m") -> bool:
     return mode in {"paper", "live_canary"}
 
 
+def current_policy(pipeline_name: str = "btc_5m") -> str:
+    try:
+        from pipeline_control import get_timing_policy
+        return get_timing_policy(pipeline_name)
+    except Exception:
+        return "immediate"
+
+
 def process_delayed_poll(
     db: sqlite3.Connection,
     poll_id: int,
@@ -69,11 +77,7 @@ def process_delayed_poll(
     """Evaluate one multi-poll row as a delayed execution candidate."""
     if pipeline_name != "btc_5m":
         return None
-    try:
-        from pipeline_control import get_timing_policy
-        policy = get_timing_policy(pipeline_name)
-    except Exception:
-        policy = "immediate"
+    policy = current_policy(pipeline_name)
     if policy not in DELAYED_POLICIES:
         return None
     wanted_offset, mode = DELAYED_POLICIES[policy]
@@ -125,10 +129,51 @@ def process_delayed_poll(
     )
     local_order_id = db.execute("SELECT MAX(id) FROM orders").fetchone()[0]
     evaluation["order_id"] = local_order_id
-    evaluation["state"] = "live_ordered" if trading_enabled else "paper_ordered"
+    status = order.get("status")
+    if trading_enabled and status in {"failed", "fak_rejected"}:
+        evaluation["state"] = "live_failed"
+        evaluation["skip_reason"] = order.get("reason") or status
+    else:
+        evaluation["state"] = "live_ordered" if trading_enabled else "paper_ordered"
     evaluation["would_fire"] = 1
     evaluation["entry_price"] = order.get("price_limit")
     return _store_candidate(db, evaluation)
+
+
+def record_unexpected_error(
+    db: sqlite3.Connection,
+    row,
+    *,
+    policy: str,
+    error: Exception,
+) -> dict:
+    """Persist delayed-processing failures so they cannot disappear in logs."""
+    init_table(db)
+    offset, _mode = DELAYED_POLICIES.get(policy, (row["offset_seconds"], None))
+    direction = None
+    if row["estimate"] is not None and row["estimate"] != 0.5:
+        direction = "UP" if row["estimate"] > 0.5 else "DOWN"
+    data = {
+        "source_poll_id": row["id"],
+        "cycle": row["cycle"],
+        "market_id": row["market_id"],
+        "offset_seconds": offset,
+        "policy": policy,
+        "state": "blocked",
+        "would_fire": 0,
+        "skip_reason": f"unexpected_error ({error})",
+        "prediction_id": None,
+        "order_id": None,
+        "estimate": row["estimate"],
+        "conviction_score": row["conviction_score"],
+        "direction": direction,
+        "entry_price": None,
+        "orderbook_age_ms": row["orderbook_age_ms"],
+        "pnl": None,
+        "ehr": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return _store_candidate(db, data)
 
 
 def _load_poll(db: sqlite3.Connection, poll_id: int):

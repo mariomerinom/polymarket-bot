@@ -50,12 +50,36 @@ def _make_db(signal_ehr=0.08, execution_ehr=0.04, n=60):
     return db
 
 
-def _metrics(tmp_path, *, dispatch_p95=1000, orderbook_p95=500, connected=True):
+def _metrics(
+    tmp_path,
+    *,
+    dispatch_p95=1000,
+    orderbook_p95=500,
+    connected=True,
+    written_at=None,
+    last_event=None,
+    schema_version=2,
+    samples=25,
+    fresh_tokens=4,
+    stale_tokens=0,
+):
     path = tmp_path / "ws_metrics.json"
+    now = datetime.now(timezone.utc).isoformat()
     path.write_text(json.dumps({
-        "polymarket": {"status": "connected" if connected else "disconnected"},
+        "schema_version": schema_version,
+        "metrics_written_at": written_at or now,
+        "polymarket": {
+            "status": "connected" if connected else "disconnected",
+            "last_event": last_event or now,
+        },
         "dispatch_latency_ms": {"p95": dispatch_p95},
-        "orderbook_age_ms": {"p95": orderbook_p95},
+        "orderbook_age_ms": {"p95": orderbook_p95, "samples": samples},
+        "orderbook_cache": {
+            "fresh_tokens_now": fresh_tokens,
+            "stale_tokens_now": stale_tokens,
+            "book_events_24h": 10,
+            "price_change_events_24h": 100,
+        },
     }))
     return path
 
@@ -90,6 +114,55 @@ def test_btc5m_live_canary_blocks_stale_orderbook(tmp_path):
         )
 
     assert any("orderbook_age_p95_too_high" in b for b in blockers)
+
+
+def test_btc5m_live_canary_blocks_stale_metrics_file(tmp_path):
+    from canary_readiness import btc5m_live_canary_blockers
+
+    db = _make_db()
+    old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+
+    with patch("canary_readiness.shutil.disk_usage") as usage:
+        usage.return_value = (100, 20, 80)
+        blockers = btc5m_live_canary_blockers(
+            db,
+            metrics_path=_metrics(tmp_path, written_at=old),
+            disk_path=tmp_path,
+        )
+
+    assert any("metrics_stale" in b for b in blockers)
+
+
+def test_btc5m_live_canary_blocks_old_metrics_schema(tmp_path):
+    from canary_readiness import btc5m_live_canary_blockers
+
+    db = _make_db()
+
+    with patch("canary_readiness.shutil.disk_usage") as usage:
+        usage.return_value = (100, 20, 80)
+        blockers = btc5m_live_canary_blockers(
+            db,
+            metrics_path=_metrics(tmp_path, schema_version=None),
+            disk_path=tmp_path,
+        )
+
+    assert any("metrics_schema_stale" in b for b in blockers)
+
+
+def test_btc5m_live_canary_blocks_zero_orderbook_samples(tmp_path):
+    from canary_readiness import btc5m_live_canary_blockers
+
+    db = _make_db()
+
+    with patch("canary_readiness.shutil.disk_usage") as usage:
+        usage.return_value = (100, 20, 80)
+        blockers = btc5m_live_canary_blockers(
+            db,
+            metrics_path=_metrics(tmp_path, samples=0),
+            disk_path=tmp_path,
+        )
+
+    assert any("orderbook_age_samples_missing" in b for b in blockers)
 
 
 def test_btc5m_live_canary_blocks_negative_execution_ehr(tmp_path):

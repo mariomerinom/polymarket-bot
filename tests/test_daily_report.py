@@ -157,6 +157,21 @@ def test_orderbook_diagnostics_render_dominant_missing_snapshot_cause():
     assert "dominant cause: missing snapshots before price_change" in text
 
 
+def test_canary_readiness_section_renders_blocked_verdict():
+    from daily_report import _format_canary_readiness_lines
+
+    lines = _format_canary_readiness_lines({
+        "live_blockers": ["metrics_stale (600s)"],
+        "delayed_blockers": ["delayed_ehr_insufficient_sample (0/50)"],
+    })
+    text = "\n".join(lines)
+
+    assert "BTC 5m Production Readiness" in text
+    assert "**Verdict:** BLOCKED" in text
+    assert "metrics_stale" in text
+    assert "delayed_ehr_insufficient_sample" in text
+
+
 def test_analyze_regime_distribution():
     """Regime counts are correct."""
     predictions = [

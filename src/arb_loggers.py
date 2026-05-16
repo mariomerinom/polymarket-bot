@@ -63,7 +63,7 @@ def _get_orderbook_mid(token_id: str):
         entry = cache.get_fresh_entry(token_id)
         if entry is None:
             return None, None, None, None, None
-        return entry.mid, entry.best_bid, entry.best_ask, entry.spread, entry.age_ms
+        return entry.mid, entry.best_bid, entry.best_ask, entry.spread, entry.age_ms()
     except Exception:
         return None, None, None, None, None
 

@@ -218,6 +218,29 @@ class TestRender:
         assert "resubscribe debounced/executed: 40/12" in text
         assert "dominant cause: no websocket book/price_change events" in text
 
+    def test_btc5m_readiness_section_renders_blockers(self, monkeypatch):
+        monkeypatch.setattr(
+            consolidated_report.pipeline_control,
+            "discover_pipelines",
+            lambda: {"btc_5m": ":memory:"},
+        )
+        monkeypatch.setattr(
+            "canary_readiness.btc5m_live_canary_blockers",
+            lambda db: ["metrics_schema_stale (None)"],
+        )
+        monkeypatch.setattr(
+            "canary_readiness.btc5m_delayed_policy_blockers",
+            lambda db: ["delayed_ehr_insufficient_sample (0/50)"],
+        )
+
+        lines = consolidated_report._render_btc5m_readiness_section()
+        text = "\n".join(lines)
+
+        assert "BTC 5m Production Readiness" in text
+        assert "Verdict: BLOCKED" in text
+        assert "metrics_schema_stale" in text
+        assert "delayed_ehr_insufficient_sample" in text
+
     def test_circuit_breaker_false_renders_untripped_plainly(self):
         results = [
             {

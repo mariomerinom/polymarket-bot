@@ -23,6 +23,9 @@ DISK_USED_MAX_PCT = 85.0
 MIN_EHR_SAMPLE = 50
 MIN_EXECUTION_EHR_SAMPLE = 10
 MIN_DELAYED_EXECUTION_SAMPLE = 50
+METRICS_SCHEMA_VERSION = 2
+METRICS_MAX_AGE_S = 180
+POLYMARKET_LAST_EVENT_MAX_AGE_S = 180
 
 
 def btc5m_live_canary_blockers(
@@ -173,8 +176,24 @@ def _metrics_blockers(metrics_path: Path) -> list[str]:
         return [f"metrics_unavailable ({exc})"]
 
     blockers = []
-    if (data.get("polymarket") or {}).get("status") != "connected":
+    schema = data.get("schema_version")
+    if schema != METRICS_SCHEMA_VERSION:
+        blockers.append(f"metrics_schema_stale ({schema})")
+
+    written_age = _age_seconds(data.get("metrics_written_at"))
+    if written_age is None:
+        blockers.append("metrics_written_at_missing")
+    elif written_age > METRICS_MAX_AGE_S:
+        blockers.append(f"metrics_stale ({round(written_age)}s)")
+
+    polymarket = data.get("polymarket") or {}
+    if polymarket.get("status") != "connected":
         blockers.append("polymarket_feed_not_connected")
+    last_event_age = _age_seconds(polymarket.get("last_event"))
+    if last_event_age is None:
+        blockers.append("polymarket_last_event_missing")
+    elif last_event_age > POLYMARKET_LAST_EVENT_MAX_AGE_S:
+        blockers.append(f"polymarket_last_event_stale ({round(last_event_age)}s)")
 
     dispatch = data.get("dispatch_latency_ms") or {}
     dispatch_p95 = dispatch.get("p95")
@@ -183,10 +202,34 @@ def _metrics_blockers(metrics_path: Path) -> list[str]:
 
     orderbook = data.get("orderbook_age_ms") or {}
     orderbook_p95 = orderbook.get("p95")
+    if int(orderbook.get("samples") or 0) <= 0:
+        blockers.append("orderbook_age_samples_missing")
     if orderbook_p95 is None or orderbook_p95 >= ORDERBOOK_AGE_P95_MAX_MS:
         blockers.append(f"orderbook_age_p95_too_high ({orderbook_p95})")
 
+    cache = data.get("orderbook_cache") or {}
+    fresh_tokens = int(cache.get("fresh_tokens_now") or 0)
+    stale_tokens = int(cache.get("stale_tokens_now") or 0)
+    if fresh_tokens <= 0:
+        blockers.append("orderbook_fresh_tokens_missing")
+    if stale_tokens > fresh_tokens:
+        blockers.append(
+            f"orderbook_stale_tokens_exceed_fresh ({stale_tokens}/{fresh_tokens})"
+        )
+
     return blockers
+
+
+def _age_seconds(value) -> float | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - dt).total_seconds())
+    except (TypeError, ValueError):
+        return None
 
 
 def _disk_blockers(disk_path: Path) -> list[str]:
