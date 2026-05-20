@@ -119,36 +119,36 @@ Hypothetical maker fills — what would have filled if we posted passively.
 
 | Feed | Status | Reconnects (24h) |
 |------|--------|-----------------:|
-| bybit_spot | connected | 183 |
+| bybit_spot | connected | 184 |
 | bybit_linear | connected | 6 |
 | polymarket | connected | 26 |
 
 | Metric | p50 | p95 | Samples |
 |--------|----:|----:|--------:|
 | Production dispatch latency (ms) | 8480 | 16084 | 705 |
-| Bybit event lag (ms) | 863 | 29140 | 984 |
+| Bybit event lag (ms) | 863 | 29945 | 989 |
 | TA build (ms) | 87 | 164 | 705 |
 | Pipeline fanout (ms) | 8394 | 16004 | 705 |
 | Strategy Lab runtime (ms) | 185 | 1167 | 705 |
 | Total dispatch wall time (ms) | 8711 | 16535 | 705 |
-| True orderbook age (ms) | 8251 | 106173 | 581 |
+| True orderbook age (ms) | 8262 | 106173 | 619 |
 
 - Slowest pipeline runtime: bybit p95=17148ms (241 samples)
-- Orderbook cache: 38 tokens, 537 token-set changes (24h)
+- Orderbook cache: 38 tokens, 538 token-set changes (24h)
 - Cycles: 2622
 - Fallback fires (24h): 0
 - Engine start: 2026-05-19T04:00:02.552344+00:00
 
-- Polymarket events: book=1715980, price_change=40731110, ignored={'last_trade_price': 835745, 'tick_size_change': 252}
-- Orderbook freshness detail: fresh/stale tokens: 12/26, updated last 60s/5m: 22/34, stale reasons: {'stale_updated_at': 22, 'missing_cache_entry': 4}
-- REST snapshot seed: 10613/10624 successful (missing=0, invalid_bbo=11)
-- Polymarket resubscribe: resubscribe debounced/executed: 304/285, added/removed tokens: 1518/1952
+- Polymarket events: book=1717764, price_change=40763238, ignored={'last_trade_price': 836577, 'tick_size_change': 252}
+- Orderbook freshness detail: fresh/stale tokens: 16/22, updated last 60s/5m: 38/38, stale reasons: {'stale_updated_at': 22}
+- REST snapshot seed: 10651/10662 successful (missing=0, invalid_bbo=11)
+- Polymarket resubscribe: resubscribe debounced/executed: 305/285, added/removed tokens: 1522/1956
 - Orderbook freshness decision: dominant cause: missing snapshots before price_change
 
 ### BTC 5m Production Readiness
 
 - Verdict: BLOCKED
-- Live canary blockers: signal_ehr_not_positive (-0.0927); execution_ehr_insufficient_sample (1/10); orderbook_age_p95_too_high (106173); orderbook_stale_tokens_exceed_fresh (26/12)
+- Live canary blockers: signal_ehr_not_positive (-0.0927); execution_ehr_insufficient_sample (1/10); orderbook_age_p95_too_high (106173); orderbook_stale_tokens_exceed_fresh (22/16)
 - Delayed FAK blockers: delayed_ehr_insufficient_sample (0/50)
 
 ✅ Kill switch clear (no `data/KILL_SWITCH` file).
