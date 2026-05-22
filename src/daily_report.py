@@ -2062,7 +2062,8 @@ def format_report(
 def _format_canary_readiness_lines(readiness: dict) -> list[str]:
     live_blockers = readiness.get("live_blockers") or []
     delayed_blockers = readiness.get("delayed_blockers") or []
-    blockers = live_blockers + delayed_blockers
+    promotion_blockers = readiness.get("promotion_blockers") or []
+    blockers = live_blockers + delayed_blockers + promotion_blockers
     verdict = "READY" if not blockers else "BLOCKED"
     lines = [
         "## BTC 5m Production Readiness",
@@ -2071,7 +2072,7 @@ def _format_canary_readiness_lines(readiness: dict) -> list[str]:
         "",
     ]
     if not blockers:
-        lines.append("- No live-canary or delayed-policy blockers.")
+        lines.append("- No live-canary, delayed-policy, or promotion blockers.")
         return lines
     if live_blockers:
         lines.append("### Live Canary Blockers")
@@ -2082,6 +2083,11 @@ def _format_canary_readiness_lines(readiness: dict) -> list[str]:
         lines.append("### Delayed FAK Blockers")
         for blocker in delayed_blockers:
             lines.append(f"- {blocker}")
+        lines.append("")
+    if promotion_blockers:
+        lines.append("### Production Promotion Blockers")
+        for blocker in promotion_blockers:
+            lines.append(f"- {blocker}")
     return lines
 
 
@@ -2091,6 +2097,7 @@ def _get_btc5m_canary_readiness(db_path=DB_5M) -> dict | None:
         from canary_readiness import (
             btc5m_delayed_policy_blockers,
             btc5m_live_canary_blockers,
+            btc5m_promotion_blockers,
         )
         db = sqlite3.connect(str(db_path))
         try:
@@ -2098,6 +2105,7 @@ def _get_btc5m_canary_readiness(db_path=DB_5M) -> dict | None:
             return {
                 "live_blockers": btc5m_live_canary_blockers(db),
                 "delayed_blockers": btc5m_delayed_policy_blockers(db),
+                "promotion_blockers": btc5m_promotion_blockers(db),
             }
         finally:
             db.close()
@@ -2105,6 +2113,7 @@ def _get_btc5m_canary_readiness(db_path=DB_5M) -> dict | None:
         return {
             "live_blockers": [f"canary_readiness_unavailable ({exc})"],
             "delayed_blockers": [],
+            "promotion_blockers": [],
         }
 
 

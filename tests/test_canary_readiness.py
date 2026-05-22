@@ -181,6 +181,26 @@ def test_btc5m_live_canary_blocks_negative_execution_ehr(tmp_path):
     assert any("execution_ehr_negative" in b for b in blockers)
 
 
+def test_btc5m_promotion_blocks_barely_positive_signal_ehr():
+    from canary_readiness import btc5m_promotion_blockers
+
+    db = _make_db(signal_ehr=0.01)
+
+    blockers = btc5m_promotion_blockers(db)
+
+    assert any("promotion_signal_ehr_below_threshold" in b for b in blockers)
+
+
+def test_btc5m_promotion_allows_signal_ehr_above_two_cents():
+    from canary_readiness import btc5m_promotion_blockers
+
+    db = _make_db(signal_ehr=0.03)
+
+    blockers = btc5m_promotion_blockers(db)
+
+    assert blockers == []
+
+
 def test_live_canary_mode_stays_paper_when_readiness_blocks(tmp_path, monkeypatch):
     import pipeline_control
     import trade

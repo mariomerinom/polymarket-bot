@@ -451,19 +451,22 @@ def _render_btc5m_readiness_section() -> list[str]:
         from canary_readiness import (
             btc5m_delayed_policy_blockers,
             btc5m_live_canary_blockers,
+            btc5m_promotion_blockers,
         )
         db_path = pipeline_control.discover_pipelines()["btc_5m"]
         db = sqlite3.connect(str(db_path))
         try:
             live_blockers = btc5m_live_canary_blockers(db)
             delayed_blockers = btc5m_delayed_policy_blockers(db)
+            promotion_blockers = btc5m_promotion_blockers(db)
         finally:
             db.close()
     except Exception as exc:
         live_blockers = [f"canary_readiness_unavailable ({exc})"]
         delayed_blockers = []
+        promotion_blockers = []
 
-    blockers = live_blockers + delayed_blockers
+    blockers = live_blockers + delayed_blockers + promotion_blockers
     lines = [
         "### BTC 5m Production Readiness",
         "",
@@ -477,8 +480,13 @@ def _render_btc5m_readiness_section() -> list[str]:
         lines.append(
             "- Delayed FAK blockers: " + "; ".join(str(b) for b in delayed_blockers)
         )
+    if promotion_blockers:
+        lines.append(
+            "- Production promotion blockers: "
+            + "; ".join(str(b) for b in promotion_blockers)
+        )
     if not blockers:
-        lines.append("- No live-canary or delayed-policy blockers.")
+        lines.append("- No live-canary, delayed-policy, or promotion blockers.")
     return lines
 
 

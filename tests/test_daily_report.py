@@ -163,6 +163,7 @@ def test_canary_readiness_section_renders_blocked_verdict():
     lines = _format_canary_readiness_lines({
         "live_blockers": ["metrics_stale (600s)"],
         "delayed_blockers": ["delayed_ehr_insufficient_sample (0/50)"],
+        "promotion_blockers": ["promotion_signal_ehr_below_threshold (+0.0100 < +0.0200)"],
     })
     text = "\n".join(lines)
 
@@ -170,6 +171,8 @@ def test_canary_readiness_section_renders_blocked_verdict():
     assert "**Verdict:** BLOCKED" in text
     assert "metrics_stale" in text
     assert "delayed_ehr_insufficient_sample" in text
+    assert "Production Promotion Blockers" in text
+    assert "promotion_signal_ehr_below_threshold" in text
 
 
 def test_analyze_regime_distribution():

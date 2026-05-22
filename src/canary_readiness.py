@@ -23,6 +23,7 @@ DISK_USED_MAX_PCT = 85.0
 MIN_EHR_SAMPLE = 50
 MIN_EXECUTION_EHR_SAMPLE = 10
 MIN_DELAYED_EXECUTION_SAMPLE = 50
+SIGNAL_EHR_PROMOTION_MIN = 0.02
 METRICS_SCHEMA_VERSION = 2
 METRICS_MAX_AGE_S = 180
 POLYMARKET_LAST_EVENT_MAX_AGE_S = 180
@@ -71,6 +72,32 @@ def btc5m_live_canary_blockers(
 def btc5m_live_canary_ready(db: sqlite3.Connection, **kwargs) -> bool:
     """True only when all BTC 5m canary gates are green."""
     return not btc5m_live_canary_blockers(db, **kwargs)
+
+
+def btc5m_promotion_blockers(db: sqlite3.Connection) -> list[str]:
+    """Return blockers for normal BTC 5m production promotion.
+
+    Live canary only requires non-negative signal EHR. Normal production is
+    stricter: the prior EHR plan requires a sustained edge, represented here
+    as the current 7-day signal EHR clearing +0.02 on a 50+ bet sample.
+    """
+    try:
+        from system_state import get_system_state
+        state = get_system_state(db, "btc_5m")
+        if state.signal_ehr_n < MIN_EHR_SAMPLE or state.signal_ehr_7d is None:
+            return [
+                f"promotion_signal_ehr_insufficient_sample "
+                f"({state.signal_ehr_n}/{MIN_EHR_SAMPLE})"
+            ]
+        if state.signal_ehr_7d < SIGNAL_EHR_PROMOTION_MIN:
+            return [
+                "promotion_signal_ehr_below_threshold "
+                f"({state.signal_ehr_7d:+.4f} < "
+                f"+{SIGNAL_EHR_PROMOTION_MIN:.4f})"
+            ]
+        return []
+    except Exception as exc:
+        return [f"promotion_signal_ehr_unavailable ({exc})"]
 
 
 def btc5m_delayed_policy_blockers(db: sqlite3.Connection) -> list[str]:

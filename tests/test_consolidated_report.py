@@ -232,6 +232,10 @@ class TestRender:
             "canary_readiness.btc5m_delayed_policy_blockers",
             lambda db: ["delayed_ehr_insufficient_sample (0/50)"],
         )
+        monkeypatch.setattr(
+            "canary_readiness.btc5m_promotion_blockers",
+            lambda db: ["promotion_signal_ehr_below_threshold (+0.0100 < +0.0200)"],
+        )
 
         lines = consolidated_report._render_btc5m_readiness_section()
         text = "\n".join(lines)
@@ -240,6 +244,8 @@ class TestRender:
         assert "Verdict: BLOCKED" in text
         assert "metrics_schema_stale" in text
         assert "delayed_ehr_insufficient_sample" in text
+        assert "Production promotion blockers" in text
+        assert "promotion_signal_ehr_below_threshold" in text
 
     def test_circuit_breaker_false_renders_untripped_plainly(self):
         results = [
