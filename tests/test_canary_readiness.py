@@ -62,10 +62,12 @@ def _metrics(
     samples=25,
     fresh_tokens=4,
     stale_tokens=0,
+    executable_p95=None,
+    executable_samples=None,
 ):
     path = tmp_path / "ws_metrics.json"
     now = datetime.now(timezone.utc).isoformat()
-    path.write_text(json.dumps({
+    data = {
         "schema_version": schema_version,
         "metrics_written_at": written_at or now,
         "polymarket": {
@@ -80,7 +82,13 @@ def _metrics(
             "book_events_24h": 10,
             "price_change_events_24h": 100,
         },
-    }))
+    }
+    if executable_p95 is not None:
+        data["btc5m_executable_orderbook_age_ms"] = {
+            "p95": executable_p95,
+            "samples": executable_samples if executable_samples is not None else samples,
+        }
+    path.write_text(json.dumps(data))
     return path
 
 
@@ -114,6 +122,30 @@ def test_btc5m_live_canary_blocks_stale_orderbook(tmp_path):
         )
 
     assert any("orderbook_age_p95_too_high" in b for b in blockers)
+
+
+def test_btc5m_live_canary_uses_executable_orderbook_metric_when_present(tmp_path):
+    from canary_readiness import btc5m_live_canary_blockers
+
+    db = _make_db()
+
+    with patch("canary_readiness.shutil.disk_usage") as usage:
+        usage.return_value = (100, 20, 80)
+        blockers = btc5m_live_canary_blockers(
+            db,
+            metrics_path=_metrics(
+                tmp_path,
+                orderbook_p95=250_000,
+                executable_p95=500,
+                executable_samples=25,
+                fresh_tokens=2,
+                stale_tokens=20,
+            ),
+            disk_path=tmp_path,
+        )
+
+    assert not any("orderbook_age_p95_too_high" in b for b in blockers)
+    assert not any("orderbook_stale_tokens_exceed_fresh" in b for b in blockers)
 
 
 def test_btc5m_live_canary_blocks_stale_metrics_file(tmp_path):

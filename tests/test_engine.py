@@ -321,8 +321,15 @@ class TestBotsyEngineInit:
         engine._update_orderbook_cache({
             "event_type": "book",
             "asset_id": "tok",
-            "bids": [{"price": "0.52", "size": "100"}],
-            "asks": [{"price": "0.54", "size": "80"}],
+            "bids": [
+                {"price": "0.50", "size": "100"},
+                {"price": "0.52", "size": "100"},
+            ],
+            "asks": [
+                {"price": "0.56", "size": "80"},
+                {"price": "0.54", "size": "80"},
+            ],
+            "timestamp": "1770000000123",
         })
 
         entry = engine._orderbook_cache["tok"]
@@ -331,7 +338,67 @@ class TestBotsyEngineInit:
         assert entry["mid"] == 0.53
         assert entry["spread"] == pytest.approx(0.02)
         assert entry["updated_at"]
+        assert entry["source_ts"] == "1770000000123"
         assert engine.metrics["orderbook_cache"]["book_events_24h"] == 1
+
+    def test_polymarket_price_change_boundary_bbo_preserves_partial_book(self):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        engine._orderbook_cache = {
+            "tok": {
+                "mid": 0.53,
+                "best_bid": 0.52,
+                "best_ask": 0.54,
+                "spread": 0.02,
+                "updated_at": "2026-05-12T00:00:00+00:00",
+                "bids": [{"price": "0.52", "size": "100"}],
+                "asks": [{"price": "0.54", "size": "80"}],
+            }
+        }
+
+        engine._update_orderbook_price_change({
+            "event_type": "price_change",
+            "timestamp": "1770000000123",
+            "price_changes": [{
+                "asset_id": "tok",
+                "price": "0.52",
+                "size": "0",
+                "side": "BUY",
+                "best_bid": "0",
+                "best_ask": "0.54",
+            }],
+        })
+
+        entry = engine._orderbook_cache["tok"]
+        assert entry["status"] == "partial"
+        assert entry["updated_at"]
+        assert entry["source_ts"] == "1770000000123"
+        assert entry["best_bid"] == 0
+        assert entry["best_ask"] == 0.54
+        assert entry["mid"] is None
+        assert engine.metrics["orderbook_cache"]["price_change_invalid_bbo"] == 0
+
+    def test_polymarket_best_bid_ask_updates_bbo(self):
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+
+        engine._update_orderbook_best_bid_ask({
+            "event_type": "best_bid_ask",
+            "asset_id": "tok",
+            "best_bid": "0.49",
+            "best_ask": "0.51",
+            "spread": "0.02",
+            "timestamp": "1770000000123",
+        })
+
+        entry = engine._orderbook_cache["tok"]
+        assert entry["status"] == "fresh"
+        assert entry["best_bid"] == 0.49
+        assert entry["best_ask"] == 0.51
+        assert entry["mid"] == 0.50
+        assert entry["source_ts"] == "1770000000123"
 
     def test_polymarket_price_change_refreshes_cached_bbo(self):
         from datetime import datetime, timedelta, timezone
@@ -459,7 +526,7 @@ class TestBotsyEngineInit:
         assert "invalid_bbo" in entry["stale_reason"]
         assert engine.metrics["orderbook_cache"]["price_change_invalid_bbo"] == 1
 
-    def test_polymarket_price_change_empty_side_marks_token_stale(self):
+    def test_polymarket_price_change_empty_side_preserves_partial_book(self):
         from botsy_engine import BotsyEngine
 
         engine = BotsyEngine()
@@ -486,9 +553,9 @@ class TestBotsyEngineInit:
         })
 
         entry = engine._orderbook_cache["tok"]
-        assert entry["status"] == "stale"
-        assert entry["updated_at"] is None
-        assert "invalid_bbo" in entry["stale_reason"]
+        assert entry["status"] == "partial"
+        assert entry["updated_at"]
+        assert entry["mid"] is None
 
     def test_orderbook_cache_health_counts_fresh_stale_and_recent_tokens(self):
         from datetime import datetime, timedelta, timezone

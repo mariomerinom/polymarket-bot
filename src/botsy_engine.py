@@ -535,6 +535,7 @@ class BotsyEngine:
                     sub_msg = {
                         "assets_ids": token_ids,
                         "type": "market",
+                        "custom_feature_enabled": True,
                     }
                     await ws.send(json.dumps(sub_msg))
                     log(f"[WS] Polymarket subscribed to {len(token_ids)} tokens")
@@ -561,6 +562,10 @@ class BotsyEngine:
                                         datetime.now(timezone.utc).isoformat()
                                 elif event_type == "price_change":
                                     self._update_orderbook_price_change(data)
+                                    self.metrics["polymarket"]["last_event"] = \
+                                        datetime.now(timezone.utc).isoformat()
+                                elif event_type == "best_bid_ask":
+                                    self._update_orderbook_best_bid_ask(data)
                                     self.metrics["polymarket"]["last_event"] = \
                                         datetime.now(timezone.utc).isoformat()
                                 elif event_type:
@@ -737,8 +742,10 @@ class BotsyEngine:
 
             bids = data.get("bids", [])
             asks = data.get("asks", [])
-            best_bid = float(bids[0]["price"]) if bids else None
-            best_ask = float(asks[0]["price"]) if asks else None
+            bids = self._sort_levels(bids, reverse=True)
+            asks = self._sort_levels(asks, reverse=False)
+            best_bid = self._best_level_price(bids, reverse=True)
+            best_ask = self._best_level_price(asks, reverse=False)
             mid, spread = self._compute_bbo(best_bid, best_ask)
             if best_bid is not None and best_ask is not None and mid is None:
                 self._mark_orderbook_token_stale(
@@ -752,6 +759,7 @@ class BotsyEngine:
                 "best_bid": best_bid,
                 "best_ask": best_ask,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
+                "source_ts": data.get("timestamp"),
                 "status": "fresh" if mid is not None else "partial",
                 "bids": bids[:5],  # top 5 levels
                 "asks": asks[:5],
@@ -810,6 +818,21 @@ class BotsyEngine:
 
             mid, spread = self._compute_bbo(best_bid, best_ask)
             if mid is None:
+                if self._is_partial_bbo(best_bid, best_ask):
+                    entry.update({
+                        "mid": None,
+                        "spread": None,
+                        "best_bid": best_bid,
+                        "best_ask": best_ask,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "source_ts": data.get("timestamp") or change.get("timestamp"),
+                        "status": "partial",
+                        "stale_reason": None,
+                        "bids": self._sort_levels(bids, reverse=True)[:5],
+                        "asks": self._sort_levels(asks, reverse=False)[:5],
+                    })
+                    self._orderbook_dirty = True
+                    continue
                 self.metrics["orderbook_cache"]["price_change_invalid_bbo"] += 1
                 self._mark_orderbook_token_stale(asset_id, "invalid_bbo_from_price_change")
                 continue
@@ -820,6 +843,7 @@ class BotsyEngine:
                 "best_bid": best_bid,
                 "best_ask": best_ask,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
+                "source_ts": data.get("timestamp") or change.get("timestamp"),
                 "status": "fresh",
                 "stale_reason": None,
                 "bids": self._sort_levels(bids, reverse=True)[:5],
@@ -844,6 +868,39 @@ class BotsyEngine:
     def _record_ignored_polymarket_event(self, event_type: str):
         ignored = self.metrics["orderbook_cache"].setdefault("ignored_event_types", {})
         ignored[event_type] = ignored.get(event_type, 0) + 1
+
+    def _update_orderbook_best_bid_ask(self, data: dict):
+        """Apply Polymarket custom best_bid_ask event as direct BBO evidence."""
+        asset_id = data.get("asset_id") or data.get("token_id") or ""
+        if not asset_id:
+            return
+        best_bid = self._float_or_none(data.get("best_bid"))
+        best_ask = self._float_or_none(data.get("best_ask"))
+        mid, spread = self._compute_bbo(best_bid, best_ask)
+        status = "fresh"
+        stale_reason = None
+        if mid is None:
+            if self._is_partial_bbo(best_bid, best_ask):
+                status = "partial"
+            else:
+                status = "stale"
+                stale_reason = "invalid_bbo_from_best_bid_ask"
+
+        entry = self._orderbook_cache.get(asset_id)
+        if not isinstance(entry, dict):
+            entry = {}
+            self._orderbook_cache[asset_id] = entry
+        entry.update({
+            "mid": mid,
+            "spread": spread if mid is not None else None,
+            "best_bid": best_bid,
+            "best_ask": best_ask,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "source_ts": data.get("timestamp"),
+            "status": status,
+            "stale_reason": stale_reason,
+        })
+        self._orderbook_dirty = True
 
     def _seed_orderbook_snapshots_from_rest(self, token_ids: set) -> int:
         """Initialize active token books from REST so deltas have a base book."""
@@ -906,6 +963,12 @@ class BotsyEngine:
         if best_bid <= 0 or best_ask <= 0 or best_bid >= best_ask:
             return None, None
         return (best_bid + best_ask) / 2, best_ask - best_bid
+
+    @staticmethod
+    def _is_partial_bbo(best_bid, best_ask):
+        if best_bid is None or best_ask is None:
+            return True
+        return best_bid <= 0 or best_ask >= 1
 
     def _apply_price_level_change(self, bids: list, asks: list, change: dict):
         price = self._float_or_none(change.get("price"))

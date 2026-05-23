@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
+from orderbook_evidence import read_orderbook_evidence
+
 
 MAX_ORDERBOOK_AGE_MS = 2_000
 DELAYED_POLICIES = {
@@ -261,6 +263,18 @@ def _evaluate_candidate(db: sqlite3.Connection, row, policy: str) -> dict:
         return result
     tokens = _get_tokens(row["market_id"])
     token_id = tokens.get(order_params["token"]) if tokens else None
+    evidence = read_orderbook_evidence(
+        row["market_id"],
+        tokens.get("yes") if tokens else None,
+        tokens.get("no") if tokens else None,
+    )
+    side = order_params.get("token")
+    side_evidence = evidence.get(side) or {}
+    side_status = side_evidence.get("status")
+    if side_status != "fresh":
+        result["skip_reason"] = f"{side_status}_{side}_book"
+        return result
+    result["orderbook_age_ms"] = side_evidence.get("age_ms")
     result["_order_params"] = order_params
     result["_clob_token_id"] = token_id
     return result

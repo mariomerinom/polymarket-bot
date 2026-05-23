@@ -227,19 +227,30 @@ def _metrics_blockers(metrics_path: Path) -> list[str]:
     if dispatch_p95 is None or dispatch_p95 >= DISPATCH_P95_MAX_MS:
         blockers.append(f"dispatch_p95_too_high ({dispatch_p95})")
 
-    orderbook = data.get("orderbook_age_ms") or {}
+    executable_orderbook = data.get("btc5m_executable_orderbook_age_ms") or {}
+    has_executable_orderbook = bool(executable_orderbook)
+    orderbook = executable_orderbook or data.get("orderbook_age_ms") or {}
     orderbook_p95 = orderbook.get("p95")
     if int(orderbook.get("samples") or 0) <= 0:
-        blockers.append("orderbook_age_samples_missing")
+        blockers.append(
+            "btc5m_executable_orderbook_age_samples_missing"
+            if has_executable_orderbook
+            else "orderbook_age_samples_missing"
+        )
     if orderbook_p95 is None or orderbook_p95 >= ORDERBOOK_AGE_P95_MAX_MS:
-        blockers.append(f"orderbook_age_p95_too_high ({orderbook_p95})")
+        blocker = (
+            "btc5m_executable_orderbook_age_p95_too_high"
+            if has_executable_orderbook
+            else "orderbook_age_p95_too_high"
+        )
+        blockers.append(f"{blocker} ({orderbook_p95})")
 
     cache = data.get("orderbook_cache") or {}
     fresh_tokens = int(cache.get("fresh_tokens_now") or 0)
     stale_tokens = int(cache.get("stale_tokens_now") or 0)
     if fresh_tokens <= 0:
         blockers.append("orderbook_fresh_tokens_missing")
-    if stale_tokens > fresh_tokens:
+    if stale_tokens > fresh_tokens and not has_executable_orderbook:
         blockers.append(
             f"orderbook_stale_tokens_exceed_fresh ({stale_tokens}/{fresh_tokens})"
         )

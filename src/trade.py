@@ -899,38 +899,62 @@ def resolve_clob_prices(pred, tokens):
         market_row["_orderbook_cache"] = {"yes": "missing", "no": "missing"}
         return market_row, tokens
 
-    # Try WS cache first — get full entry (bid/ask/spread/mid)
     yes_token = tokens.get("yes", "")
     no_token = tokens.get("no", "")
-    yes_entry = _get_live_token_entry(yes_token)
-    no_entry = _get_live_token_entry(no_token)
-    from orderbook_cache import OrderbookCache
-    cache = OrderbookCache.load(LIVE_ORDERBOOK_PATH, LIVE_ORDERBOOK_MAX_AGE_S)
-    yes_status = (
-        {"status": "fresh", "age_ms": yes_entry.age_ms()}
-        if yes_entry else cache.entry_status(yes_token, LIVE_ORDERBOOK_MAX_AGE_S)
+    from orderbook_evidence import read_orderbook_evidence
+    evidence = read_orderbook_evidence(
+        pred["market_id"],
+        yes_token,
+        no_token,
+        cache_path=LIVE_ORDERBOOK_PATH,
+        max_age_s=LIVE_ORDERBOOK_MAX_AGE_S,
     )
-    no_status = (
-        {"status": "fresh", "age_ms": no_entry.age_ms()}
-        if no_entry else cache.entry_status(no_token, LIVE_ORDERBOOK_MAX_AGE_S)
-    )
+    yes_ev = evidence["yes"]
+    no_ev = evidence["no"]
     market_row["_orderbook_cache"] = {
-        "yes": yes_status["status"],
-        "no": no_status["status"],
-        "yes_age_ms": yes_status["age_ms"],
-        "no_age_ms": no_status["age_ms"],
+        "yes": yes_ev["status"],
+        "no": no_ev["status"],
+        "yes_age_ms": yes_ev["age_ms"],
+        "no_age_ms": no_ev["age_ms"],
+        "yes_token": yes_token,
+        "no_token": no_token,
         "rest_fallback": False,
     }
 
-    yes_mid = yes_entry.valid_mid() if yes_entry else None
-    no_mid = no_entry.valid_mid() if no_entry else None
+    yes_mid = yes_ev["mid"] if yes_ev["status"] == "fresh" else None
+    no_mid = no_ev["mid"] if no_ev["status"] == "fresh" else None
+    yes_entry = None
+    no_entry = None
+
+    # Compatibility for tests and older callers that monkey-patch the legacy
+    # token-entry reader directly.
+    if yes_mid is None and yes_token:
+        yes_entry = _get_live_token_entry(yes_token)
+        if yes_entry:
+            yes_mid = yes_entry.valid_mid()
+            market_row["_orderbook_cache"]["yes"] = "fresh"
+            market_row["_orderbook_cache"]["yes_age_ms"] = yes_entry.age_ms()
+    if no_mid is None and no_token:
+        no_entry = _get_live_token_entry(no_token)
+        if no_entry:
+            no_mid = no_entry.valid_mid()
+            market_row["_orderbook_cache"]["no"] = "fresh"
+            market_row["_orderbook_cache"]["no_age_ms"] = no_entry.age_ms()
 
     # Populate bid/ask/spread from WS cache
-    if yes_entry:
+    if yes_ev["status"] == "fresh":
+        market_row["_yes_best_bid"] = yes_ev["best_bid"]
+        market_row["_yes_best_ask"] = yes_ev["best_ask"]
+        market_row["_yes_spread"] = yes_ev["spread"]
+    elif yes_entry:
         market_row["_yes_best_bid"] = yes_entry.best_bid
         market_row["_yes_best_ask"] = yes_entry.best_ask
         market_row["_yes_spread"] = yes_entry.spread
-    if no_entry:
+    if no_ev["status"] == "fresh":
+        market_row["_no_best_bid"] = no_ev["best_bid"]
+        market_row["_no_best_ask"] = no_ev["best_ask"]
+        market_row["_no_spread"] = no_ev["spread"]
+    elif no_entry:
         market_row["_no_best_bid"] = no_entry.best_bid
         market_row["_no_best_ask"] = no_entry.best_ask
         market_row["_no_spread"] = no_entry.spread
@@ -974,8 +998,8 @@ def resolve_clob_prices(pred, tokens):
     }
 
     # DIAG: log source and gap
-    src_yes = "ws" if _get_live_token_mid(tokens.get("yes", "")) else ("rest" if yes_mid else "gamma")
-    src_no = "ws" if _get_live_token_mid(tokens.get("no", "")) else ("rest" if no_mid else "gamma")
+    src_yes = "ws" if market_row["_orderbook_cache"]["yes"] == "fresh" else ("rest" if yes_mid else "gamma")
+    src_no = "ws" if market_row["_orderbook_cache"]["no"] == "fresh" else ("rest" if no_mid else "gamma")
     print(f"    [LIVE_OB] YES={market_row['price_yes']:.4f}({src_yes}) "
           f"NO={market_row['price_no']:.4f}({src_no}) "
           f"(Gamma: YES={gamma_yes:.4f})")
@@ -1241,15 +1265,24 @@ def execute_trades(db, cycle, pipeline_name=None):
                     result_code = "skipped_thin_book"
                 else:
                     result_code = "skipped_other"
+                _fd_dir = "UP" if pred["estimate"] > 0.5 else "DOWN"
+                if _fd_dir == "UP":
+                    _fd_bid = market_row.get("_yes_best_bid")
+                    _fd_ask = market_row.get("_yes_best_ask")
+                    _fd_spread = market_row.get("_yes_spread")
+                else:
+                    _fd_bid = market_row.get("_no_best_bid")
+                    _fd_ask = market_row.get("_no_best_ask")
+                    _fd_spread = market_row.get("_no_spread")
                 fill_diagnostic.record(
                     db,
                     pipeline=pipeline_name or "unknown",
                     result=result_code,
                     prediction_id=pred["id"],
                     cycle=cycle,
-                    decision_best_bid=market_row.get("_yes_best_bid"),
-                    decision_best_ask=market_row.get("_yes_best_ask"),
-                    decision_spread=market_row.get("_yes_spread"),
+                    decision_best_bid=_fd_bid,
+                    decision_best_ask=_fd_ask,
+                    decision_spread=_fd_spread,
                 )
             except Exception as _e:
                 import logging

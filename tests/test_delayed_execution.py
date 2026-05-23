@@ -95,6 +95,7 @@ def test_shadow_policy_records_would_place_but_creates_no_order(tmp_path, monkey
 
     monkeypatch.setattr(pipeline_control, "CONFIG_PATH", _config(tmp_path, "delay_180_shadow"))
     monkeypatch.setattr(delayed_execution, "_get_tokens", lambda market_id: {"yes": "yes", "no": "no"})
+    monkeypatch.setattr(delayed_execution, "read_orderbook_evidence", _fresh_evidence)
 
     db = _db()
     result = delayed_execution.process_delayed_poll(db, 1, pipeline_name="btc_5m")
@@ -110,6 +111,7 @@ def test_paper_policy_routes_one_order_through_fak_path(tmp_path, monkeypatch):
 
     monkeypatch.setattr(pipeline_control, "CONFIG_PATH", _config(tmp_path, "delay_180_paper"))
     monkeypatch.setattr(delayed_execution, "_get_tokens", lambda market_id: {"yes": "yes", "no": "no"})
+    monkeypatch.setattr(delayed_execution, "read_orderbook_evidence", _fresh_evidence)
 
     db = _db()
     result = delayed_execution.process_delayed_poll(db, 1, pipeline_name="btc_5m")
@@ -124,12 +126,57 @@ def test_paper_policy_routes_one_order_through_fak_path(tmp_path, monkeypatch):
     assert order["prediction_id"] == 1
 
 
+def test_down_candidate_requires_fresh_no_token_not_synthetic_yes(tmp_path, monkeypatch):
+    import delayed_execution
+    import pipeline_control
+
+    monkeypatch.setattr(pipeline_control, "CONFIG_PATH", _config(tmp_path, "delay_180_paper"))
+    monkeypatch.setattr(delayed_execution, "_get_tokens", lambda market_id: {"yes": "yes", "no": "no"})
+
+    def fake_evidence(market_id, yes_token, no_token):
+        return {
+            "market_id": market_id,
+            "yes": {
+                "token_id": yes_token,
+                "status": "fresh",
+                "age_ms": 500,
+                "best_bid": 0.52,
+                "best_ask": 0.54,
+                "spread": 0.02,
+                "mid": 0.53,
+            },
+            "no": {
+                "token_id": no_token,
+                "status": "missing",
+                "age_ms": None,
+                "best_bid": None,
+                "best_ask": None,
+                "spread": None,
+                "mid": None,
+            },
+        }
+
+    monkeypatch.setattr(delayed_execution, "read_orderbook_evidence", fake_evidence)
+
+    db = _db()
+    db.execute("UPDATE multi_poll_predictions SET estimate = 0.30 WHERE id = 1")
+    db.execute("UPDATE predictions SET estimate = 0.30 WHERE id = 1")
+    db.commit()
+
+    result = delayed_execution.process_delayed_poll(db, 1, pipeline_name="btc_5m")
+
+    assert result["state"] == "blocked"
+    assert result["skip_reason"] == "missing_no_book"
+    assert db.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
+
+
 def test_live_canary_policy_blocks_when_readiness_fails(tmp_path, monkeypatch):
     import delayed_execution
     import pipeline_control
 
     monkeypatch.setattr(pipeline_control, "CONFIG_PATH", _config(tmp_path, "delay_180_live_canary"))
     monkeypatch.setattr(delayed_execution, "_get_tokens", lambda market_id: {"yes": "yes", "no": "no"})
+    monkeypatch.setattr(delayed_execution, "read_orderbook_evidence", _fresh_evidence)
     monkeypatch.setattr(
         delayed_execution,
         "_readiness_blockers",
@@ -151,6 +198,7 @@ def test_live_canary_failed_order_marks_candidate_failed(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline_control, "CONFIG_PATH", _config(tmp_path, "delay_180_live_canary"))
     monkeypatch.setattr(delayed_execution, "_get_tokens", lambda market_id: None)
     monkeypatch.setattr(delayed_execution, "_readiness_blockers", lambda db: [])
+    monkeypatch.setattr(delayed_execution, "read_orderbook_evidence", _fresh_evidence)
 
     db = _db()
     result = delayed_execution.process_delayed_poll(db, 1, pipeline_name="btc_5m")
@@ -160,6 +208,30 @@ def test_live_canary_failed_order_marks_candidate_failed(tmp_path, monkeypatch):
     order = db.execute("SELECT status, reason FROM orders").fetchone()
     assert order["status"] == "failed"
     assert order["reason"] == "missing_clob_token_id"
+
+
+def _fresh_evidence(market_id, yes_token, no_token):
+    return {
+        "market_id": market_id,
+        "yes": {
+            "token_id": yes_token,
+            "status": "fresh",
+            "age_ms": 500,
+            "best_bid": 0.53,
+            "best_ask": 0.55,
+            "spread": 0.02,
+            "mid": 0.54,
+        },
+        "no": {
+            "token_id": no_token,
+            "status": "fresh",
+            "age_ms": 500,
+            "best_bid": 0.45,
+            "best_ask": 0.47,
+            "spread": 0.02,
+            "mid": 0.46,
+        },
+    }
 
 
 def test_unexpected_delayed_exception_records_terminal_candidate():
