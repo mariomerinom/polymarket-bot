@@ -270,6 +270,11 @@ def _evaluate_candidate(db: sqlite3.Connection, row, policy: str) -> dict:
     )
     side = order_params.get("token")
     side_evidence = evidence.get(side) or {}
+    try:
+        from polymarket_orderbook_service import record_executable_read
+        record_executable_read(side_evidence)
+    except Exception:
+        pass
     side_status = side_evidence.get("status")
     if side_status != "fresh":
         result["skip_reason"] = f"{side_status}_{side}_book"

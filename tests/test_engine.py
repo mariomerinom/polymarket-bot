@@ -204,6 +204,31 @@ class TestBotsyEngineInit:
         assert engine.metrics["pipeline_runtime_ms"]["btc_5m"]["p95"] == 200
         assert engine.metrics["slowest_pipeline_runtime_ms"]["pipeline"] == "kalshi"
 
+    def test_engine_merges_btc_executable_orderbook_metrics(self, tmp_path, monkeypatch):
+        from botsy_engine import BotsyEngine
+        import botsy_engine
+
+        metrics_path = tmp_path / "btc5m_exec_metrics.json"
+        metrics_path.write_text(json.dumps({
+            "btc5m_executable_orderbook_age_ms": {
+                "p50": 500,
+                "p95": 900,
+                "samples": 3,
+            },
+            "btc5m_executable_book_reads": {
+                "total": 4,
+                "fresh": 3,
+                "missing": 1,
+            },
+        }))
+        monkeypatch.setattr(botsy_engine, "EXECUTABLE_ORDERBOOK_METRICS", metrics_path)
+        engine = BotsyEngine()
+
+        engine._merge_executable_orderbook_metrics()
+
+        assert engine.metrics["btc5m_executable_orderbook_age_ms"]["p95"] == 900
+        assert engine.metrics["btc5m_executable_book_reads"]["fresh"] == 3
+
     def test_orderbook_age_samples_use_updated_at_not_zero(self):
         from datetime import datetime, timedelta, timezone
         from botsy_engine import BotsyEngine

@@ -902,6 +902,7 @@ def resolve_clob_prices(pred, tokens):
     yes_token = tokens.get("yes", "")
     no_token = tokens.get("no", "")
     from orderbook_evidence import read_orderbook_evidence
+    from polymarket_orderbook_service import record_executable_read
     evidence = read_orderbook_evidence(
         pred["market_id"],
         yes_token,
@@ -911,6 +912,12 @@ def resolve_clob_prices(pred, tokens):
     )
     yes_ev = evidence["yes"]
     no_ev = evidence["no"]
+    if "estimate" in pred:
+        chosen_ev = yes_ev if pred["estimate"] > 0.5 else no_ev
+        try:
+            record_executable_read(chosen_ev)
+        except Exception:
+            pass
     market_row["_orderbook_cache"] = {
         "yes": yes_ev["status"],
         "no": no_ev["status"],

@@ -1145,6 +1145,8 @@ def _get_engine_metrics():
             "slowest_pipeline_runtime": data.get("slowest_pipeline_runtime_ms", {}),
             "pipeline_runtime": data.get("pipeline_runtime_ms", {}),
             "orderbook_age": data.get("orderbook_age_ms", {}),
+            "btc5m_executable_orderbook_age": data.get("btc5m_executable_orderbook_age_ms", {}),
+            "btc5m_executable_book_reads": data.get("btc5m_executable_book_reads", {}),
             "orderbook_cache": data.get("orderbook_cache", {}),
             "fallback_fires": data.get("fallback_fires_24h", 0),
             "cycles": data.get("cycles", 0),
@@ -1741,6 +1743,8 @@ def format_report(
         total_wall = engine_metrics.get("total_dispatch_wall", {})
         slowest = engine_metrics.get("slowest_pipeline_runtime", {})
         ob = engine_metrics.get("orderbook_age", {})
+        btc_ob = engine_metrics.get("btc5m_executable_orderbook_age", {})
+        btc_reads = engine_metrics.get("btc5m_executable_book_reads", {})
         cache = engine_metrics.get("orderbook_cache", {})
         fb = engine_metrics.get("fallback_fires", 0)
         lines.extend([
@@ -1752,6 +1756,8 @@ def format_report(
             f"- **Total dispatch wall time:** {total_wall.get('p50', 0)}ms p50 / {total_wall.get('p95', 0)}ms p95",
             f"- **Slowest pipeline runtime:** {slowest.get('pipeline') or 'N/A'} {slowest.get('p95', 0)}ms p95",
             f"- **True orderbook age:** {ob.get('p50', 0)}ms p50 / {ob.get('p95', 0)}ms p95",
+            f"- **BTC 5m executable orderbook age:** {btc_ob.get('p50', 0)}ms p50 / {btc_ob.get('p95', 0)}ms p95 ({btc_ob.get('samples', 0)} samples)",
+            f"- **BTC 5m executable reads:** fresh={btc_reads.get('fresh', 0)} stale={btc_reads.get('stale', 0)} missing={btc_reads.get('missing', 0)} partial={btc_reads.get('partial', 0)} total={btc_reads.get('total', 0)}",
             f"- **Orderbook cache coverage:** {cache.get('tokens', 0)} tokens, {cache.get('token_set_changes_24h', 0)} token-set changes",
             f"- **Fallback fires (24h):** {fb}",
             f"- **Cycles:** {engine_metrics.get('cycles', 0)}",

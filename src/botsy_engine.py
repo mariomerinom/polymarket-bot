@@ -68,6 +68,7 @@ LOG_DIR = REPO_DIR / "logs"
 LOG_FILE = LOG_DIR / "loop.log"
 METRICS_FILE = DATA_DIR / "ws_metrics.json"
 ORDERBOOK_CACHE = DATA_DIR / "live_orderbook.json"
+EXECUTABLE_ORDERBOOK_METRICS = DATA_DIR / "btc5m_executable_orderbook_metrics.json"
 PID_FILE = DATA_DIR / "engine.pid"
 
 
@@ -182,6 +183,8 @@ class BotsyEngine:
                 "pipeline": None, "p50": 0, "p95": 0, "samples": 0,
             },
             "orderbook_age_ms": {"p50": 0, "p95": 0, "samples": 0},
+            "btc5m_executable_orderbook_age_ms": {"p50": 0, "p95": 0, "samples": 0},
+            "btc5m_executable_book_reads": {},
             "orderbook_cache": {
                 "tokens": 0,
                 "refreshes_24h": 0,
@@ -1633,6 +1636,7 @@ class BotsyEngine:
             self._sample_orderbook_cache_ages()
             self._update_orderbook_cache_health()
             self._compute_percentiles()
+            self._merge_executable_orderbook_metrics()
             try:
                 self.metrics["metrics_written_at"] = datetime.now(timezone.utc).isoformat()
                 tmp = METRICS_FILE.with_suffix(".tmp")
@@ -1700,6 +1704,21 @@ class BotsyEngine:
                 slowest = {"pipeline": pipeline, **stats}
         self.metrics["pipeline_runtime_ms"] = per_pipeline
         self.metrics["slowest_pipeline_runtime_ms"] = slowest
+
+    def _merge_executable_orderbook_metrics(self):
+        """Merge exact-side BTC 5m orderbook-read metrics into ws_metrics."""
+        try:
+            from polymarket_orderbook_service import public_metrics
+            data = public_metrics(EXECUTABLE_ORDERBOOK_METRICS)
+        except Exception:
+            return
+        self.metrics["btc5m_executable_orderbook_age_ms"] = (
+            data.get("btc5m_executable_orderbook_age_ms")
+            or {"p50": 0, "p95": 0, "samples": 0}
+        )
+        self.metrics["btc5m_executable_book_reads"] = (
+            data.get("btc5m_executable_book_reads") or {}
+        )
 
     @staticmethod
     def _percentiles(values: list) -> dict:

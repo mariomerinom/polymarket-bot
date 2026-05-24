@@ -30,6 +30,9 @@ class TokenEntry:
     best_ask: Optional[float] = None
     spread: Optional[float] = None
     updated_at: Optional[str] = None
+    status: Optional[str] = None
+    stale_reason: Optional[str] = None
+    source_ts: Optional[str] = None
 
     def is_fresh(self, max_age_s: float = DEFAULT_MAX_AGE_S) -> bool:
         """Check if this entry is fresh enough to use."""
@@ -82,6 +85,9 @@ class OrderbookCache:
                     best_ask=entry_data.get("best_ask"),
                     spread=entry_data.get("spread"),
                     updated_at=entry_data.get("updated_at"),
+                    status=entry_data.get("status"),
+                    stale_reason=entry_data.get("stale_reason"),
+                    source_ts=entry_data.get("source_ts"),
                 )
             return cls(version=version, tokens=tokens)
         except (json.JSONDecodeError, OSError, ValueError, TypeError):
@@ -132,6 +138,9 @@ class OrderbookCache:
                     "best_ask": entry.best_ask,
                     "spread": entry.spread,
                     "updated_at": entry.updated_at,
+                    "status": entry.status,
+                    "stale_reason": entry.stale_reason,
+                    "source_ts": entry.source_ts,
                 }
                 for token_id, entry in self.tokens.items()
             },

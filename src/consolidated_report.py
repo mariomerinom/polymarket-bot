@@ -412,6 +412,8 @@ def _render_engine_health_section() -> list:
     total_wall = m.get("total_dispatch_wall_ms", {})
     slowest = m.get("slowest_pipeline_runtime_ms", {})
     orderbook = m.get("orderbook_age_ms", {})
+    btc_orderbook = m.get("btc5m_executable_orderbook_age_ms", {})
+    btc_reads = m.get("btc5m_executable_book_reads", {})
     lines.extend([
         "| Metric | p50 | p95 | Samples |",
         "|--------|----:|----:|--------:|",
@@ -422,8 +424,10 @@ def _render_engine_health_section() -> list:
         f"| Strategy Lab runtime (ms) | {lab.get('p50','?')} | {lab.get('p95','?')} | {lab.get('samples',0)} |",
         f"| Total dispatch wall time (ms) | {total_wall.get('p50','?')} | {total_wall.get('p95','?')} | {total_wall.get('samples',0)} |",
         f"| True orderbook age (ms) | {orderbook.get('p50','?')} | {orderbook.get('p95','?')} | {orderbook.get('samples',0)} |",
+        f"| BTC 5m executable orderbook age (ms) | {btc_orderbook.get('p50','?')} | {btc_orderbook.get('p95','?')} | {btc_orderbook.get('samples',0)} |",
         "",
         f"- Slowest pipeline runtime: {slowest.get('pipeline') or 'N/A'} p95={slowest.get('p95', 0)}ms ({slowest.get('samples', 0)} samples)",
+        f"- BTC 5m executable reads: fresh={btc_reads.get('fresh', 0)} stale={btc_reads.get('stale', 0)} missing={btc_reads.get('missing', 0)} partial={btc_reads.get('partial', 0)} total={btc_reads.get('total', 0)}",
         f"- Orderbook cache: {(m.get('orderbook_cache') or {}).get('tokens', 0)} tokens, {(m.get('orderbook_cache') or {}).get('token_set_changes_24h', 0)} token-set changes (24h)",
         f"- Cycles: {m.get('cycles', 0)}",
         f"- Fallback fires (24h): {m.get('fallback_fires_24h', 0)}",
