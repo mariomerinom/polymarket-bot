@@ -907,7 +907,6 @@ def resolve_clob_prices(pred, tokens):
         pred["market_id"],
         yes_token,
         no_token,
-        cache_path=LIVE_ORDERBOOK_PATH,
         max_age_s=LIVE_ORDERBOOK_MAX_AGE_S,
     )
     yes_ev = evidence["yes"]

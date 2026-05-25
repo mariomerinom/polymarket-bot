@@ -68,6 +68,7 @@ LOG_DIR = REPO_DIR / "logs"
 LOG_FILE = LOG_DIR / "loop.log"
 METRICS_FILE = DATA_DIR / "ws_metrics.json"
 ORDERBOOK_CACHE = DATA_DIR / "live_orderbook.json"
+EXECUTABLE_ORDERBOOK_CACHE = DATA_DIR / "btc5m_executable_orderbook.json"
 EXECUTABLE_ORDERBOOK_METRICS = DATA_DIR / "btc5m_executable_orderbook_metrics.json"
 PID_FILE = DATA_DIR / "engine.pid"
 
@@ -223,6 +224,8 @@ class BotsyEngine:
         self._orderbook_ages: list = []  # recent orderbook ages in ms
         self._orderbook_cache: dict = {}  # in-memory: asset_id → entry dict
         self._orderbook_dirty = False     # flag: needs disk flush
+        self._executable_orderbook_cache: dict = {}
+        self._executable_orderbook_dirty = False
         self._token_context: dict = {}     # token_id → {market_id, side, pipeline}
         self._subscribed_token_ids: set = set()
         self._polymarket_resubscribe_requested = False
@@ -636,7 +639,11 @@ class BotsyEngine:
                         "predictions_15m.db": "btc_15m",
                         "predictions_eth.db": "eth_5m",
                     }.get(db_name)
-                    market_ids[row["id"]] = pipeline
+                    # BTC 5m owns production-readiness evidence. BTC 15m can
+                    # share the same market IDs, so never let it overwrite the
+                    # BTC 5m token context.
+                    if row["id"] not in market_ids or pipeline == "btc_5m":
+                        market_ids[row["id"]] = pipeline
             except Exception as e:
                 log(f"[WS] Polymarket token lookup failed for {db_name}: {e}")
 
@@ -726,6 +733,67 @@ class BotsyEngine:
         }
         if len(self._orderbook_cache) != before:
             self._orderbook_dirty = True
+        before_exec = json.dumps(self._executable_orderbook_cache, sort_keys=True)
+        active_markets = {
+            ctx.get("market_id")
+            for token_id, ctx in self._token_context.items()
+            if token_id in active_token_ids and ctx.get("pipeline") == "btc_5m"
+        }
+        self._executable_orderbook_cache = {
+            market_id: sides
+            for market_id, sides in self._executable_orderbook_cache.items()
+            if market_id in active_markets
+        }
+        if json.dumps(self._executable_orderbook_cache, sort_keys=True) != before_exec:
+            self._executable_orderbook_dirty = True
+
+    def _update_executable_orderbook_side(self, token_id: str):
+        """Mirror BTC 5m token updates into the executable market+side cache."""
+        ctx = self._token_context.get(token_id) or {}
+        if ctx.get("pipeline") != "btc_5m":
+            return
+        market_id = ctx.get("market_id")
+        side = str(ctx.get("side") or "").lower()
+        if not market_id or side not in {"yes", "no"}:
+            return
+        entry = self._orderbook_cache.get(token_id)
+        if not isinstance(entry, dict):
+            return
+        market = self._executable_orderbook_cache.setdefault(market_id, {})
+        market[side] = {
+            "market_id": market_id,
+            "side": side,
+            "token_id": token_id,
+            "status": entry.get("status") or "missing",
+            "stale_reason": entry.get("stale_reason"),
+            "reason": entry.get("stale_reason"),
+            "source": entry.get("source") or "polymarket_ws",
+            "mid": entry.get("mid"),
+            "best_bid": entry.get("best_bid"),
+            "best_ask": entry.get("best_ask"),
+            "spread": entry.get("spread"),
+            "updated_at": entry.get("updated_at"),
+            "source_ts": entry.get("source_ts"),
+        }
+        self._executable_orderbook_dirty = True
+
+    def _flush_executable_orderbook_cache(self):
+        """Write the BTC 5m market+side executable cache for consumers."""
+        if not self._executable_orderbook_dirty:
+            return
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            cache = {
+                "version": 1,
+                "written_at": now,
+                "markets": self._executable_orderbook_cache,
+            }
+            tmp = EXECUTABLE_ORDERBOOK_CACHE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(cache))
+            tmp.rename(EXECUTABLE_ORDERBOOK_CACHE)
+            self._executable_orderbook_dirty = False
+        except OSError as e:
+            log(f"[WS] BTC executable orderbook cache flush failed: {e}")
 
     def _update_orderbook_cache(self, data: dict):
         """Update in-memory orderbook cache from WS book event.
@@ -768,6 +836,7 @@ class BotsyEngine:
                 "asks": asks[:5],
             }
             self._orderbook_dirty = True
+            self._update_executable_orderbook_side(asset_id)
 
         except (IndexError, KeyError, ValueError, TypeError) as e:
             log(f"[WS] Polymarket orderbook cache update failed: {e}")
@@ -835,6 +904,7 @@ class BotsyEngine:
                         "asks": self._sort_levels(asks, reverse=False)[:5],
                     })
                     self._orderbook_dirty = True
+                    self._update_executable_orderbook_side(asset_id)
                     continue
                 self.metrics["orderbook_cache"]["price_change_invalid_bbo"] += 1
                 self._mark_orderbook_token_stale(asset_id, "invalid_bbo_from_price_change")
@@ -854,6 +924,7 @@ class BotsyEngine:
             })
             self.metrics["orderbook_cache"]["price_change_tokens_updated"] += 1
             self._orderbook_dirty = True
+            self._update_executable_orderbook_side(asset_id)
 
     def _mark_orderbook_token_stale(self, asset_id: str, reason: str):
         """Mark token unusable without pretending the cache is fresh."""
@@ -867,6 +938,7 @@ class BotsyEngine:
             "stale_reason": reason,
         })
         self._orderbook_dirty = True
+        self._update_executable_orderbook_side(asset_id)
 
     def _record_ignored_polymarket_event(self, event_type: str):
         ignored = self.metrics["orderbook_cache"].setdefault("ignored_event_types", {})
@@ -904,6 +976,7 @@ class BotsyEngine:
             "stale_reason": stale_reason,
         })
         self._orderbook_dirty = True
+        self._update_executable_orderbook_side(asset_id)
 
     def _seed_orderbook_snapshots_from_rest(self, token_ids: set) -> int:
         """Initialize active token books from REST so deltas have a base book."""
@@ -947,6 +1020,7 @@ class BotsyEngine:
             }
             self.metrics["orderbook_cache"]["rest_snapshot_seed_success"] += 1
             self._orderbook_dirty = True
+            self._update_executable_orderbook_side(token_id)
             seeded += 1
         return seeded
 
@@ -1634,6 +1708,7 @@ class BotsyEngine:
         while True:
             await asyncio.sleep(METRICS_INTERVAL_S)
             self._sample_orderbook_cache_ages()
+            self._sample_executable_orderbook_cache()
             self._update_orderbook_cache_health()
             self._compute_percentiles()
             self._merge_executable_orderbook_metrics()
@@ -1655,6 +1730,7 @@ class BotsyEngine:
         """Run execution-cache maintenance independent of reporting cadence."""
         self._maybe_request_pending_polymarket_resubscribe()
         self._flush_orderbook_cache()
+        self._flush_executable_orderbook_cache()
 
     async def orderbook_cache_writer(self):
         """Flush live orderbook IPC on a tight cadence for trade consumers."""
@@ -1719,6 +1795,17 @@ class BotsyEngine:
         self.metrics["btc5m_executable_book_reads"] = (
             data.get("btc5m_executable_book_reads") or {}
         )
+
+    def _sample_executable_orderbook_cache(self):
+        """Sample BTC 5m executable sidecar freshness independent of trades."""
+        try:
+            from polymarket_orderbook_service import sample_executable_cache
+            sample_executable_cache(
+                EXECUTABLE_ORDERBOOK_CACHE,
+                metrics_path=EXECUTABLE_ORDERBOOK_METRICS,
+            )
+        except Exception as exc:
+            log(f"WARNING: executable orderbook sampling failed: {exc}")
 
     @staticmethod
     def _percentiles(values: list) -> dict:

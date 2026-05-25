@@ -1,8 +1,8 @@
 """BTC executable Polymarket orderbook service.
 
-This is the replacement critical path for execution freshness. Global cache
-health can still be useful, but execution asks this service for the exact side
-book it would trade.
+This is the replacement critical path for execution freshness. The broad
+token-level cache remains useful for diagnostics, but BTC promotion evidence
+comes from a smaller sidecar keyed by market_id + side.
 """
 
 from __future__ import annotations
@@ -11,10 +11,11 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from orderbook_cache import DEFAULT_MAX_AGE_S, DEFAULT_PATH, OrderbookCache
+from orderbook_cache import DEFAULT_MAX_AGE_S
 
 
 DATA_DIR = Path(__file__).parent.parent / "data"
+DEFAULT_EXECUTABLE_CACHE_PATH = DATA_DIR / "btc5m_executable_orderbook.json"
 DEFAULT_METRICS_PATH = DATA_DIR / "btc5m_executable_orderbook_metrics.json"
 MAX_SAMPLES = 1000
 
@@ -25,21 +26,27 @@ class PolymarketOrderbookService:
     def __init__(
         self,
         *,
-        cache_path: Path = DEFAULT_PATH,
+        executable_cache_path: Path | None = None,
+        cache_path: Path | None = None,
         metrics_path: Path = DEFAULT_METRICS_PATH,
         max_age_s: float = DEFAULT_MAX_AGE_S,
     ):
-        self.cache_path = Path(cache_path)
+        # `cache_path` is accepted only for older tests/callers; it now points
+        # at the executable sidecar, not the broad live_orderbook cache.
+        self.executable_cache_path = Path(
+            executable_cache_path or cache_path or DEFAULT_EXECUTABLE_CACHE_PATH
+        )
         self.metrics_path = Path(metrics_path)
         self.max_age_s = max_age_s
 
     def read_market(self, market_id: str, yes_token: str | None,
                     no_token: str | None) -> dict:
-        cache = OrderbookCache.load(self.cache_path, self.max_age_s)
+        cache = load_executable_cache(self.executable_cache_path)
+        market = (cache.get("markets") or {}).get(market_id) or {}
         return {
             "market_id": market_id,
-            "yes": self._side_book(cache, market_id, "yes", yes_token),
-            "no": self._side_book(cache, market_id, "no", no_token),
+            "yes": self._side_book(market, market_id, "yes", yes_token),
+            "no": self._side_book(market, market_id, "no", no_token),
         }
 
     def get_executable_book(
@@ -63,7 +70,7 @@ class PolymarketOrderbookService:
             record_executable_read(book, self.metrics_path)
         return book
 
-    def _side_book(self, cache: OrderbookCache, market_id: str,
+    def _side_book(self, market: dict, market_id: str,
                    side: str, token_id: str | None) -> dict:
         base = {
             "market_id": market_id,
@@ -81,52 +88,122 @@ class PolymarketOrderbookService:
         }
         if not token_id:
             return base
-        entry = cache.tokens.get(token_id)
-        if not entry:
+        entry = market.get(side) if isinstance(market, dict) else None
+        if not isinstance(entry, dict):
+            return base
+        if entry.get("token_id") and entry.get("token_id") != token_id:
+            base["reason"] = "token_mismatch"
             return base
 
-        age = entry.age_ms()
+        age = _age_ms(entry.get("updated_at"))
         base.update({
             "age_ms": round(age) if age is not None else None,
-            "mid": entry.mid,
-            "best_bid": entry.best_bid,
-            "best_ask": entry.best_ask,
-            "spread": entry.spread,
-            "source_ts": getattr(entry, "source_ts", None),
+            "mid": entry.get("mid"),
+            "best_bid": entry.get("best_bid"),
+            "best_ask": entry.get("best_ask"),
+            "spread": entry.get("spread"),
+            "source_ts": entry.get("source_ts"),
         })
-        raw_status = getattr(entry, "status", None)
+        raw_status = entry.get("status")
+        if raw_status == "missing":
+            base.update({
+                "status": "missing",
+                "source": entry.get("source") or "executable_sidecar",
+                "reason": entry.get("reason") or "missing_cache_entry",
+            })
+            return base
         if age is None:
             base.update({
                 "status": "partial" if raw_status == "partial" else "stale",
-                "source": "ws_bbo" if raw_status == "partial" else "missing",
-                "reason": getattr(entry, "stale_reason", None) or "missing_updated_at",
+                "source": entry.get("source") or "executable_sidecar",
+                "reason": entry.get("stale_reason") or entry.get("reason") or "missing_updated_at",
             })
             return base
         if age > self.max_age_s * 1000:
             base.update({
                 "status": "stale",
-                "source": "ws_bbo",
+                "source": entry.get("source") or "executable_sidecar",
                 "reason": "stale_updated_at",
             })
             return base
-        if entry.valid_mid() is None:
+        if _valid_mid(entry.get("mid")) is None or raw_status == "partial":
             base.update({
                 "status": "partial",
-                "source": "ws_bbo",
-                "reason": "partial_book",
+                "source": entry.get("source") or "executable_sidecar",
+                "reason": entry.get("reason") or "partial_book",
+            })
+            return base
+        if raw_status == "stale":
+            base.update({
+                "status": "stale",
+                "source": entry.get("source") or "executable_sidecar",
+                "reason": entry.get("stale_reason") or entry.get("reason") or "stale_entry",
             })
             return base
         base.update({
             "status": "fresh",
-            "source": "ws_bbo",
+            "source": entry.get("source") or "executable_sidecar",
             "reason": None,
         })
         return base
 
 
-def record_executable_read(book: dict, metrics_path: Path = DEFAULT_METRICS_PATH) -> dict:
-    metrics_path = Path(metrics_path)
+def load_executable_cache(cache_path: Path = DEFAULT_EXECUTABLE_CACHE_PATH) -> dict:
+    try:
+        path = Path(cache_path)
+        if not path.exists():
+            return {"version": 1, "markets": {}}
+        data = json.loads(path.read_text())
+        if not isinstance(data, dict):
+            return {"version": 1, "markets": {}}
+        data.setdefault("markets", {})
+        return data
+    except (OSError, json.JSONDecodeError):
+        return {"version": 1, "markets": {}}
+
+
+def sample_executable_cache(
+    cache_path: Path = DEFAULT_EXECUTABLE_CACHE_PATH,
+    *,
+    metrics_path: Path = DEFAULT_METRICS_PATH,
+    max_age_s: float = DEFAULT_MAX_AGE_S,
+) -> dict:
+    """Sample current executable sidecar freshness even when no trade fires."""
+    cache = load_executable_cache(cache_path)
     metrics = load_executable_metrics(metrics_path)
+    for market_id, market in (cache.get("markets") or {}).items():
+        if not isinstance(market, dict):
+            continue
+        for side in ("yes", "no"):
+            entry = market.get(side)
+            if not isinstance(entry, dict):
+                book = {
+                    "market_id": market_id,
+                    "side": side,
+                    "status": "missing",
+                    "reason": "missing_side",
+                    "age_ms": None,
+                }
+            else:
+                token_id = entry.get("token_id")
+                book = PolymarketOrderbookService(
+                    executable_cache_path=cache_path,
+                    metrics_path=metrics_path,
+                    max_age_s=max_age_s,
+                )._side_book(market, market_id, side, token_id)
+            metrics = _record_book(metrics, book)
+    _write_metrics(metrics_path, metrics)
+    return metrics
+
+
+def record_executable_read(book: dict, metrics_path: Path = DEFAULT_METRICS_PATH) -> dict:
+    metrics = load_executable_metrics(metrics_path)
+    metrics = _record_book(metrics, book)
+    _write_metrics(metrics_path, metrics)
+    return metrics
+
+
+def _record_book(metrics: dict, book: dict) -> dict:
     samples = list(metrics.get("_age_samples_ms") or [])
     status = book.get("status") or "missing"
     if status == "fresh" and book.get("age_ms") is not None:
@@ -148,15 +225,13 @@ def record_executable_read(book: dict, metrics_path: Path = DEFAULT_METRICS_PATH
     reads["latest_reason"] = book.get("reason")
     reads["latest_market_id"] = book.get("market_id")
 
-    metrics = {
+    return {
         "schema_version": 1,
         "written_at": datetime.now(timezone.utc).isoformat(),
         "_age_samples_ms": samples,
         "btc5m_executable_orderbook_age_ms": _percentiles(samples),
         "btc5m_executable_book_reads": reads,
     }
-    _write_json_atomic(metrics_path, metrics)
-    return metrics
 
 
 def load_executable_metrics(metrics_path: Path = DEFAULT_METRICS_PATH) -> dict:
@@ -211,6 +286,32 @@ def _percentiles(samples: list[int]) -> dict:
         "p95": values[int(n * 0.95)] if n >= 20 else values[-1],
         "samples": n,
     }
+
+
+def _age_ms(updated_at: str | None) -> float | None:
+    if not updated_at:
+        return None
+    try:
+        dt = datetime.fromisoformat(updated_at)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - dt).total_seconds() * 1000)
+    except (TypeError, ValueError):
+        return None
+
+
+def _valid_mid(mid) -> float | None:
+    try:
+        value = float(mid)
+    except (TypeError, ValueError):
+        return None
+    if 0.01 <= value <= 0.99:
+        return value
+    return None
+
+
+def _write_metrics(path: Path, data: dict) -> None:
+    _write_json_atomic(Path(path), data)
 
 
 def _write_json_atomic(path: Path, data: dict) -> None:
