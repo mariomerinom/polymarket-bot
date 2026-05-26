@@ -157,6 +157,24 @@ def test_orderbook_diagnostics_render_dominant_missing_snapshot_cause():
     assert "dominant cause: missing snapshots before price_change" in text
 
 
+def test_git_bail_status_reports_present_marker(tmp_path):
+    """Daily engine health should call out a quiesced git auto-commit loop."""
+    from daily_report import _git_bail_status, _git_bail_lines
+
+    marker = tmp_path / "data" / "GIT_COMMIT_BAIL"
+    marker.parent.mkdir()
+    marker.write_text("git push failed at 2026-05-25T09:04:27Z\nsecond line\n")
+
+    status = _git_bail_status(tmp_path)
+    lines = _git_bail_lines(status)
+    text = "\n".join(lines)
+
+    assert status["present"] is True
+    assert status["summary"] == "git push failed at 2026-05-25T09:04:27Z"
+    assert "Git auto-commit bail marker PRESENT" in text
+    assert "GitHub/MCP/report data may be stale" in text
+
+
 def test_canary_readiness_section_renders_blocked_verdict():
     from daily_report import _format_canary_readiness_lines
 

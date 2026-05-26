@@ -384,6 +384,7 @@ def _render_engine_health_section() -> list:
     metrics_path = Path(__file__).parent.parent / "data" / "ws_metrics.json"
     if not metrics_path.exists():
         lines.append("_ws_metrics.json not found — engine may not be running._")
+        lines.extend(_git_bail_lines(_git_bail_status()))
         lines.append("")
         return lines
     try:
@@ -415,6 +416,7 @@ def _render_engine_health_section() -> list:
     btc_orderbook = m.get("btc5m_executable_orderbook_age_ms", {})
     btc_reads = m.get("btc5m_executable_book_reads", {})
     lines.extend([
+        *_git_bail_lines(_git_bail_status()),
         "| Metric | p50 | p95 | Samples |",
         "|--------|----:|----:|--------:|",
         f"| Production dispatch latency (ms) | {dispatch.get('p50','?')} | {dispatch.get('p95','?')} | {dispatch.get('samples',0)} |",
@@ -447,6 +449,31 @@ def _render_engine_health_section() -> list:
         lines.append("✅ Kill switch clear (no `data/KILL_SWITCH` file).")
     lines.append("")
     return lines
+
+
+def _git_bail_status(root: Path | None = None) -> dict:
+    """Return the git auto-commit bail marker status for report rendering."""
+    repo_root = root or Path(__file__).parent.parent
+    marker = repo_root / "data" / "GIT_COMMIT_BAIL"
+    if not marker.exists():
+        return {"present": False}
+    try:
+        text = marker.read_text()
+    except OSError as exc:
+        return {"present": True, "summary": f"unreadable: {exc}"}
+    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    return {"present": True, "summary": first or "present"}
+
+
+def _git_bail_lines(status: dict | None) -> list[str]:
+    if not status or not status.get("present"):
+        return ["- Git auto-commit bail: clear", ""]
+    summary = status.get("summary") or "present"
+    return [
+        f"- Git auto-commit bail marker PRESENT: {summary}",
+        "- Data trust warning: GitHub/MCP/report data may be stale until `data/GIT_COMMIT_BAIL` is cleared and runtime data is pushed.",
+        "",
+    ]
 
 
 def _render_btc5m_readiness_section() -> list[str]:

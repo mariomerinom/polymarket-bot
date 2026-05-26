@@ -1122,6 +1122,9 @@ def _get_engine_metrics():
     """Read ws_metrics.json for engine health data. Returns dict or None."""
     metrics_path = Path(__file__).parent.parent / "data" / "ws_metrics.json"
     if not metrics_path.exists():
+        bail = _git_bail_status()
+        if bail.get("present"):
+            return _empty_engine_metrics(bail)
         return None
     try:
         import json as _json
@@ -1150,9 +1153,64 @@ def _get_engine_metrics():
             "orderbook_cache": data.get("orderbook_cache", {}),
             "fallback_fires": data.get("fallback_fires_24h", 0),
             "cycles": data.get("cycles", 0),
+            "git_bail": _git_bail_status(),
         }
     except (ValueError, OSError):
         return None
+
+
+def _empty_engine_metrics(git_bail: dict | None = None) -> dict:
+    empty_latency = {}
+    return {
+        "bybit_spot_status": "unknown",
+        "bybit_spot_last": None,
+        "bybit_spot_reconnects": 0,
+        "bybit_linear_status": "unknown",
+        "bybit_linear_last": None,
+        "bybit_linear_reconnects": 0,
+        "polymarket_status": "unknown",
+        "polymarket_last": None,
+        "polymarket_reconnects": 0,
+        "dispatch_latency": empty_latency,
+        "event_lag": empty_latency,
+        "ta_build": empty_latency,
+        "pipeline_fanout": empty_latency,
+        "strategy_lab": empty_latency,
+        "total_dispatch_wall": empty_latency,
+        "slowest_pipeline_runtime": {},
+        "pipeline_runtime": {},
+        "orderbook_age": empty_latency,
+        "btc5m_executable_orderbook_age": empty_latency,
+        "btc5m_executable_book_reads": {},
+        "orderbook_cache": {},
+        "fallback_fires": 0,
+        "cycles": 0,
+        "git_bail": git_bail or {"present": False},
+    }
+
+
+def _git_bail_status(root: Path | None = None) -> dict:
+    """Return the git auto-commit bail marker status for report rendering."""
+    repo_root = root or Path(__file__).parent.parent
+    marker = repo_root / "data" / "GIT_COMMIT_BAIL"
+    if not marker.exists():
+        return {"present": False}
+    try:
+        text = marker.read_text()
+    except OSError as exc:
+        return {"present": True, "summary": f"unreadable: {exc}"}
+    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    return {"present": True, "summary": first or "present"}
+
+
+def _git_bail_lines(status: dict | None) -> list[str]:
+    if not status or not status.get("present"):
+        return ["- **Git auto-commit bail:** clear"]
+    summary = status.get("summary") or "present"
+    return [
+        f"- **Git auto-commit bail marker PRESENT:** {summary}",
+        "- **Data trust warning:** GitHub/MCP/report data may be stale until `data/GIT_COMMIT_BAIL` is cleared and runtime data is pushed.",
+    ]
 
 
 def _dominant_orderbook_cause(metrics: dict) -> str | None:
@@ -1748,6 +1806,7 @@ def format_report(
         cache = engine_metrics.get("orderbook_cache", {})
         fb = engine_metrics.get("fallback_fires", 0)
         lines.extend([
+            *_git_bail_lines(engine_metrics.get("git_bail")),
             f"- **Production dispatch latency:** {lat.get('p50', 0)}ms p50 / {lat.get('p95', 0)}ms p95 ({lat.get('samples', 0)} samples)",
             f"- **Bybit event lag:** {event_lag.get('p50', 0)}ms p50 / {event_lag.get('p95', 0)}ms p95",
             f"- **TA build:** {ta.get('p50', 0)}ms p50 / {ta.get('p95', 0)}ms p95",

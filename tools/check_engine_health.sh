@@ -2,12 +2,13 @@
 # check_engine_health.sh — runs every 15 min via systemd timer.
 #
 # 2026-04-24 incident: engine crashlooped 5 days from disk-full and no
-# alarm fired. This script is the alarm. Three checks, two outputs.
+# alarm fired. This script is the alarm. Four checks, two outputs.
 #
 # Checks:
 #   1. Disk usage on / — WARN >85%, CRIT >95%
 #   2. systemctl is-active botsy — CRIT if not active
-#   3. Predictions DB freshness for every unpaused configured pipeline —
+#   3. Git auto-commit bail marker — CRIT if present
+#   4. Predictions DB freshness for every unpaused configured pipeline —
 #      WARN >15min, CRIT >60min stale
 #
 # Outputs:
@@ -29,6 +30,7 @@ ROOT="${BOTSY_ROOT:-/home/botuser/polymarket-bot}"
 LOG_FILE="$ROOT/logs/engine_health.log"
 SUMMARY_FILE="$ROOT/data/engine_health.txt"
 CONFIG_PATH="$ROOT/config/pipelines.json"
+BAIL_MARKER="$ROOT/data/GIT_COMMIT_BAIL"
 
 now_utc() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 log() { echo "[$(now_utc)] $*" | tee -a "$LOG_FILE" >&2; }
@@ -60,7 +62,20 @@ else
     worst=2
 fi
 
-# 3. Predictions DB freshness
+# 3. Git auto-commit bail marker
+if [ -f "$BAIL_MARKER" ]; then
+    bail_summary=$(head -n 1 "$BAIL_MARKER" 2>/dev/null | tr ' ' '_' | tr -cd '[:alnum:]_:@./=-' | cut -c1-120)
+    if [ -z "$bail_summary" ]; then
+        bail_summary="present"
+    fi
+    log "CRIT: git auto-commit bail marker present ($bail_summary)"
+    notes+=("git_bail=present-CRIT")
+    worst=2
+else
+    notes+=("git_bail=clear")
+fi
+
+# 4. Predictions DB freshness
 pipeline_paths=$(
     ROOT="$ROOT" CONFIG_PATH="$CONFIG_PATH" python3 - <<'PY' 2>/dev/null
 import json

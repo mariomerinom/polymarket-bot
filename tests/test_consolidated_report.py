@@ -218,6 +218,19 @@ class TestRender:
         assert "resubscribe debounced/executed: 40/12" in text
         assert "dominant cause: no websocket book/price_change events" in text
 
+    def test_git_bail_status_reports_present_marker(self, tmp_path):
+        marker = tmp_path / "data" / "GIT_COMMIT_BAIL"
+        marker.parent.mkdir()
+        marker.write_text("git push failed at 2026-05-25T09:04:27Z\n")
+
+        status = consolidated_report._git_bail_status(tmp_path)
+        lines = consolidated_report._git_bail_lines(status)
+        text = "\n".join(lines)
+
+        assert status["present"] is True
+        assert "Git auto-commit bail marker PRESENT" in text
+        assert "GitHub/MCP/report data may be stale" in text
+
     def test_btc5m_readiness_section_renders_blockers(self, monkeypatch):
         monkeypatch.setattr(
             consolidated_report.pipeline_control,

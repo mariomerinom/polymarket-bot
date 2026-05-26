@@ -68,3 +68,51 @@ def test_engine_health_checks_all_unpaused_pipeline_dbs(tmp_path):
     assert "preds=max=120m-CRIT" in summary
     assert "stale=eth_5m:120m" in summary
     assert "btc_15m" not in summary
+
+
+def test_engine_health_fails_when_git_commit_bail_marker_exists(tmp_path):
+    """A quiesced git loop must be a CRIT even when predictions are fresh."""
+    root = tmp_path / "repo"
+    data = root / "data"
+    config = root / "config"
+    fake_bin = tmp_path / "bin"
+    data.mkdir(parents=True)
+    config.mkdir()
+    fake_bin.mkdir()
+
+    (config / "pipelines.json").write_text(json.dumps({
+        "pipelines": {
+            "btc_5m": {"mode": "paper"},
+        }
+    }))
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    _write_prediction_db(data / "predictions.db", now - timedelta(minutes=2))
+    (data / "GIT_COMMIT_BAIL").write_text(
+        "git push failed at 2026-05-25T09:04:27Z\n"
+    )
+
+    systemctl = fake_bin / "systemctl"
+    systemctl.write_text("#!/bin/sh\nexit 0\n")
+    systemctl.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "BOTSY_ROOT": str(root),
+        "BOTSY_HEALTH_NOW": now.isoformat(),
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+    }
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "tools" / "check_engine_health.sh")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 2
+    summary = (data / "engine_health.txt").read_text()
+    assert "CRIT" in summary
+    assert "git_bail=present-CRIT" in summary
+    assert "preds=max=2m" in summary
+    assert "git auto-commit bail marker present" in result.stderr
