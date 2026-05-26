@@ -229,6 +229,79 @@ class TestBotsyEngineInit:
         assert engine.metrics["btc5m_executable_orderbook_age_ms"]["p95"] == 900
         assert engine.metrics["btc5m_executable_book_reads"]["fresh"] == 3
 
+    def test_engine_writes_btc_executable_sidecar_from_token_update(self, tmp_path, monkeypatch):
+        from botsy_engine import BotsyEngine
+        import botsy_engine
+
+        cache_path = tmp_path / "btc5m_executable_orderbook.json"
+        monkeypatch.setattr(botsy_engine, "EXECUTABLE_ORDERBOOK_CACHE", cache_path)
+        engine = BotsyEngine()
+        engine._token_context = {
+            "yes_tok": {
+                "market_id": "btc-market",
+                "side": "YES",
+                "pipeline": "btc_5m",
+            },
+            "eth_tok": {
+                "market_id": "eth-market",
+                "side": "YES",
+                "pipeline": "eth_5m",
+            },
+        }
+
+        engine._update_orderbook_cache({
+            "event_type": "book",
+            "asset_id": "yes_tok",
+            "bids": [{"price": "0.52", "size": "100"}],
+            "asks": [{"price": "0.54", "size": "100"}],
+            "timestamp": "1770000000123",
+        })
+        engine._update_orderbook_cache({
+            "event_type": "book",
+            "asset_id": "eth_tok",
+            "bids": [{"price": "0.40", "size": "100"}],
+            "asks": [{"price": "0.42", "size": "100"}],
+        })
+        engine._flush_executable_orderbook_cache()
+
+        data = json.loads(cache_path.read_text())
+        assert set(data["markets"]) == {"btc-market"}
+        side = data["markets"]["btc-market"]["yes"]
+        assert side["token_id"] == "yes_tok"
+        assert side["best_bid"] == 0.52
+        assert side["best_ask"] == 0.54
+        assert side["status"] == "fresh"
+
+    def test_engine_samples_executable_sidecar_before_trade(self, tmp_path, monkeypatch):
+        from botsy_engine import BotsyEngine
+        import botsy_engine
+
+        cache_path = tmp_path / "btc5m_executable_orderbook.json"
+        metrics_path = tmp_path / "btc5m_executable_orderbook_metrics.json"
+        monkeypatch.setattr(botsy_engine, "EXECUTABLE_ORDERBOOK_CACHE", cache_path)
+        monkeypatch.setattr(botsy_engine, "EXECUTABLE_ORDERBOOK_METRICS", metrics_path)
+        engine = BotsyEngine()
+        engine._token_context = {
+            "yes_tok": {
+                "market_id": "btc-market",
+                "side": "YES",
+                "pipeline": "btc_5m",
+            },
+        }
+
+        engine._update_orderbook_cache({
+            "event_type": "book",
+            "asset_id": "yes_tok",
+            "bids": [{"price": "0.52", "size": "100"}],
+            "asks": [{"price": "0.54", "size": "100"}],
+        })
+        engine._flush_executable_orderbook_cache()
+        engine._sample_executable_orderbook_cache()
+        engine._merge_executable_orderbook_metrics()
+
+        assert engine.metrics["btc5m_executable_orderbook_age_ms"]["samples"] == 1
+        assert engine.metrics["btc5m_executable_book_reads"]["fresh"] == 1
+
     def test_orderbook_age_samples_use_updated_at_not_zero(self):
         from datetime import datetime, timedelta, timezone
         from botsy_engine import BotsyEngine
