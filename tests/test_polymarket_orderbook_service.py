@@ -178,3 +178,56 @@ def test_sample_executable_cache_metrics_records_fresh_side_ages(tmp_path):
     assert metrics["btc5m_executable_book_reads"]["total"] == 2
     assert metrics["btc5m_executable_book_reads"]["fresh"] == 1
     assert metrics["btc5m_executable_book_reads"]["missing"] == 1
+
+
+def test_build_executable_cache_derives_from_token_cache_without_mirror_state():
+    from polymarket_orderbook_service import build_executable_cache
+
+    now = datetime.now(timezone.utc).isoformat()
+    token_cache = {
+        "yes_tok": {
+            "mid": 0.53,
+            "best_bid": 0.52,
+            "best_ask": 0.54,
+            "spread": 0.02,
+            "updated_at": now,
+            "source_ts": "1770000000123",
+            "status": "fresh",
+        },
+        "no_tok": {
+            "updated_at": None,
+            "status": "stale",
+            "stale_reason": "missing_snapshot_for_price_change",
+        },
+        "eth_tok": {
+            "mid": 0.44,
+            "best_bid": 0.43,
+            "best_ask": 0.45,
+            "spread": 0.02,
+            "updated_at": now,
+            "status": "fresh",
+        },
+    }
+    token_context = {
+        "yes_tok": {"market_id": "btc-market", "side": "YES", "pipeline": "btc_5m"},
+        "no_tok": {"market_id": "btc-market", "side": "NO", "pipeline": "btc_5m"},
+        "missing_tok": {"market_id": "btc-market", "side": "NO", "pipeline": "btc_5m"},
+        "eth_tok": {"market_id": "eth-market", "side": "YES", "pipeline": "eth_5m"},
+    }
+
+    cache = build_executable_cache(
+        token_cache,
+        token_context,
+        active_token_ids={"yes_tok", "no_tok", "missing_tok", "eth_tok"},
+    )
+
+    assert cache["version"] == 2
+    assert set(cache["markets"]) == {"btc-market"}
+    yes = cache["markets"]["btc-market"]["yes"]
+    no = cache["markets"]["btc-market"]["no"]
+    assert yes["token_id"] == "yes_tok"
+    assert yes["status"] == "fresh"
+    assert yes["best_ask"] == 0.54
+    assert no["token_id"] == "no_tok"
+    assert no["status"] == "stale"
+    assert no["reason"] == "missing_snapshot_for_price_change"

@@ -20,6 +20,99 @@ DEFAULT_METRICS_PATH = DATA_DIR / "btc5m_executable_orderbook_metrics.json"
 MAX_SAMPLES = 1000
 
 
+def build_executable_cache(
+    token_cache: dict,
+    token_context: dict,
+    *,
+    active_token_ids: set | None = None,
+) -> dict:
+    """Build the BTC 5m executable sidecar from canonical token state.
+
+    This is intentionally derived, not mirrored. The engine owns one mutable
+    orderbook cache keyed by token id; the executable sidecar is rebuilt from
+    that cache plus token context at flush time.
+    """
+    active = set(active_token_ids) if active_token_ids is not None else None
+    markets: dict = {}
+    for token_id, ctx in sorted((token_context or {}).items()):
+        if active is not None and token_id not in active:
+            continue
+        if not isinstance(ctx, dict) or ctx.get("pipeline") != "btc_5m":
+            continue
+        market_id = ctx.get("market_id")
+        side = str(ctx.get("side") or "").lower()
+        if not market_id or side not in {"yes", "no"}:
+            continue
+        token_entry = (token_cache or {}).get(token_id)
+        side_entry = _side_entry_from_token(token_id, market_id, side, token_entry)
+        market = markets.setdefault(market_id, {})
+        current = market.get(side)
+        if current is None or _status_rank(side_entry) > _status_rank(current):
+            market[side] = side_entry
+
+    return {
+        "version": 2,
+        "written_at": datetime.now(timezone.utc).isoformat(),
+        "markets": markets,
+    }
+
+
+def write_executable_cache(cache: dict, path: Path = DEFAULT_EXECUTABLE_CACHE_PATH) -> None:
+    _write_json_atomic(Path(path), cache)
+
+
+def _side_entry_from_token(
+    token_id: str,
+    market_id: str,
+    side: str,
+    entry: dict | None,
+) -> dict:
+    base = {
+        "market_id": market_id,
+        "side": side,
+        "token_id": token_id,
+        "status": "missing",
+        "source": "polymarket_orderbook_v2",
+        "reason": "missing_cache_entry",
+        "stale_reason": None,
+        "mid": None,
+        "best_bid": None,
+        "best_ask": None,
+        "spread": None,
+        "updated_at": None,
+        "source_ts": None,
+    }
+    if not isinstance(entry, dict):
+        return base
+
+    status = entry.get("status") or "missing"
+    reason = entry.get("stale_reason") or entry.get("reason")
+    base.update({
+        "status": status,
+        "source": entry.get("source") or "polymarket_orderbook_v2",
+        "reason": reason,
+        "stale_reason": entry.get("stale_reason"),
+        "mid": entry.get("mid"),
+        "best_bid": entry.get("best_bid"),
+        "best_ask": entry.get("best_ask"),
+        "spread": entry.get("spread"),
+        "updated_at": entry.get("updated_at"),
+        "source_ts": entry.get("source_ts"),
+    })
+    if status == "missing" and not base["reason"]:
+        base["reason"] = "missing_cache_entry"
+    return base
+
+
+def _status_rank(entry: dict) -> int:
+    return {
+        "missing": 0,
+        "stale": 1,
+        "partial": 2,
+        "fresh": 3,
+    }.get(entry.get("status"), 0)
+
+
 class PolymarketOrderbookService:
     """Read exact-side executable books and record BTC 5m freshness metrics."""
 

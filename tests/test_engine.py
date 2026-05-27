@@ -272,6 +272,39 @@ class TestBotsyEngineInit:
         assert side["best_ask"] == 0.54
         assert side["status"] == "fresh"
 
+    def test_engine_rebuilds_executable_sidecar_from_canonical_cache(self, tmp_path, monkeypatch):
+        from botsy_engine import BotsyEngine
+        import botsy_engine
+
+        cache_path = tmp_path / "btc5m_executable_orderbook.json"
+        monkeypatch.setattr(botsy_engine, "EXECUTABLE_ORDERBOOK_CACHE", cache_path)
+        engine = BotsyEngine()
+        engine._token_context = {
+            "yes_tok": {
+                "market_id": "btc-market",
+                "side": "YES",
+                "pipeline": "btc_5m",
+            },
+        }
+        engine._subscribed_token_ids = {"yes_tok"}
+        engine._orderbook_cache = {
+            "yes_tok": {
+                "mid": 0.61,
+                "best_bid": 0.60,
+                "best_ask": 0.62,
+                "spread": 0.02,
+                "updated_at": "2026-05-27T12:00:00+00:00",
+                "status": "fresh",
+            }
+        }
+
+        engine._flush_executable_orderbook_cache()
+
+        data = json.loads(cache_path.read_text())
+        assert data["version"] == 2
+        assert data["markets"]["btc-market"]["yes"]["best_bid"] == 0.60
+        assert not hasattr(engine, "_executable_orderbook_cache")
+
     def test_engine_samples_executable_sidecar_before_trade(self, tmp_path, monkeypatch):
         from botsy_engine import BotsyEngine
         import botsy_engine
