@@ -626,6 +626,36 @@ def test_liquidity_section_absent_without_data():
     assert "Liquidity Profile" not in report
 
 
+def test_market_data_provider_lines_render_provider_breakdown():
+    from daily_report import _market_data_provider_lines
+
+    lines = _market_data_provider_lines({
+        "market_data_provider": {
+            "mode": "vendor_primary",
+            "vendor": "custom",
+            "chosen_source": "vendor",
+            "vendor_feed_connected": True,
+            "fallback_count": 2,
+            "fallback_rate": 0.25,
+            "disagreement_count": 1,
+            "by_source": {
+                "vendor": {"fresh": 7, "stale": 1, "missing": 2},
+                "internal": {"fresh": 6, "stale": 3, "missing": 1},
+            },
+        }
+    })
+    text = "\n".join(lines)
+
+    assert "Market data provider" in text
+    assert "vendor_primary" in text
+    assert "chosen=vendor" in text
+    assert "fallbacks=2" in text
+    assert "rate=25.0%" in text
+    assert "disagreements=1" in text
+    assert "vendor fresh=7 stale=1 missing=2" in text
+    assert "internal fresh=6 stale=3 missing=1" in text
+
+
 # ── Trade execution / circuit breaker tests ──────────────────────────
 
 

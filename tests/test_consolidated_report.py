@@ -40,6 +40,33 @@ class TestPipelineDiscovery:
         assert pipeline_control.pipeline_to_asset("doge_hl") == "DOGE"
 
 
+def test_consolidated_market_data_provider_lines_render_breakdown():
+    lines = consolidated_report._market_data_provider_lines({
+        "market_data_provider": {
+            "mode": "vendor_primary",
+            "vendor": "custom",
+            "chosen_source": "internal",
+            "vendor_feed_connected": False,
+            "fallback_count": 3,
+            "fallback_rate": 0.75,
+            "disagreement_count": 2,
+            "by_source": {
+                "vendor": {"fresh": 1, "stale": 4, "missing": 0},
+                "internal": {"fresh": 5, "stale": 0, "missing": 0},
+            },
+        }
+    })
+    text = "\n".join(lines)
+
+    assert "Market data provider" in text
+    assert "vendor_primary" in text
+    assert "chosen=internal" in text
+    assert "feed=disconnected" in text
+    assert "fallbacks=3" in text
+    assert "rate=75.0%" in text
+    assert "disagreements=2" in text
+
+
 # ── Portfolio totals ─────────────────────────────────────────────────
 
 

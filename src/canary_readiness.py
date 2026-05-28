@@ -27,6 +27,8 @@ SIGNAL_EHR_PROMOTION_MIN = 0.02
 METRICS_SCHEMA_VERSION = 2
 METRICS_MAX_AGE_S = 180
 POLYMARKET_LAST_EVENT_MAX_AGE_S = 180
+MARKET_DATA_VENDOR_FALLBACK_RATE_MAX = 0.20
+MARKET_DATA_BBO_DISAGREEMENT_MAX = 0
 
 
 def btc5m_live_canary_blockers(
@@ -244,6 +246,20 @@ def _metrics_blockers(metrics_path: Path) -> list[str]:
             else "orderbook_age_p95_too_high"
         )
         blockers.append(f"{blocker} ({orderbook_p95})")
+
+    provider = data.get("market_data_provider") or {}
+    if provider.get("mode") == "vendor_primary":
+        if provider.get("vendor_feed_connected") is False:
+            blockers.append("market_data_vendor_feed_not_connected")
+        fallback_rate = float(provider.get("fallback_rate") or 0)
+        if fallback_rate > MARKET_DATA_VENDOR_FALLBACK_RATE_MAX:
+            blockers.append(
+                "market_data_vendor_fallback_rate_too_high "
+                f"({round(fallback_rate * 100, 1)}%)"
+            )
+        disagreements = int(provider.get("disagreement_count") or 0)
+        if disagreements > MARKET_DATA_BBO_DISAGREEMENT_MAX:
+            blockers.append(f"market_data_bbo_disagreement ({disagreements})")
 
     cache = data.get("orderbook_cache") or {}
     fresh_tokens = int(cache.get("fresh_tokens_now") or 0)

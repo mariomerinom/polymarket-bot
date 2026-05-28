@@ -143,6 +143,59 @@ def test_record_executable_read_metrics_writes_p95_and_counts(tmp_path):
     assert metrics["btc5m_executable_book_reads"]["missing"] == 1
 
 
+def test_record_executable_read_metrics_tracks_provider_breakdown(tmp_path):
+    from polymarket_orderbook_service import (
+        load_executable_metrics,
+        record_executable_read,
+    )
+
+    metrics_path = tmp_path / "btc5m_exec_metrics.json"
+    record_executable_read({
+        "market_id": "m1",
+        "side": "yes",
+        "status": "fresh",
+        "age_ms": 800,
+        "source": "vendor:custom",
+        "provider_mode": "vendor_primary",
+        "provider_vendor": "custom",
+        "provider_chosen_source": "vendor",
+        "provider_vendor_status": "fresh",
+        "provider_internal_status": "fresh",
+        "provider_fallback_used": False,
+        "provider_disagreement": True,
+        "provider_vendor_feed_connected": True,
+        "provider_disagreement_tolerance": 0.03,
+    }, metrics_path)
+    record_executable_read({
+        "market_id": "m2",
+        "side": "no",
+        "status": "fresh",
+        "age_ms": 900,
+        "source": "executable_sidecar",
+        "provider_mode": "vendor_primary",
+        "provider_vendor": "custom",
+        "provider_chosen_source": "internal",
+        "provider_vendor_status": "stale",
+        "provider_internal_status": "fresh",
+        "provider_fallback_used": True,
+        "provider_disagreement": False,
+        "provider_vendor_feed_connected": False,
+    }, metrics_path)
+
+    provider = load_executable_metrics(metrics_path)["market_data_provider"]
+
+    assert provider["mode"] == "vendor_primary"
+    assert provider["vendor"] == "custom"
+    assert provider["chosen_source"] == "internal"
+    assert provider["vendor_feed_connected"] is False
+    assert provider["fallback_count"] == 1
+    assert provider["fallback_rate"] == 0.5
+    assert provider["disagreement_count"] == 1
+    assert provider["by_source"]["vendor"]["fresh"] == 1
+    assert provider["by_source"]["vendor"]["stale"] == 1
+    assert provider["by_source"]["internal"]["fresh"] == 2
+
+
 def test_sample_executable_cache_metrics_records_fresh_side_ages(tmp_path):
     from polymarket_orderbook_service import (
         sample_executable_cache,

@@ -1,10 +1,22 @@
 """Tests for trade.py — order execution module."""
 
+import json
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+
+def _vendor_cache(path, markets):
+    path.write_text(json.dumps({
+        "version": 1,
+        "provider": "custom",
+        "status": "connected",
+        "markets": markets,
+    }))
+    return path
 
 
 def _make_db():
@@ -274,6 +286,53 @@ class TestComputeOrder:
         order, reason = compute_order(pred, market)
         assert order is not None
         assert order["direction"] == "DOWN"
+
+
+def test_resolve_clob_prices_uses_vendor_primary_evidence(monkeypatch, tmp_path):
+    import polymarket_orderbook_service
+    from trade import resolve_clob_prices
+
+    now = datetime.now(timezone.utc).isoformat()
+    vendor = _vendor_cache(tmp_path / "vendor.json", {
+        "m1": {
+            "yes": {
+                "token_id": "yes",
+                "best_bid": 0.61,
+                "best_ask": 0.63,
+                "mid": 0.62,
+                "spread": 0.02,
+                "updated_at": now,
+                "status": "fresh",
+            },
+            "no": {
+                "token_id": "no",
+                "best_bid": 0.37,
+                "best_ask": 0.39,
+                "mid": 0.38,
+                "spread": 0.02,
+                "updated_at": now,
+                "status": "fresh",
+            },
+        }
+    })
+    monkeypatch.setenv("MARKET_DATA_PROVIDER", "vendor_primary")
+    monkeypatch.setenv("MARKET_DATA_VENDOR_CACHE", str(vendor))
+    monkeypatch.setattr(
+        polymarket_orderbook_service,
+        "record_executable_read",
+        lambda *args, **kwargs: {},
+    )
+
+    market_row, _ = resolve_clob_prices(
+        {"market_id": "m1", "price_yes": 0.50, "price_no": 0.50, "estimate": 0.65},
+        {"yes": "yes", "no": "no"},
+    )
+
+    assert market_row["price_yes"] == 0.62
+    assert market_row["price_no"] == 0.38
+    assert market_row["_yes_best_bid"] == 0.61
+    assert market_row["_no_best_ask"] == 0.39
+    assert market_row["_orderbook_cache"]["yes"] == "fresh"
 
 
 class TestPlaceOrder:

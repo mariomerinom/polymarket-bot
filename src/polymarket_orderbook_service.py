@@ -318,13 +318,70 @@ def _record_book(metrics: dict, book: dict) -> dict:
     reads["latest_reason"] = book.get("reason")
     reads["latest_market_id"] = book.get("market_id")
 
+    provider = _record_provider_metrics(
+        metrics.get("market_data_provider") or {},
+        book,
+    )
+
     return {
         "schema_version": 1,
         "written_at": datetime.now(timezone.utc).isoformat(),
         "_age_samples_ms": samples,
         "btc5m_executable_orderbook_age_ms": _percentiles(samples),
         "btc5m_executable_book_reads": reads,
+        "market_data_provider": provider,
     }
+
+
+def _record_provider_metrics(provider: dict, book: dict) -> dict:
+    mode = book.get("provider_mode")
+    if not mode:
+        return provider
+    total = int(provider.get("total") or 0) + 1
+    fallback_count = int(provider.get("fallback_count") or 0)
+    if book.get("provider_fallback_used"):
+        fallback_count += 1
+    disagreement_count = int(provider.get("disagreement_count") or 0)
+    if book.get("provider_disagreement"):
+        disagreement_count += 1
+
+    by_source = provider.get("by_source") or {}
+    by_source = _increment_source_status(
+        by_source,
+        "vendor",
+        book.get("provider_vendor_status") or "missing",
+    )
+    by_source = _increment_source_status(
+        by_source,
+        "internal",
+        book.get("provider_internal_status") or "missing",
+    )
+    return {
+        "mode": mode,
+        "vendor": book.get("provider_vendor") or provider.get("vendor") or "custom",
+        "chosen_source": book.get("provider_chosen_source") or "none",
+        "vendor_feed_connected": bool(book.get("provider_vendor_feed_connected")),
+        "disagreement_tolerance": (
+            book.get("provider_disagreement_tolerance")
+            if book.get("provider_disagreement_tolerance") is not None
+            else provider.get("disagreement_tolerance")
+        ),
+        "total": total,
+        "fallback_count": fallback_count,
+        "fallback_rate": round(fallback_count / total, 4) if total else 0,
+        "disagreement_count": disagreement_count,
+        "by_source": by_source,
+        "latest_market_id": book.get("market_id"),
+        "latest_side": book.get("side"),
+    }
+
+
+def _increment_source_status(by_source: dict, source: str, status: str) -> dict:
+    source_counts = by_source.get(source) or {}
+    source_counts["total"] = int(source_counts.get("total") or 0) + 1
+    source_counts[status] = int(source_counts.get(status) or 0) + 1
+    by_source[source] = source_counts
+    return by_source
 
 
 def load_executable_metrics(metrics_path: Path = DEFAULT_METRICS_PATH) -> dict:
@@ -349,6 +406,7 @@ def public_metrics(metrics_path: Path = DEFAULT_METRICS_PATH) -> dict:
         "btc5m_executable_book_reads": (
             data.get("btc5m_executable_book_reads") or {}
         ),
+        "market_data_provider": data.get("market_data_provider") or {},
     }
 
 
@@ -366,6 +424,7 @@ def _empty_metrics() -> dict:
             "partial": 0,
             "by_side": {},
         },
+        "market_data_provider": {},
     }
 
 

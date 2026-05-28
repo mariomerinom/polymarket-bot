@@ -1150,6 +1150,7 @@ def _get_engine_metrics():
             "orderbook_age": data.get("orderbook_age_ms", {}),
             "btc5m_executable_orderbook_age": data.get("btc5m_executable_orderbook_age_ms", {}),
             "btc5m_executable_book_reads": data.get("btc5m_executable_book_reads", {}),
+            "market_data_provider": data.get("market_data_provider", {}),
             "orderbook_cache": data.get("orderbook_cache", {}),
             "fallback_fires": data.get("fallback_fires_24h", 0),
             "cycles": data.get("cycles", 0),
@@ -1182,6 +1183,7 @@ def _empty_engine_metrics(git_bail: dict | None = None) -> dict:
         "orderbook_age": empty_latency,
         "btc5m_executable_orderbook_age": empty_latency,
         "btc5m_executable_book_reads": {},
+        "market_data_provider": {},
         "orderbook_cache": {},
         "fallback_fires": 0,
         "cycles": 0,
@@ -1278,6 +1280,37 @@ def _orderbook_diagnostic_lines(metrics: dict) -> list[str]:
     if cause:
         lines.append(f"- **Orderbook freshness decision:** dominant cause: {cause}")
     return lines
+
+
+def _market_data_provider_lines(metrics: dict) -> list[str]:
+    provider = metrics.get("market_data_provider") or {}
+    if not provider:
+        return []
+    vendor_counts = (provider.get("by_source") or {}).get("vendor") or {}
+    internal_counts = (provider.get("by_source") or {}).get("internal") or {}
+    fallback_rate = float(provider.get("fallback_rate") or 0)
+    feed = "connected" if provider.get("vendor_feed_connected") else "disconnected"
+    return [
+        (
+            "- **Market data provider:** "
+            f"mode={provider.get('mode', 'unknown')} "
+            f"vendor={provider.get('vendor', 'unknown')} "
+            f"chosen={provider.get('chosen_source', 'unknown')} "
+            f"feed={feed}"
+        ),
+        (
+            "- **Provider evidence:** "
+            f"vendor fresh={vendor_counts.get('fresh', 0)} "
+            f"stale={vendor_counts.get('stale', 0)} "
+            f"missing={vendor_counts.get('missing', 0)}; "
+            f"internal fresh={internal_counts.get('fresh', 0)} "
+            f"stale={internal_counts.get('stale', 0)} "
+            f"missing={internal_counts.get('missing', 0)}; "
+            f"fallbacks={provider.get('fallback_count', 0)} "
+            f"rate={fallback_rate * 100:.1f}% "
+            f"disagreements={provider.get('disagreement_count', 0)}"
+        ),
+    ]
 
 
 def _analyze_strategy_lab(db_path=None):
@@ -1823,6 +1856,7 @@ def format_report(
             "",
         ])
         lines.extend(_orderbook_diagnostic_lines(engine_metrics))
+        lines.extend(_market_data_provider_lines(engine_metrics))
         lines.append("")
 
     if canary_readiness:

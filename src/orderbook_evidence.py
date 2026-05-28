@@ -9,10 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from orderbook_cache import DEFAULT_MAX_AGE_S
-from polymarket_orderbook_service import (
-    DEFAULT_EXECUTABLE_CACHE_PATH,
-    PolymarketOrderbookService,
-)
+from polymarket_orderbook_service import DEFAULT_EXECUTABLE_CACHE_PATH
+from market_data_provider import read_provider_orderbook_evidence
 
 
 def read_orderbook_evidence(
@@ -24,7 +22,10 @@ def read_orderbook_evidence(
     max_age_s: float = DEFAULT_MAX_AGE_S,
 ) -> dict:
     """Return per-side cache evidence for one Polymarket market."""
-    return PolymarketOrderbookService(
-        executable_cache_path=cache_path,
+    return read_provider_orderbook_evidence(
+        market_id,
+        yes_token,
+        no_token,
+        cache_path=cache_path,
         max_age_s=max_age_s,
-    ).read_market(market_id, yes_token, no_token)
+    )

@@ -415,6 +415,7 @@ def _render_engine_health_section() -> list:
     orderbook = m.get("orderbook_age_ms", {})
     btc_orderbook = m.get("btc5m_executable_orderbook_age_ms", {})
     btc_reads = m.get("btc5m_executable_book_reads", {})
+    provider = m.get("market_data_provider") or {}
     lines.extend([
         *_git_bail_lines(_git_bail_status()),
         "| Metric | p50 | p95 | Samples |",
@@ -437,6 +438,7 @@ def _render_engine_health_section() -> list:
         "",
     ])
     lines.extend(_orderbook_diagnostic_lines(m))
+    lines.extend(_market_data_provider_lines({"market_data_provider": provider}))
     lines.append("")
     lines.extend(_render_btc5m_readiness_section())
     lines.append("")
@@ -585,6 +587,37 @@ def _orderbook_diagnostic_lines(metrics: dict) -> list[str]:
     if cause:
         lines.append(f"- Orderbook freshness decision: dominant cause: {cause}")
     return lines
+
+
+def _market_data_provider_lines(metrics: dict) -> list[str]:
+    provider = metrics.get("market_data_provider") or {}
+    if not provider:
+        return []
+    vendor_counts = (provider.get("by_source") or {}).get("vendor") or {}
+    internal_counts = (provider.get("by_source") or {}).get("internal") or {}
+    fallback_rate = float(provider.get("fallback_rate") or 0)
+    feed = "connected" if provider.get("vendor_feed_connected") else "disconnected"
+    return [
+        (
+            "- Market data provider: "
+            f"mode={provider.get('mode', 'unknown')} "
+            f"vendor={provider.get('vendor', 'unknown')} "
+            f"chosen={provider.get('chosen_source', 'unknown')} "
+            f"feed={feed}"
+        ),
+        (
+            "- Provider evidence: "
+            f"vendor fresh={vendor_counts.get('fresh', 0)} "
+            f"stale={vendor_counts.get('stale', 0)} "
+            f"missing={vendor_counts.get('missing', 0)}; "
+            f"internal fresh={internal_counts.get('fresh', 0)} "
+            f"stale={internal_counts.get('stale', 0)} "
+            f"missing={internal_counts.get('missing', 0)}; "
+            f"fallbacks={provider.get('fallback_count', 0)} "
+            f"rate={fallback_rate * 100:.1f}% "
+            f"disagreements={provider.get('disagreement_count', 0)}"
+        ),
+    ]
 
 
 def _render_circuit_breaker_section(per_pipeline_results: list) -> list:

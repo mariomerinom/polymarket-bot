@@ -64,6 +64,7 @@ def _metrics(
     stale_tokens=0,
     executable_p95=None,
     executable_samples=None,
+    market_data_provider=None,
 ):
     path = tmp_path / "ws_metrics.json"
     now = datetime.now(timezone.utc).isoformat()
@@ -88,6 +89,8 @@ def _metrics(
             "p95": executable_p95,
             "samples": executable_samples if executable_samples is not None else samples,
         }
+    if market_data_provider is not None:
+        data["market_data_provider"] = market_data_provider
     path.write_text(json.dumps(data))
     return path
 
@@ -146,6 +149,81 @@ def test_btc5m_live_canary_uses_executable_orderbook_metric_when_present(tmp_pat
 
     assert not any("orderbook_age_p95_too_high" in b for b in blockers)
     assert not any("orderbook_stale_tokens_exceed_fresh" in b for b in blockers)
+
+
+def test_btc5m_live_canary_blocks_vendor_feed_disconnect(tmp_path):
+    from canary_readiness import btc5m_live_canary_blockers
+
+    db = _make_db()
+
+    with patch("canary_readiness.shutil.disk_usage") as usage:
+        usage.return_value = (100, 20, 80)
+        blockers = btc5m_live_canary_blockers(
+            db,
+            metrics_path=_metrics(
+                tmp_path,
+                executable_p95=500,
+                market_data_provider={
+                    "mode": "vendor_primary",
+                    "vendor_feed_connected": False,
+                    "fallback_rate": 0,
+                    "disagreement_count": 0,
+                },
+            ),
+            disk_path=tmp_path,
+        )
+
+    assert "market_data_vendor_feed_not_connected" in blockers
+
+
+def test_btc5m_live_canary_blocks_material_vendor_fallback_rate(tmp_path):
+    from canary_readiness import btc5m_live_canary_blockers
+
+    db = _make_db()
+
+    with patch("canary_readiness.shutil.disk_usage") as usage:
+        usage.return_value = (100, 20, 80)
+        blockers = btc5m_live_canary_blockers(
+            db,
+            metrics_path=_metrics(
+                tmp_path,
+                executable_p95=500,
+                market_data_provider={
+                    "mode": "vendor_primary",
+                    "vendor_feed_connected": True,
+                    "fallback_rate": 0.5,
+                    "disagreement_count": 0,
+                },
+            ),
+            disk_path=tmp_path,
+        )
+
+    assert any("market_data_vendor_fallback_rate_too_high" in b for b in blockers)
+
+
+def test_btc5m_live_canary_blocks_vendor_internal_disagreement(tmp_path):
+    from canary_readiness import btc5m_live_canary_blockers
+
+    db = _make_db()
+
+    with patch("canary_readiness.shutil.disk_usage") as usage:
+        usage.return_value = (100, 20, 80)
+        blockers = btc5m_live_canary_blockers(
+            db,
+            metrics_path=_metrics(
+                tmp_path,
+                executable_p95=500,
+                market_data_provider={
+                    "mode": "vendor_primary",
+                    "vendor_feed_connected": True,
+                    "fallback_rate": 0,
+                    "disagreement_count": 1,
+                },
+            ),
+            disk_path=tmp_path,
+        )
+
+    assert any("market_data_bbo_disagreement" in b for b in blockers)
 
 
 def test_btc5m_live_canary_blocks_stale_metrics_file(tmp_path):
