@@ -184,6 +184,22 @@ class PolymarketOrderbookService:
         }
         if not token_id:
             return base
+
+        # Registry-first: when the engine is live in this process, read
+        # directly from the in-process live_book_registry instead of the disk
+        # sidecar.  This removes the 2 s disk-flush latency floor (root cause 1).
+        # On registry miss or engine-not-live, fall through to the sidecar path.
+        try:
+            from live_book_registry import engine_is_live, read_token as _reg_read
+            if engine_is_live():
+                reg_entry = _reg_read(token_id)
+                if reg_entry is not None:
+                    return self._side_book_from_registry(
+                        reg_entry, market_id, side, token_id
+                    )
+        except ImportError:
+            pass  # registry module not available in standalone / replay contexts
+
         entry = market.get(side) if isinstance(market, dict) else None
         if not isinstance(entry, dict):
             return base
@@ -251,6 +267,63 @@ class PolymarketOrderbookService:
             "source": entry.get("source") or "executable_sidecar",
             "reason": None,
         })
+        return base
+
+    def _side_book_from_registry(
+        self,
+        entry: dict,
+        market_id: str,
+        side: str,
+        token_id: str,
+    ) -> dict:
+        """Build a side-book result from a live registry entry.
+
+        Uses last_event_ms (local apply-time) instead of updated_at so the
+        age reflects the true in-process freshness, not the disk-flush epoch.
+        Applies the same gates as _side_book: max_age_s, snapshot_verified,
+        valid BBO, and explicit stale status.
+        """
+        import time as _time
+        now_ms = int(_time.time() * 1000)
+        last_event_ms = entry.get("last_event_ms")
+        age_ms = (now_ms - last_event_ms) if last_event_ms is not None else None
+
+        base = {
+            "market_id": market_id,
+            "side": side,
+            "token_id": token_id,
+            "age_ms": round(age_ms) if age_ms is not None else None,
+            "mid": entry.get("mid"),
+            "best_bid": entry.get("best_bid"),
+            "best_ask": entry.get("best_ask"),
+            "spread": entry.get("spread"),
+            "source_ts": entry.get("source_ts"),
+            "reason": None,
+        }
+
+        if age_ms is None:
+            base.update({"status": "stale", "source": "live_registry",
+                         "reason": "no_last_event_ms"})
+            return base
+        if age_ms > self.max_age_s * 1000:
+            base.update({"status": "stale", "source": "live_registry",
+                         "reason": "stale_last_event_ms"})
+            return base
+        raw_status = entry.get("status")
+        if raw_status == "stale":
+            base.update({"status": "stale", "source": "live_registry",
+                         "reason": entry.get("stale_reason") or "stale_entry"})
+            return base
+        mid = entry.get("mid")
+        if mid is None or not (0 < mid < 1):
+            base.update({"status": "partial", "source": "live_registry",
+                         "reason": "invalid_mid"})
+            return base
+        if not entry.get("snapshot_verified"):
+            base.update({"status": "stale", "source": "live_registry",
+                         "reason": "no_snapshot_baseline"})
+            return base
+        base.update({"status": "fresh", "source": "live_registry"})
         return base
 
 

@@ -149,6 +149,13 @@ class BotsyEngine:
         self.last_event_time = time.time()
         self._dispatched: set = set()  # dedup: (source, symbol, candle_ts)
 
+        # Register presence in the process-global registry so readers know
+        # they can bypass the disk sidecar for btc_5m execution reads.
+        import live_book_registry as _lbr
+        _lbr.reset()
+        _lbr.set_engine_present(True)
+        self._live_book_registry = _lbr  # hold reference for publish calls
+
         # Candle buffer + TA engine (Stage 1-2 of Phase 3)
         from candle_buffer import CandleBuffer
         self.candle_buffer = CandleBuffer(maxlen=100)
@@ -732,6 +739,7 @@ class BotsyEngine:
         if not active_token_ids:
             return
         before = len(self._orderbook_cache)
+        pruned_token_ids = set(self._orderbook_cache) - active_token_ids
         self._orderbook_cache = {
             token_id: entry
             for token_id, entry in self._orderbook_cache.items()
@@ -739,6 +747,10 @@ class BotsyEngine:
         }
         if len(self._orderbook_cache) != before:
             self._orderbook_dirty = True
+        # Mirror the prune into the in-process registry so stale tokens
+        # don't linger there after the subscription changes.
+        for token_id in pruned_token_ids:
+            self._live_book_registry.drop_token(token_id)
     def _flush_executable_orderbook_cache(self):
         """Rebuild and write the BTC 5m market+side executable cache."""
         try:
@@ -801,6 +813,8 @@ class BotsyEngine:
                 "asks": asks[:5],
             }
             self._orderbook_dirty = True
+            # Publish to in-process registry so consumers skip the disk round-trip.
+            self._live_book_registry.publish_token(asset_id, self._orderbook_cache[asset_id])
             # Drain any buffered deltas for this token now that we have a snapshot
             buffered = self._pending_deltas.pop(asset_id, [])
             for buffered_change in buffered:
@@ -899,6 +913,7 @@ class BotsyEngine:
             })
             self.metrics["orderbook_cache"]["price_change_tokens_updated"] += 1
             self._orderbook_dirty = True
+            self._live_book_registry.publish_token(asset_id, entry)
 
     def _mark_orderbook_token_stale(self, asset_id: str, reason: str):
         """Mark token unusable without pretending the cache is fresh."""
@@ -913,6 +928,7 @@ class BotsyEngine:
             "snapshot_verified": False,
         })
         self._orderbook_dirty = True
+        self._live_book_registry.publish_token(asset_id, entry)
 
     def _record_ignored_polymarket_event(self, event_type: str):
         ignored = self.metrics["orderbook_cache"].setdefault("ignored_event_types", {})
@@ -960,6 +976,7 @@ class BotsyEngine:
             "snapshot_verified": prev_snapshot_verified,
         })
         self._orderbook_dirty = True
+        self._live_book_registry.publish_token(asset_id, entry)
 
     def _seed_orderbook_snapshots_from_rest(self, token_ids: set) -> int:
         """Initialize active token books from REST so deltas have a base book."""
@@ -1006,6 +1023,7 @@ class BotsyEngine:
             }
             self.metrics["orderbook_cache"]["rest_snapshot_seed_success"] += 1
             self._orderbook_dirty = True
+            self._live_book_registry.publish_token(token_id, self._orderbook_cache[token_id])
             # Drain any deltas that arrived while the REST seed was in-flight.
             buffered = self._pending_deltas.pop(token_id, [])
             for buffered_change in buffered:
@@ -1079,6 +1097,7 @@ class BotsyEngine:
                 "asks": self._sort_levels(asks, reverse=False)[:5],
             }
             self._orderbook_dirty = True
+            self._live_book_registry.publish_token(token_id, self._orderbook_cache[token_id])
             self.metrics["orderbook_cache"]["rest_snapshot_seed_success"] = (
                 self.metrics["orderbook_cache"].get("rest_snapshot_seed_success", 0) + 1
             )
@@ -1131,6 +1150,7 @@ class BotsyEngine:
             "asks": self._sort_levels(asks, reverse=False)[:5],
         })
         self._orderbook_dirty = True
+        self._live_book_registry.publish_token(token_id, entry)
 
     # ── Static / utility helpers ──────────────────────────────────────────────
 
