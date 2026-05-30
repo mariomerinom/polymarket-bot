@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime, timezone
 
 from orderbook_evidence import read_orderbook_evidence
 
 
-MAX_ORDERBOOK_AGE_MS = 2_000
+# Shared freshness contract (arch req 5).  Derived from the same env variable
+# that drives trade.LIVE_ORDERBOOK_MAX_AGE_S so both thresholds are always equal.
+MAX_ORDERBOOK_AGE_MS = int(float(os.environ.get("BTC5M_EXECUTABLE_MAX_AGE_S", "2.0")) * 1000)
 DELAYED_POLICIES = {
     "delay_180_shadow": (180, "shadow"),
     "delay_240_shadow": (240, "shadow"),

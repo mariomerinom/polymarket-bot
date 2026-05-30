@@ -30,6 +30,10 @@ def _side(token_id, *, bid=0.51, ask=0.53, updated_at=None, status="fresh"):
         "updated_at": updated_at,
         "source_ts": updated_at,
         "status": status,
+        # snapshot_verified=True: entries represent properly initialized tokens
+        # (WS book or REST seed applied).  Required by _side_book since the
+        # freshness-contract fix (root cause 2 / snapshot_verified gate).
+        "snapshot_verified": True,
     }
 
 

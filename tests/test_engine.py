@@ -483,6 +483,7 @@ class TestBotsyEngineInit:
                 "best_ask": 0.54,
                 "spread": 0.02,
                 "updated_at": "2026-05-12T00:00:00+00:00",
+                "snapshot_verified": True,
                 "bids": [{"price": "0.52", "size": "100"}],
                 "asks": [{"price": "0.54", "size": "80"}],
             }
@@ -544,6 +545,7 @@ class TestBotsyEngineInit:
                 "best_ask": 0.54,
                 "spread": 0.02,
                 "updated_at": old_ts,
+                "snapshot_verified": True,
                 "bids": [{"price": "0.52", "size": "100"}],
                 "asks": [{"price": "0.54", "size": "80"}],
             }
@@ -581,6 +583,7 @@ class TestBotsyEngineInit:
                 "best_ask": 0.54,
                 "spread": 0.02,
                 "updated_at": "2026-05-12T00:00:00+00:00",
+                "snapshot_verified": True,
                 "bids": [{"price": "0.52", "size": "100"}],
                 "asks": [{"price": "0.54", "size": "80"}],
             }
@@ -603,7 +606,16 @@ class TestBotsyEngineInit:
         assert entry["best_ask"] == 0.54
         assert entry["status"] == "fresh"
 
-    def test_polymarket_price_change_without_snapshot_marks_token_stale(self):
+    def test_polymarket_price_change_without_snapshot_buffers_not_stale(self):
+        """Delta before snapshot must be buffered for replay, not dropped or stale-marked.
+
+        This is the regression test for root cause 2 (see postmortem_2026-05-29):
+        the old behaviour dropped deltas and permanently stale-marked the token
+        until the next infrequent WS 'book' event.  The fix: buffer the delta in
+        _pending_deltas and schedule a REST reseed; the token is NOT written to
+        the cache as stale and the old price_change_missing_snapshot counter must
+        stay zero (it is now reserved for the unrecoverable case only).
+        """
         from botsy_engine import BotsyEngine
 
         engine = BotsyEngine()
@@ -620,11 +632,17 @@ class TestBotsyEngineInit:
             }],
         })
 
-        entry = engine._orderbook_cache["tok"]
-        assert entry["status"] == "stale"
-        assert entry["updated_at"] is None
-        assert "missing_snapshot" in entry["stale_reason"]
-        assert engine.metrics["orderbook_cache"]["price_change_missing_snapshot"] == 1
+        # Token must NOT be stale-marked in the cache.
+        entry = engine._orderbook_cache.get("tok")
+        assert entry is None or entry.get("status") != "stale", (
+            "Delta before snapshot must not strand the token as stale"
+        )
+        # Delta must be buffered pending a reseed.
+        assert "tok" in engine._pending_deltas
+        assert len(engine._pending_deltas["tok"]) == 1
+        # New buffer metric must increment; old stale-mark metric must stay zero.
+        assert engine.metrics["orderbook_cache"]["price_change_buffered_until_seed"] == 1
+        assert engine.metrics["orderbook_cache"]["price_change_missing_snapshot"] == 0
 
     def test_polymarket_price_change_crossed_book_marks_token_stale(self):
         from botsy_engine import BotsyEngine
@@ -637,6 +655,7 @@ class TestBotsyEngineInit:
                 "best_ask": 0.54,
                 "spread": 0.02,
                 "updated_at": "2026-05-12T00:00:00+00:00",
+                "snapshot_verified": True,
                 "bids": [{"price": "0.52", "size": "100"}],
                 "asks": [{"price": "0.54", "size": "80"}],
             }
@@ -668,6 +687,7 @@ class TestBotsyEngineInit:
                 "best_ask": 0.54,
                 "spread": 0.02,
                 "updated_at": "2026-05-12T00:00:00+00:00",
+                "snapshot_verified": True,
                 "bids": [{"price": "0.52", "size": "100"}],
                 "asks": [{"price": "0.54", "size": "80"}],
             }

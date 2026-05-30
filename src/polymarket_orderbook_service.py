@@ -98,6 +98,9 @@ def _side_entry_from_token(
         "spread": entry.get("spread"),
         "updated_at": entry.get("updated_at"),
         "source_ts": entry.get("source_ts"),
+        # Freshness-contract fields — carried through so _side_book can gate on them.
+        "snapshot_verified": entry.get("snapshot_verified", False),
+        "last_event_ms": entry.get("last_event_ms"),
     })
     if status == "missing" and not base["reason"]:
         base["reason"] = "missing_cache_entry"
@@ -231,6 +234,16 @@ class PolymarketOrderbookService:
                 "status": "stale",
                 "source": entry.get("source") or "executable_sidecar",
                 "reason": entry.get("stale_reason") or entry.get("reason") or "stale_entry",
+            })
+            return base
+        # Freshness contract: a "fresh" book must have a verified snapshot baseline.
+        # Entries built from deltas only (no WS `book` or REST seed) are rejected
+        # here so stale delta-only books cannot pollute the p95 metric.
+        if not entry.get("snapshot_verified"):
+            base.update({
+                "status": "stale",
+                "source": entry.get("source") or "executable_sidecar",
+                "reason": "no_snapshot_baseline",
             })
             return base
         base.update({

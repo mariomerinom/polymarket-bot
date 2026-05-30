@@ -56,6 +56,7 @@ def test_get_executable_book_returns_fresh_side_book(tmp_path):
                 "updated_at": now,
                 "status": "fresh",
                 "source_ts": "1770000000123",
+                "snapshot_verified": True,
             }
         }
     })
@@ -113,6 +114,7 @@ def test_record_executable_read_metrics_writes_p95_and_counts(tmp_path):
                 "spread": 0.02,
                 "updated_at": now,
                 "status": "fresh",
+                "snapshot_verified": True,
             }
         }
     })
@@ -214,6 +216,7 @@ def test_sample_executable_cache_metrics_records_fresh_side_ages(tmp_path):
                 "spread": 0.02,
                 "updated_at": now,
                 "status": "fresh",
+                "snapshot_verified": True,
             },
             "no": {
                 "token_id": "no",

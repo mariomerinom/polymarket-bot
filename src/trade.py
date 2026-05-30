@@ -174,7 +174,11 @@ def get_bet_size(prediction_row, liquidity=None):
 
 
 LIVE_ORDERBOOK_PATH = Path(__file__).parent.parent / "data" / "live_orderbook.json"
-LIVE_ORDERBOOK_MAX_AGE_S = 10  # ignore cache older than 10 seconds
+# Shared freshness contract (arch req 5).  One env variable drives every
+# freshness gate so the canary metric and the execution path agree exactly.
+# Default 2.0s matches the btc5m_executable_orderbook_age_p95_too_high gate.
+# The old hardwired 10s was the root-cause freshness mismatch (root cause 3).
+LIVE_ORDERBOOK_MAX_AGE_S = float(os.environ.get("BTC5M_EXECUTABLE_MAX_AGE_S", "2.0"))
 
 
 def _get_live_token_mid(token_id: str):

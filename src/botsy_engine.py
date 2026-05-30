@@ -195,6 +195,7 @@ class BotsyEngine:
                 "ignored_event_types": {},
                 "price_change_tokens_updated": 0,
                 "price_change_missing_snapshot": 0,
+                "price_change_buffered_until_seed": 0,
                 "price_change_invalid_bbo": 0,
                 "fresh_tokens_now": 0,
                 "stale_tokens_now": 0,
@@ -230,6 +231,10 @@ class BotsyEngine:
         self._pending_polymarket_token_ids: set | None = None
         self._last_polymarket_reconnect_request_at = 0.0
         self._now_monotonic = time.monotonic
+        # Delta buffering: deltas arriving before a REST seed are buffered here
+        # and replayed once the token has a snapshot_verified baseline.
+        self._pending_deltas: dict = {}  # token_id -> list[change dict]
+        self._reseed_tasks: set = set()  # token_ids with in-flight reseed tasks
 
         # Daily regime metrics: track last recorded UTC date per asset so we
         # only fire the rollover fetch once per asset per day. See asset_daily.py.
@@ -532,6 +537,9 @@ class BotsyEngine:
                     self._polymarket_resubscribe_requested = False
                     self._pending_polymarket_token_ids = None
                     self._last_polymarket_reconnect_request_at = self._now_monotonic()
+                    # Reset per-connection delta buffer and reseed tracking
+                    self._pending_deltas = {}
+                    self._reseed_tasks = set()
                     self.metrics["orderbook_cache"]["tokens"] = len(token_ids)
                     self._prune_orderbook_cache(self._subscribed_token_ids)
 
@@ -778,18 +786,25 @@ class BotsyEngine:
                 )
                 return
 
+            now_ms = int(time.time() * 1000)
             self._orderbook_cache[asset_id] = {
                 "mid": mid,
                 "spread": spread,
                 "best_bid": best_bid,
                 "best_ask": best_ask,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
+                "last_event_ms": now_ms,
+                "snapshot_verified": True,
                 "source_ts": data.get("timestamp"),
                 "status": "fresh" if mid is not None else "partial",
                 "bids": bids[:5],  # top 5 levels
                 "asks": asks[:5],
             }
             self._orderbook_dirty = True
+            # Drain any buffered deltas for this token now that we have a snapshot
+            buffered = self._pending_deltas.pop(asset_id, [])
+            for buffered_change in buffered:
+                self._apply_buffered_delta(asset_id, buffered_change)
 
         except (IndexError, KeyError, ValueError, TypeError) as e:
             log(f"[WS] Polymarket orderbook cache update failed: {e}")
@@ -799,8 +814,9 @@ class BotsyEngine:
 
         Full `book` snapshots initialize and repair the local book. Incremental
         `price_change` messages keep the cache fresh between snapshots. If a
-        delta arrives before a snapshot, or yields an invalid BBO, mark the
-        token stale so execution falls back to REST or blocks promotion.
+        delta arrives before a snapshot baseline (snapshot_verified=False), it
+        is buffered in _pending_deltas and replayed after a REST reseed rather
+        than being dropped or stale-marking the token permanently.
         """
         self.metrics["orderbook_cache"]["price_change_events_24h"] += 1
         changes = data.get("price_changes")
@@ -825,9 +841,13 @@ class BotsyEngine:
                 continue
 
             entry = self._orderbook_cache.get(asset_id)
-            if not isinstance(entry, dict) or not entry.get("updated_at"):
-                self.metrics["orderbook_cache"]["price_change_missing_snapshot"] += 1
-                self._mark_orderbook_token_stale(asset_id, "missing_snapshot_for_price_change")
+            if not isinstance(entry, dict) or not entry.get("snapshot_verified"):
+                # No snapshot baseline yet — buffer the delta and trigger a reseed.
+                # Do NOT drop or stale-mark: the token recovers once the REST seed
+                # completes and replays all buffered deltas in arrival order.
+                self._pending_deltas.setdefault(asset_id, []).append(change)
+                self.metrics["orderbook_cache"]["price_change_buffered_until_seed"] += 1
+                self._schedule_reseed(asset_id)
                 continue
 
             bids = list(entry.get("bids") or [])
@@ -842,6 +862,7 @@ class BotsyEngine:
                 best_ask = self._best_level_price(asks, reverse=False)
 
             mid, spread = self._compute_bbo(best_bid, best_ask)
+            now_ms = int(time.time() * 1000)
             if mid is None:
                 if self._is_partial_bbo(best_bid, best_ask):
                     entry.update({
@@ -850,6 +871,7 @@ class BotsyEngine:
                         "best_bid": best_bid,
                         "best_ask": best_ask,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "last_event_ms": now_ms,
                         "source_ts": data.get("timestamp") or change.get("timestamp"),
                         "status": "partial",
                         "stale_reason": None,
@@ -868,6 +890,7 @@ class BotsyEngine:
                 "best_bid": best_bid,
                 "best_ask": best_ask,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
+                "last_event_ms": now_ms,
                 "source_ts": data.get("timestamp") or change.get("timestamp"),
                 "status": "fresh",
                 "stale_reason": None,
@@ -887,6 +910,7 @@ class BotsyEngine:
             "updated_at": None,
             "status": "stale",
             "stale_reason": reason,
+            "snapshot_verified": False,
         })
         self._orderbook_dirty = True
 
@@ -895,7 +919,12 @@ class BotsyEngine:
         ignored[event_type] = ignored.get(event_type, 0) + 1
 
     def _update_orderbook_best_bid_ask(self, data: dict):
-        """Apply Polymarket custom best_bid_ask event as direct BBO evidence."""
+        """Apply Polymarket custom best_bid_ask event as direct BBO evidence.
+
+        This event type provides BBO but not a full depth snapshot, so it does
+        NOT set snapshot_verified=True.  The existing value is carried forward.
+        last_event_ms is always advanced so freshness timers stay accurate.
+        """
         asset_id = data.get("asset_id") or data.get("token_id") or ""
         if not asset_id:
             return
@@ -911,19 +940,24 @@ class BotsyEngine:
                 status = "stale"
                 stale_reason = "invalid_bbo_from_best_bid_ask"
 
+        now_ms = int(time.time() * 1000)
         entry = self._orderbook_cache.get(asset_id)
         if not isinstance(entry, dict):
             entry = {}
             self._orderbook_cache[asset_id] = entry
+        # Carry snapshot_verified forward: best_bid_ask alone is not a baseline.
+        prev_snapshot_verified = entry.get("snapshot_verified", False)
         entry.update({
             "mid": mid,
             "spread": spread if mid is not None else None,
             "best_bid": best_bid,
             "best_ask": best_ask,
             "updated_at": datetime.now(timezone.utc).isoformat(),
+            "last_event_ms": now_ms,
             "source_ts": data.get("timestamp"),
             "status": status,
             "stale_reason": stale_reason,
+            "snapshot_verified": prev_snapshot_verified,
         })
         self._orderbook_dirty = True
 
@@ -956,12 +990,15 @@ class BotsyEngine:
                 self._mark_orderbook_token_stale(token_id, "rest_snapshot_invalid_bbo")
                 continue
 
+            now_ms = int(time.time() * 1000)
             self._orderbook_cache[token_id] = {
                 "mid": mid,
                 "spread": spread,
                 "best_bid": best_bid,
                 "best_ask": best_ask,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
+                "last_event_ms": now_ms,
+                "snapshot_verified": True,
                 "status": "fresh",
                 "stale_reason": None,
                 "bids": self._sort_levels(bids, reverse=True)[:5],
@@ -969,8 +1006,133 @@ class BotsyEngine:
             }
             self.metrics["orderbook_cache"]["rest_snapshot_seed_success"] += 1
             self._orderbook_dirty = True
+            # Drain any deltas that arrived while the REST seed was in-flight.
+            buffered = self._pending_deltas.pop(token_id, [])
+            for buffered_change in buffered:
+                self._apply_buffered_delta(token_id, buffered_change)
             seeded += 1
         return seeded
+
+    # ── Delta buffering & on-demand reseed ───────────────────────────────────
+
+    def _schedule_reseed(self, token_id: str):
+        """Schedule a background REST reseed for token_id unless already in-flight.
+
+        Called whenever a delta arrives for a token that lacks a snapshot
+        baseline.  In production (engine event loop) a asyncio task is created.
+        In test / standalone contexts the method is effectively a no-op — callers
+        that need synchronous reseed behaviour invoke _reseed_token_async directly
+        via asyncio.run().
+        """
+        if token_id in self._reseed_tasks:
+            return  # already in-flight — don't duplicate
+        self._reseed_tasks.add(token_id)
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._reseed_token_async(token_id))
+        except RuntimeError:
+            # No running event loop (tests / standalone).  The token remains in
+            # _reseed_tasks but no background task runs.  Tests that need the
+            # reseed to complete call _reseed_token_async directly.
+            pass
+
+    async def _reseed_token_async(self, token_id: str):
+        """Fetch a fresh REST snapshot for token_id then replay buffered deltas.
+
+        Runs as a fire-and-forget asyncio task from _schedule_reseed.  On
+        success the token's entry gets snapshot_verified=True and all pending
+        deltas are replayed in arrival order.  The _reseed_tasks slot is always
+        freed in the finally block so the next delta can trigger another reseed.
+        """
+        try:
+            from clob_depth import get_order_book  # local import: avoids circular
+            book = await asyncio.to_thread(get_order_book, token_id)
+            if not book:
+                self.metrics["orderbook_cache"]["rest_snapshot_seed_missing"] = (
+                    self.metrics["orderbook_cache"].get("rest_snapshot_seed_missing", 0) + 1
+                )
+                return
+
+            bids = book.get("bids") or []
+            asks = book.get("asks") or []
+            best_bid = self._best_level_price(bids, reverse=True)
+            best_ask = self._best_level_price(asks, reverse=False)
+            mid, spread = self._compute_bbo(best_bid, best_ask)
+            if mid is None:
+                self.metrics["orderbook_cache"]["rest_snapshot_seed_invalid_bbo"] = (
+                    self.metrics["orderbook_cache"].get("rest_snapshot_seed_invalid_bbo", 0) + 1
+                )
+                return
+
+            now_ms = int(time.time() * 1000)
+            self._orderbook_cache[token_id] = {
+                "mid": mid,
+                "spread": spread,
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "last_event_ms": now_ms,
+                "snapshot_verified": True,
+                "status": "fresh",
+                "stale_reason": None,
+                "bids": self._sort_levels(bids, reverse=True)[:5],
+                "asks": self._sort_levels(asks, reverse=False)[:5],
+            }
+            self._orderbook_dirty = True
+            self.metrics["orderbook_cache"]["rest_snapshot_seed_success"] = (
+                self.metrics["orderbook_cache"].get("rest_snapshot_seed_success", 0) + 1
+            )
+            # Replay any deltas buffered while the reseed was in-flight.
+            buffered = self._pending_deltas.pop(token_id, [])
+            for change in buffered:
+                self._apply_buffered_delta(token_id, change)
+        except Exception as exc:
+            log(f"[RESEED] Error reseeding {token_id}: {exc}")
+        finally:
+            self._reseed_tasks.discard(token_id)
+
+    def _apply_buffered_delta(self, token_id: str, change: dict):
+        """Apply a single buffered price_change delta to an already-seeded entry.
+
+        This is the replay step after a REST reseed.  If the entry is gone or
+        no longer snapshot_verified (e.g. a concurrent stale-mark), the delta
+        is silently discarded — the next event will trigger a fresh reseed cycle.
+        """
+        entry = self._orderbook_cache.get(token_id)
+        if not isinstance(entry, dict) or not entry.get("snapshot_verified"):
+            return  # seed lost / entry pruned — discard
+
+        bids = list(entry.get("bids") or [])
+        asks = list(entry.get("asks") or [])
+        self._apply_price_level_change(bids, asks, change)
+
+        best_bid = self._float_or_none(change.get("best_bid"))
+        best_ask = self._float_or_none(change.get("best_ask"))
+        if best_bid is None:
+            best_bid = self._best_level_price(bids, reverse=True)
+        if best_ask is None:
+            best_ask = self._best_level_price(asks, reverse=False)
+
+        mid, spread = self._compute_bbo(best_bid, best_ask)
+        if mid is None:
+            return  # invalid delta — keep existing entry intact
+
+        now_ms = int(time.time() * 1000)
+        entry.update({
+            "mid": mid,
+            "spread": spread,
+            "best_bid": best_bid,
+            "best_ask": best_ask,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "last_event_ms": now_ms,
+            "status": "fresh",
+            "stale_reason": None,
+            "bids": self._sort_levels(bids, reverse=True)[:5],
+            "asks": self._sort_levels(asks, reverse=False)[:5],
+        })
+        self._orderbook_dirty = True
+
+    # ── Static / utility helpers ──────────────────────────────────────────────
 
     @staticmethod
     def _float_or_none(value):
