@@ -1927,12 +1927,22 @@ class BotsyEngine:
         )
 
     def _sample_executable_orderbook_cache(self):
-        """Sample BTC 5m executable sidecar freshness independent of trades."""
+        """Sample BTC 5m executable sidecar freshness independent of trades.
+
+        max_age_s is read from BTC5M_EXECUTABLE_MAX_AGE_S (same env var used
+        by trade.py and delayed_execution.py) so the sampling gate matches the
+        execution freshness gate.  Previously this call omitted max_age_s and
+        fell through to DEFAULT_MAX_AGE_S=10, admitting 2-10 s books as
+        'fresh' and inflating the p95 metric even when the execution path
+        was correctly gating at 2 s.
+        """
         try:
             from polymarket_orderbook_service import sample_executable_cache
+            max_age_s = float(os.environ.get("BTC5M_EXECUTABLE_MAX_AGE_S", "2.0"))
             sample_executable_cache(
                 EXECUTABLE_ORDERBOOK_CACHE,
                 metrics_path=EXECUTABLE_ORDERBOOK_METRICS,
+                max_age_s=max_age_s,
             )
         except Exception as exc:
             log(f"WARNING: executable orderbook sampling failed: {exc}")

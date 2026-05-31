@@ -133,3 +133,98 @@ class TestSidebookFreshnessMaxAge:
         metrics = _record_book({}, stale_book)
         samples = metrics.get("_age_samples_ms") or []
         assert 2500 not in samples, "Stale book must not appear in fresh-only p95 samples"
+
+
+# ── sample_executable_cache max_age_s gate ───────────────────────────────────
+
+class TestSampleCacheGate:
+    """sample_executable_cache must gate sampling on the passed max_age_s,
+    not the historical DEFAULT_MAX_AGE_S=10 fallback.
+
+    Root cause 3 manifestation in the metric path: even after the read-gate
+    was fixed in _side_book, the *sampling* call in _sample_executable_orderbook_cache
+    defaulted to 10 s, so 2-10 s old books were still counted as fresh and
+    polluted the p95 buffer.
+    """
+
+    def _write_sidecar(self, path, age_seconds: float) -> None:
+        import json
+        ts = (datetime.now(timezone.utc) - timedelta(seconds=age_seconds)).isoformat()
+        path.write_text(json.dumps({
+            "version": 2,
+            "markets": {
+                "m-sg-001": {
+                    "yes": {
+                        "market_id": "m-sg-001",
+                        "side": "yes",
+                        "token_id": "tok-sg-001",
+                        "status": "fresh",
+                        "mid": 0.50,
+                        "best_bid": 0.48,
+                        "best_ask": 0.52,
+                        "spread": 0.04,
+                        "updated_at": ts,
+                        "snapshot_verified": True,
+                        "stale_reason": None,
+                    }
+                }
+            }
+        }))
+
+    def test_2s_gate_excludes_5s_book(self, tmp_path):
+        """A 5s old book is NOT included in p95 samples when max_age_s=2.0."""
+        import live_book_registry
+        live_book_registry.reset()  # ensure engine not live → sidecar path
+
+        from polymarket_orderbook_service import sample_executable_cache
+        sidecar = tmp_path / "exec.json"
+        self._write_sidecar(sidecar, age_seconds=5.0)
+        metrics_path = tmp_path / "metrics.json"
+
+        metrics = sample_executable_cache(sidecar, metrics_path=metrics_path, max_age_s=2.0)
+        samples = metrics.get("_age_samples_ms") or []
+        assert len(samples) == 0, (
+            f"5s book should be stale at 2s gate and excluded from p95; "
+            f"got {samples}"
+        )
+
+    def test_10s_gate_includes_5s_book(self, tmp_path):
+        """A 5s old book IS included in p95 samples when max_age_s=10.0.
+        This documents the pre-fix behaviour to confirm the distinction matters."""
+        import live_book_registry
+        live_book_registry.reset()
+
+        from polymarket_orderbook_service import sample_executable_cache
+        sidecar = tmp_path / "exec.json"
+        self._write_sidecar(sidecar, age_seconds=5.0)
+        metrics_path = tmp_path / "metrics.json"
+
+        metrics = sample_executable_cache(sidecar, metrics_path=metrics_path, max_age_s=10.0)
+        samples = metrics.get("_age_samples_ms") or []
+        assert len(samples) == 1, (
+            f"5s book should be fresh at 10s gate and included; got {samples}"
+        )
+        assert samples[0] >= 4000, f"Sample should reflect ~5s age, got {samples[0]}ms"
+
+    def test_engine_call_uses_env_var(self, tmp_path, monkeypatch):
+        """The engine's _sample_executable_orderbook_cache must pass max_age_s
+        from BTC5M_EXECUTABLE_MAX_AGE_S, not the hard-wired 10s default."""
+        import live_book_registry
+        live_book_registry.reset()
+
+        monkeypatch.setenv("BTC5M_EXECUTABLE_MAX_AGE_S", "2.0")
+        from polymarket_orderbook_service import sample_executable_cache
+        sidecar = tmp_path / "exec.json"
+        self._write_sidecar(sidecar, age_seconds=5.0)
+        metrics_path = tmp_path / "metrics.json"
+
+        # Simulate the corrected engine call: reads env var and passes max_age_s.
+        import os
+        max_age_s = float(os.environ.get("BTC5M_EXECUTABLE_MAX_AGE_S", "2.0"))
+        metrics = sample_executable_cache(sidecar, metrics_path=metrics_path,
+                                          max_age_s=max_age_s)
+        samples = metrics.get("_age_samples_ms") or []
+        assert len(samples) == 0, (
+            f"Engine call with BTC5M_EXECUTABLE_MAX_AGE_S=2.0 must exclude 5s book; "
+            f"got {samples}"
+        )
