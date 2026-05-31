@@ -55,7 +55,8 @@ def _make_test_db(tmp_path, pipeline_name="test"):
         placed_at TEXT, filled_at TEXT, settled_at TEXT, pnl REAL,
         cycle INTEGER, order_type TEXT,
         edge REAL, best_bid REAL, best_ask REAL, spread REAL,
-        action TEXT
+        action TEXT,
+        orderbook_age_ms INTEGER, snapshot_verified INTEGER, decision_at TEXT
     )""")
     db.commit()
     return db, db_path

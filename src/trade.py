@@ -77,7 +77,11 @@ def ensure_orders_table(db):
     # FAK execution layer columns (older rows/tests may still say FOK)
     for col, typ in [("order_type", "TEXT"), ("edge", "REAL"),
                      ("best_bid", "REAL"), ("best_ask", "REAL"),
-                     ("spread", "REAL"), ("action", "TEXT")]:
+                     ("spread", "REAL"), ("action", "TEXT"),
+                     # Freshness-contract columns (Increment 3)
+                     ("orderbook_age_ms", "INTEGER"),
+                     ("snapshot_verified", "INTEGER"),
+                     ("decision_at", "TEXT")]:
         try:
             db.execute(f"ALTER TABLE orders ADD COLUMN {col} {typ}")
         except sqlite3.OperationalError:
@@ -343,6 +347,10 @@ def compute_order(prediction_row, market_row, liquidity=None):
         "action": action,
         "order_type": order_type,
         "cushion": cushion,
+        # Freshness-contract fields (Increment 3) — carried from resolve_clob_prices
+        # via market_row._chosen_age_ms / _chosen_snapshot_verified.
+        "orderbook_age_ms": market_row.get("_chosen_age_ms"),
+        "snapshot_verified": market_row.get("_chosen_snapshot_verified"),
     }, "ok"
 
 
@@ -394,6 +402,10 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
         "best_ask": order_params.get("best_ask"),
         "spread": order_params.get("spread"),
         "action": order_params.get("action"),
+        # Freshness-contract fields (Increment 3)
+        "orderbook_age_ms": order_params.get("orderbook_age_ms"),
+        "snapshot_verified": order_params.get("snapshot_verified"),
+        "decision_at": order_params.get("decision_at"),
     }
 
     def _diag(result_code, filled_size=None, filled_avg_price=None):
@@ -500,13 +512,17 @@ def place_order(db, market_id, prediction_id, order_params, cycle,
 
 def _store_order(db, order):
     """Insert order record into the orders table."""
+    # snapshot_verified is stored as INTEGER (0/1) to be SQLite-native.
+    sv = order.get("snapshot_verified")
+    sv_int = (1 if sv else 0) if sv is not None else None
     db.execute("""
         INSERT INTO orders
         (market_id, prediction_id, direction, size, price_limit, price_filled,
          slippage_pct, status, order_id, mode, reason, placed_at, filled_at,
          settled_at, pnl, cycle,
-         order_type, edge, best_bid, best_ask, spread, action)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         order_type, edge, best_bid, best_ask, spread, action,
+         orderbook_age_ms, snapshot_verified, decision_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         order["market_id"], order["prediction_id"], order["direction"],
         order["size"], order["price_limit"], order.get("price_filled"),
@@ -516,6 +532,7 @@ def _store_order(db, order):
         order["cycle"],
         order.get("order_type"), order.get("edge"), order.get("best_bid"),
         order.get("best_ask"), order.get("spread"), order.get("action"),
+        order.get("orderbook_age_ms"), sv_int, order.get("decision_at"),
     ))
     db.commit()
 
@@ -921,6 +938,10 @@ def resolve_clob_prices(pred, tokens):
             record_executable_read(chosen_ev)
         except Exception:
             pass
+        # Freshness-contract fields (Increment 3): surface age + snapshot_verified
+        # for the *chosen* side so compute_order → place_order → orders row carries them.
+        market_row["_chosen_age_ms"] = chosen_ev.get("age_ms")
+        market_row["_chosen_snapshot_verified"] = chosen_ev.get("snapshot_verified", False)
     market_row["_orderbook_cache"] = {
         "yes": yes_ev["status"],
         "no": no_ev["status"],
@@ -1306,6 +1327,9 @@ def execute_trades(db, cycle, pipeline_name=None):
 
         # Phase 2 diagnostics (log-only, no execution change)
         record_diagnostics(pred, clob_token_id)
+
+        # Stamp decision_at immediately before submission (Increment 3).
+        order_params["decision_at"] = datetime.now(timezone.utc).isoformat()
 
         # Place order
         order = place_order(
