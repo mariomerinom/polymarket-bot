@@ -3,6 +3,7 @@
 ## GitHub Is the Source of Truth
 
 1. **Always `git pull` before reading any data file.** The engine auto-commits every ~5 minutes — local state is stale by default.
+   - **Cowork sessions: enable file deletion BEFORE the first pull** (`allow_cowork_file_delete`). The sandbox mounts the repo with deletion disabled; a pull without it fails mid-checkout ("Operation not permitted") and leaves stale `.git/*.lock` files. Recovery: `find .git -maxdepth 2 -name "*.lock" -delete`, then pull again — the failed checkout rolls back cleanly, only the locks need removal.
 2. **Always push after making changes.** A change that isn't on GitHub doesn't exist.
 3. **Expect CI conflicts on push.** Always `git pull --rebase` before pushing. If DBs conflict, code changes win — CI regenerates data.
 4. **The deployed system is canonical.** If a local query disagrees with live, live is right.
