@@ -86,7 +86,7 @@ Hypothetical maker fills — what would have filled if we posted passively.
 
 | Feed | Status | Reconnects (24h) |
 |------|--------|-----------------:|
-| bybit_spot | disconnected | 234 |
+| bybit_spot | connected | 234 |
 | bybit_linear | connected | 3 |
 | polymarket | connected | 160 |
 
@@ -95,31 +95,31 @@ Hypothetical maker fills — what would have filled if we posted passively.
 | Metric | p50 | p95 | Samples |
 |--------|----:|----:|--------:|
 | Production dispatch latency (ms) | 13480 | 32969 | 705 |
-| Bybit event lag (ms) | 863 | 44902 | 940 |
+| Bybit event lag (ms) | 863 | 44594 | 948 |
 | TA build (ms) | 71 | 141 | 705 |
 | Pipeline fanout (ms) | 13342 | 32895 | 705 |
 | Strategy Lab runtime (ms) | 817 | 1613 | 705 |
 | Total dispatch wall time (ms) | 14271 | 34657 | 705 |
-| True orderbook age (ms) | 5043 | 126181 | 749 |
-| BTC 5m executable orderbook age (ms) | 311 | 1734 | 1000 |
+| True orderbook age (ms) | 5564 | 122864 | 837 |
+| BTC 5m executable orderbook age (ms) | 311 | 1706 | 1000 |
 
 - Slowest pipeline runtime: btc_5m p95=35332ms (223 samples)
-- BTC 5m executable reads: fresh=139067 stale=180610 missing=637 partial=5006 total=325320
+- BTC 5m executable reads: fresh=139079 stale=180642 missing=637 partial=5006 total=325364
 - Orderbook cache: 44 tokens, 518 token-set changes (24h)
 - Cycles: 2616
 - Fallback fires (24h): 0
 - Engine start: 2026-06-09T04:00:02.034556+00:00
 
-- Polymarket events: book=1555726, price_change=62908949, ignored={'last_trade_price': 725638, 'new_market': 9426, 'tick_size_change': 40}
-- Orderbook freshness detail: fresh/stale tokens: 0/44, updated last 60s/5m: 26/38, stale reasons: {'stale_updated_at': 38, 'missing_cache_entry': 6}
-- REST snapshot seed: 11900/11915 successful (missing=2, invalid_bbo=34)
+- Polymarket events: book=1557672, price_change=63041753, ignored={'last_trade_price': 726553, 'new_market': 9479, 'tick_size_change': 40}
+- Orderbook freshness detail: fresh/stale tokens: 16/28, updated last 60s/5m: 22/44, stale reasons: {'stale_updated_at': 28}
+- REST snapshot seed: 11944/11958 successful (missing=2, invalid_bbo=34)
 - Polymarket resubscribe: resubscribe debounced/executed: 297/243, added/removed tokens: 1400/1944
 - Orderbook freshness decision: dominant cause: no recent websocket deltas
 
 ### BTC 5m Production Readiness
 
 - Verdict: BLOCKED
-- Live canary blockers: signal_ehr_insufficient_sample (0/50); execution_ehr_insufficient_sample (1/10); dispatch_p95_too_high (32969); orderbook_fresh_tokens_missing
+- Live canary blockers: signal_ehr_insufficient_sample (0/50); execution_ehr_insufficient_sample (1/10); dispatch_p95_too_high (32969)
 - Delayed FAK blockers: delayed_ehr_insufficient_sample (0/50)
 - Production promotion blockers: promotion_signal_ehr_insufficient_sample (0/50)
 
