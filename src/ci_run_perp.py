@@ -372,9 +372,15 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
     if pipeline_name is None:
         pipeline_name = f"{symbol.replace('USDT','').lower()}_{exchange}"
 
-    db_path = get_db_path(symbol, exchange)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    db = init_db_perp(symbol, exchange)
+    # Per-phase wall-time instrumentation (June 2026 dispatch triage).
+    # Untimed remainder (mostly predict/store block) = total_ms - sum(phases).
+    from phase_timing import PhaseTimer
+    timer = PhaseTimer(pipeline_name)
+
+    with timer.phase("db_init"):
+        db_path = get_db_path(symbol, exchange)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db = init_db_perp(symbol, exchange)
 
     # Pipeline control check
     from pipeline_control import load_pipeline_config, is_pipeline_live
@@ -390,7 +396,8 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
 
     # [1/7] Sync position status
     print("[1/7] Syncing position status...")
-    pos = get_open_position(db)
+    with timer.phase("sync_resolve"):
+        pos = get_open_position(db)
     if pos:
         print(f"  Open position: {pos['side']} {pos['size']} {short} "
               f"@ ${pos['entry_price']:,.2f} (held {pos['cycles_held']} cycles)")
@@ -399,7 +406,8 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
 
     # [2/7] Auto-resolve expired synthetic markets
     print("[2/7] Auto-resolving synthetic markets...")
-    resolved = auto_resolve_perp(db, symbol, exchange)
+    with timer.phase("sync_resolve"):
+        resolved = auto_resolve_perp(db, symbol, exchange)
     if resolved:
         print(f"  Resolved {resolved} market(s)")
 
@@ -410,12 +418,14 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
     data = candle_data
     if data is None:
         from bybit_data import fetch_bybit_candles
-        data = fetch_bybit_candles(symbol=symbol, interval="5",
-                                   limit=DEFAULT_CANDLE_LIMIT)
+        with timer.phase("candle_fetch_rest"):
+            data = fetch_bybit_candles(symbol=symbol, interval="5",
+                                       limit=DEFAULT_CANDLE_LIMIT)
 
     if not data:
         print(f"  WARNING: No {short} data available -- skipping cycle")
         db.close()
+        timer.flush()
         return
 
     candles = data["candles"]
@@ -430,7 +440,8 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
     if exchange == "hl":
         from hl_data import fetch_hl_mark_price
         coin = symbol.replace("USDT", "")
-        hl_mark = fetch_hl_mark_price(coin=coin)
+        with timer.phase("mark_price_rest"):
+            hl_mark = fetch_hl_mark_price(coin=coin)
         if hl_mark:
             print(f"  HL mark: ${hl_mark:,.2f} "
                   f"(delta: ${hl_mark - current_price:+.2f})")
@@ -450,7 +461,8 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
     if exchange == "bybit":
         try:
             from bybit_data import fetch_bybit_funding_rate
-            fr_data = fetch_bybit_funding_rate(symbol=symbol)
+            with timer.phase("funding_rest"):
+                fr_data = fetch_bybit_funding_rate(symbol=symbol)
             if isinstance(fr_data, dict):
                 funding_rate = fr_data.get("rate", 0.0)
         except Exception:
@@ -459,7 +471,8 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
         try:
             from hl_data import fetch_hl_funding_rate
             coin = symbol.replace("USDT", "")
-            fr_data = fetch_hl_funding_rate(coin=coin)
+            with timer.phase("funding_rest"):
+                fr_data = fetch_hl_funding_rate(coin=coin)
             if isinstance(fr_data, dict):
                 funding_rate = fr_data.get("rate", 0.0)
         except Exception:
@@ -567,9 +580,10 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
     if is_perp_kill_switched(pipeline_name):
         print("  KILL SWITCH ACTIVE -- skipping trades")
     else:
-        orders = execute_perp_trades(db, cycle, candles, prediction, config,
-                                     funding_rate=funding_rate,
-                                     pipeline_name=pipeline_name)
+        with timer.phase("trade_execution"):
+            orders = execute_perp_trades(db, cycle, candles, prediction, config,
+                                         funding_rate=funding_rate,
+                                         pipeline_name=pipeline_name)
         if orders:
             for o in orders:
                 action = o.get("action", "?")
@@ -585,27 +599,31 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
     try:
         from shadow_conviction_scorer import shadow_log_cycle
         if candles:
-            shadow_log_cycle(db, cycle, candles, config["config_key"])
+            with timer.phase("shadow_scorer"):
+                shadow_log_cycle(db, cycle, candles, config["config_key"])
     except Exception as e:
         print(f"  [shadow] skipped: {e}")
 
     # [6/7] Score
     print("[6/7] Scoring...")
-    results = calculate_brier_scores(db)
+    with timer.phase("brier_scoring"):
+        results = calculate_brier_scores(db)
     if results:
         print_scorecard(results)
     else:
         print("  No resolved markets to score yet")
 
     # [7/7] Trading summary
-    _print_summary(db, pipeline_name)
+    with timer.phase("summary"):
+        _print_summary(db, pipeline_name)
 
     # [INTEGRITY] Per-cycle checks
     try:
         from pipeline_integrity import run_integrity_checks
-        results = run_integrity_checks(db, pipeline=pipeline_name, cycle=cycle,
-                                       api_ok=data is not None,
-                                       data_fetched=bool(data))
+        with timer.phase("integrity_checks"):
+            results = run_integrity_checks(db, pipeline=pipeline_name, cycle=cycle,
+                                           api_ok=data is not None,
+                                           data_fetched=bool(data))
         for r in results:
             if r["status"] != "OK":
                 print(f"  [{r['status']}] {r['check_name']}: {r['detail']}")
@@ -613,6 +631,7 @@ def run_perp_pipeline(symbol, exchange, candle_data, indicators, config,
         print(f"  [INTEGRITY] check failed: {e}")
 
     db.close()
+    timer.flush()
     print(f"\n{pipeline_name} CI run complete.")
 
 
