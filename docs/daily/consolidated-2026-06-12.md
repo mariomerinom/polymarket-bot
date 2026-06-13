@@ -87,7 +87,7 @@ Hypothetical maker fills — what would have filled if we posted passively.
 
 | Feed | Status | Reconnects (24h) |
 |------|--------|-----------------:|
-| bybit_spot | disconnected | 221 |
+| bybit_spot | connected | 221 |
 | bybit_linear | connected | 7 |
 | polymarket | connected | 157 |
 
@@ -96,25 +96,25 @@ Hypothetical maker fills — what would have filled if we posted passively.
 | Metric | p50 | p95 | Samples |
 |--------|----:|----:|--------:|
 | Production dispatch latency (ms) | 10345 | 25802 | 705 |
-| Bybit event lag (ms) | 862 | 38539 | 708 |
+| Bybit event lag (ms) | 862 | 38539 | 712 |
 | TA build (ms) | 69 | 124 | 705 |
 | Pipeline fanout (ms) | 10287 | 25756 | 705 |
 | Strategy Lab runtime (ms) | 292 | 1284 | 705 |
 | Total dispatch wall time (ms) | 10882 | 26427 | 705 |
-| True orderbook age (ms) | 2535 | 72990 | 650 |
+| True orderbook age (ms) | 2639 | 72990 | 687 |
 | BTC 5m executable orderbook age (ms) | 165 | 1705 | 1000 |
 
 - Slowest pipeline runtime: btc_5m p95=30814ms (218 samples)
-- BTC 5m executable reads: fresh=163566 stale=224149 missing=695 partial=5623 total=394033
+- BTC 5m executable reads: fresh=163569 stale=224166 missing=695 partial=5623 total=394053
 - Orderbook cache: 40 tokens, 514 token-set changes (24h)
 - Cycles: 2606
 - Fallback fires (24h): 0
 - Engine start: 2026-06-12T04:00:02.479533+00:00
 
-- Polymarket events: book=1465664, price_change=64278217, ignored={'last_trade_price': 674371, 'new_market': 11489, 'tick_size_change': 28}
-- Orderbook freshness detail: fresh/stale tokens: 14/22, updated last 60s/5m: 36/36, stale reasons: {'stale_updated_at': 22}
-- REST snapshot seed: 12250/12258 successful (missing=0, invalid_bbo=72)
-- Polymarket resubscribe: resubscribe debounced/executed: 293/240, added/removed tokens: 1384/1956
+- Polymarket events: book=1466694, price_change=64336149, ignored={'last_trade_price': 674838, 'new_market': 11510, 'tick_size_change': 28}
+- Orderbook freshness detail: fresh/stale tokens: 12/28, updated last 60s/5m: 33/37, stale reasons: {'stale_updated_at': 25, 'missing_cache_entry': 3}
+- REST snapshot seed: 12262/12271 successful (missing=0, invalid_bbo=72)
+- Polymarket resubscribe: resubscribe debounced/executed: 293/241, added/removed tokens: 1384/1956
 - Orderbook freshness decision: dominant cause: no recent websocket deltas
 
 ### BTC 5m Production Readiness
