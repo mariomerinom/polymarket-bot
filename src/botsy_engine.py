@@ -1601,6 +1601,25 @@ class BotsyEngine:
         except Exception:
             return "?"
 
+    def _run_deploy_hook(self, old_head: str) -> None:
+        """Call the deploy hook script explicitly after git reset --hard.
+
+        git reset --hard bypasses post-merge and post-rewrite hooks, so
+        src/ changes pushed to origin would otherwise be silently ignored by
+        the engine's auto-commit cycle.  Calling the hook with the pre-reset
+        SHA lets it detect changed files and restart botsy if needed.
+
+        Failure is swallowed — hook errors must never abort the commit loop.
+        """
+        hook_path = REPO_DIR / "tools" / "git-hooks" / "post-merge"
+        try:
+            subprocess.run(
+                ["bash", str(hook_path), old_head],
+                capture_output=True, timeout=30, cwd=str(REPO_DIR),
+            )
+        except Exception as exc:
+            log(f"WARNING: deploy hook invocation failed: {exc}")
+
     @staticmethod
     def _auto_commit_path_allowed(path: str) -> bool:
         """Return True if an Auto: commit may include this tracked path."""
@@ -1716,6 +1735,9 @@ class BotsyEngine:
                     return
                 log(f"Fast-forwarded auto-commit checkout "
                     f"{head_at_start} → {self._git_head()}")
+                # git reset --hard bypasses hooks — call the deploy hook
+                # explicitly so src/ changes trigger an engine restart.
+                self._run_deploy_hook(head_at_start)
 
             # Flush WAL journals before snapshotting DBs
             self._checkpoint_all_dbs()

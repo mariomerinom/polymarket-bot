@@ -3,8 +3,10 @@
 import asyncio
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -850,3 +852,121 @@ class TestBotsyEngineInit:
         for event in releases.values():
             event.set()
         await task
+
+
+# ── Deploy hook — git reset --hard bypass fix ─────────────────────────────────
+
+
+class TestDeployHookAfterReset:
+    """_run_deploy_hook fires after git reset --hard origin/main.
+
+    Regression: git reset --hard bypasses post-merge / post-rewrite hooks,
+    so source changes pushed to origin were silently ignored by the engine's
+    auto-commit cycle.  The fix calls the hook script explicitly with the
+    pre-reset SHA after every successful fast-forward.
+    """
+
+    def test_run_deploy_hook_calls_hook_script(self, tmp_path):
+        """_run_deploy_hook spawns the hook script with old_head as $1."""
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+        old_sha = "abc1234567890abc1234567890abc1234567890ab"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            engine._run_deploy_hook(old_sha)
+
+        assert mock_run.called, "_run_deploy_hook must call subprocess.run"
+        # The call must include the hook script and the old SHA
+        args_list = [c.args[0] for c in mock_run.call_args_list]
+        hook_calls = [a for a in args_list if "post-merge" in str(a)]
+        assert hook_calls, "Expected a call to tools/git-hooks/post-merge"
+        assert old_sha in str(hook_calls[0]), (
+            f"old_sha {old_sha!r} must be passed as argument to the hook script"
+        )
+
+    def test_run_deploy_hook_never_raises(self, tmp_path):
+        """Hook script failure must not propagate — commit loop must continue."""
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+
+        with patch("subprocess.run", side_effect=Exception("hook exploded")):
+            try:
+                engine._run_deploy_hook("deadbeef12345678deadbeef12345678deadbeef")
+            except Exception as exc:
+                pytest.fail(f"_run_deploy_hook must swallow exceptions, raised: {exc}")
+
+    def test_git_commit_push_calls_deploy_hook_on_fast_forward(self, tmp_path, monkeypatch):
+        """After git reset --hard succeeds, deploy hook is invoked with pre-reset SHA."""
+        from botsy_engine import BotsyEngine
+
+        engine = BotsyEngine()
+
+        # Sequence of subprocess.run results to simulate fast-forward path:
+        # 1. git fetch — ok
+        # 2. git merge-base --is-ancestor HEAD origin/main — rc=0 (local is behind)
+        # 3. git reset --hard origin/main — ok
+        # 4. _git_head() after reset (called via _git_rev_parse in various places)
+        # We only care that _run_deploy_hook is called with the correct old_head.
+        hook_calls = []
+        original_run_hook = engine._run_deploy_hook
+
+        def capture_run_hook(old_head):
+            hook_calls.append(old_head)
+
+        monkeypatch.setattr(engine, "_run_deploy_hook", capture_run_hook)
+
+        pre_reset_sha = "aabbccdd11223344aabbccdd11223344aabbccdd"
+
+        def fake_subprocess_run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = b""
+            result.stderr = b""
+            result.decode = lambda: ""
+            return result
+
+        def fake_git_rev_parse(ref):
+            if ref == "HEAD":
+                return pre_reset_sha
+            return "origin_sha_0011223344556677889900112233445566778899"
+
+        def fake_git_head():
+            return pre_reset_sha
+
+        # Bail marker must not exist so the commit doesn't quiesce
+        bail_marker = engine.__class__.__dict__.get("_git_commit_push")
+        monkeypatch.setattr(
+            "subprocess.run",
+            fake_subprocess_run,
+        )
+        monkeypatch.setattr(engine, "_git_rev_parse", fake_git_rev_parse)
+        monkeypatch.setattr(engine, "_git_head", fake_git_head)
+        monkeypatch.setattr(engine, "_checkpoint_all_dbs", lambda: None)
+        monkeypatch.setattr(engine, "_staged_auto_commit_violations", lambda: [])
+
+        # Make HEAD != origin so the reset branch is taken
+        class FakeRevParse:
+            def __init__(self):
+                self._call_count = 0
+
+            def __call__(self, ref):
+                if ref == "HEAD":
+                    return pre_reset_sha
+                # origin/main differs → triggers reset path
+                return "9999999999999999999999999999999999999999"
+
+        monkeypatch.setattr(engine, "_git_rev_parse", FakeRevParse())
+
+        # Run the commit loop body — it will error on the actual git commands
+        # but we just need to verify the hook was called before that.
+        try:
+            engine._git_commit_push()
+        except Exception:
+            pass  # git commands fail in test environment; we check side effects
+
+        assert hook_calls, (
+            "_run_deploy_hook must be called during _git_commit_push fast-forward path"
+        )

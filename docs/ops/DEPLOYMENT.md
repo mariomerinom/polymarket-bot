@@ -179,12 +179,12 @@ ssh root@VPS "su - botuser -c 'cd /home/botuser/polymarket-bot && bash tools/git
 where `<old-sha>` is the commit HEAD was at before the reset. The hook's
 stdout shows what it decided and whether it triggered a restart.
 
-**⚠️ `git pull --rebase` fires `post-rewrite`, not `post-merge`.** The
-installer symlinks BOTH hook names to the same script. If you installed
-the hook before 2026-04-23 (first-install only did `post-merge`), re-run
-`bash tools/install_deploy_hook.sh` to pick up the `post-rewrite` symlink.
-The engine's own git_commit_loop uses `--rebase` — without both hooks,
-engine-driven pulls never triggered auto-restart.
+**⚠️ `git reset --hard` bypasses ALL hooks.** The engine's auto-commit cycle
+uses `git reset --hard origin/main` (not pull/merge) for fast-forwards.
+`BotsyEngine._run_deploy_hook(old_head)` is called explicitly after every
+successful reset so the hook still fires. This was the real gap — not a
+missing `post-rewrite` symlink. `post-rewrite` is still symlinked for
+manual `git pull --rebase` workflows outside the engine.
 
 ### Data/docs-only change
 
