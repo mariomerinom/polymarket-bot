@@ -1,50 +1,50 @@
 {
   "schema_version": 2,
-  "metrics_written_at": "2026-06-21T11:45:34.902032+00:00",
+  "metrics_written_at": "2026-06-21T11:50:35.199499+00:00",
   "bybit_spot": {
     "status": "connected",
-    "last_event": "2026-06-21T11:45:18.738435+00:00",
+    "last_event": "2026-06-21T11:50:26.538029+00:00",
     "reconnects_24h": 44
   },
   "bybit_linear": {
     "status": "connected",
-    "last_event": "2026-06-21T11:45:00.864217+00:00",
+    "last_event": "2026-06-21T11:50:00.868780+00:00",
     "reconnects_24h": 0
   },
   "polymarket": {
     "status": "connected",
-    "last_event": "2026-06-21T11:45:34.885855+00:00",
+    "last_event": "2026-06-21T11:50:26.535478+00:00",
     "reconnects_24h": 14
   },
   "dispatch_latency_ms": {
     "p50": 7391,
     "p95": 11403,
-    "samples": 465
+    "samples": 470
   },
   "event_lag_ms": {
     "p50": 862,
-    "p95": 25830,
-    "samples": 845
+    "p95": 26033,
+    "samples": 870
   },
   "ta_build_ms": {
     "p50": 60,
     "p95": 119,
-    "samples": 465
+    "samples": 470
   },
   "pipeline_fanout_ms": {
     "p50": 7316,
     "p95": 11276,
-    "samples": 465
+    "samples": 470
   },
   "strategy_lab_ms": {
     "p50": 109,
-    "p95": 701,
-    "samples": 465
+    "p95": 791,
+    "samples": 470
   },
   "total_dispatch_wall_ms": {
     "p50": 7572,
-    "p95": 11880,
-    "samples": 465
+    "p95": 11919,
+    "samples": 470
   },
   "pipeline_runtime_ms": {
     "btc_15m": {
@@ -53,95 +53,95 @@
       "samples": 9
     },
     "btc_5m": {
-      "p50": 7519,
+      "p50": 7501,
       "p95": 11371,
-      "samples": 84
+      "samples": 85
     },
     "bybit": {
-      "p50": 8196,
+      "p50": 8233,
       "p95": 12119,
-      "samples": 93
+      "samples": 94
     },
     "doge_bybit": {
-      "p50": 3023,
+      "p50": 3046,
       "p95": 5541,
-      "samples": 93
+      "samples": 94
     },
     "doge_hl": {
-      "p50": 4080,
+      "p50": 4093,
       "p95": 6329,
-      "samples": 93
+      "samples": 94
     },
     "eth_5m": {
       "p50": 6488,
       "p95": 12199,
-      "samples": 93
+      "samples": 94
     },
     "eth_bybit": {
       "p50": 12,
       "p95": 180,
-      "samples": 93
+      "samples": 94
     },
     "eth_hl": {
       "p50": 12,
       "p95": 186,
-      "samples": 93
+      "samples": 94
     },
     "hl": {
       "p50": 3983,
       "p95": 7395,
-      "samples": 84
+      "samples": 85
     },
     "kalshi": {
       "p50": 58,
-      "p95": 200,
-      "samples": 84
+      "p95": 201,
+      "samples": 85
     },
     "sol_bybit": {
-      "p50": 7658,
+      "p50": 7706,
       "p95": 10713,
-      "samples": 93
+      "samples": 94
     },
     "sol_hl": {
-      "p50": 7823,
+      "p50": 7836,
       "p95": 10952,
-      "samples": 93
+      "samples": 94
     }
   },
   "slowest_pipeline_runtime_ms": {
     "pipeline": "eth_5m",
     "p50": 6488,
     "p95": 12199,
-    "samples": 93
+    "samples": 94
   },
   "orderbook_age_ms": {
-    "p50": 4093,
-    "p95": 86880,
-    "samples": 874
+    "p50": 4004,
+    "p95": 84098,
+    "samples": 930
   },
   "btc5m_executable_orderbook_age_ms": {
     "p50": 176,
-    "p95": 1422,
+    "p95": 1421,
     "samples": 1000
   },
   "btc5m_executable_book_reads": {
-    "total": 578913,
-    "fresh": 231021,
-    "stale": 339810,
+    "total": 578941,
+    "fresh": 231035,
+    "stale": 339824,
     "missing": 900,
     "partial": 7182,
     "by_side": {
       "no": {
-        "total": 289254,
-        "fresh": 115512,
-        "stale": 169823,
+        "total": 289268,
+        "fresh": 115519,
+        "stale": 169830,
         "partial": 3549,
         "missing": 370
       },
       "yes": {
-        "total": 289639,
-        "fresh": 115493,
-        "stale": 169987,
+        "total": 289653,
+        "fresh": 115500,
+        "stale": 169994,
         "partial": 3633,
         "missing": 526
       },
@@ -151,42 +151,44 @@
         "missing": 4
       }
     },
-    "latest_status": "fresh",
+    "latest_status": "stale",
     "latest_side": "no",
-    "latest_reason": null,
-    "latest_market_id": "2617733"
+    "latest_reason": "stale_last_event_ms",
+    "latest_market_id": "2617805"
   },
   "orderbook_cache": {
-    "tokens": 12,
-    "refreshes_24h": 217,
-    "token_set_changes_24h": 200,
-    "book_events_24h": 450922,
-    "price_change_events_24h": 15462308,
+    "tokens": 8,
+    "refreshes_24h": 219,
+    "token_set_changes_24h": 202,
+    "book_events_24h": 456940,
+    "price_change_events_24h": 15665614,
     "ignored_event_types": {
-      "last_trade_price": 205861,
-      "new_market": 2639,
+      "last_trade_price": 208680,
+      "new_market": 2648,
       "tick_size_change": 172
     },
-    "price_change_tokens_updated": 30490568,
+    "price_change_tokens_updated": 30896142,
     "price_change_missing_snapshot": 0,
     "price_change_buffered_until_seed": 14,
     "price_change_invalid_bbo": 0,
-    "fresh_tokens_now": 12,
-    "stale_tokens_now": 0,
-    "tokens_updated_last_60s": 12,
-    "tokens_updated_last_5m": 12,
-    "stale_reasons": {},
+    "fresh_tokens_now": 8,
+    "stale_tokens_now": 4,
+    "tokens_updated_last_60s": 8,
+    "tokens_updated_last_5m": 8,
+    "stale_reasons": {
+      "missing_cache_entry": 4
+    },
     "rest_snapshot_seed_attempts": 4958,
     "rest_snapshot_seed_success": 4954,
     "rest_snapshot_seed_missing": 4,
     "rest_snapshot_seed_invalid_bbo": 10,
     "token_set_added": 544,
-    "token_set_removed": 668,
-    "resubscribe_debounced": 110,
-    "resubscribe_executed": 124,
-    "written_at": "2026-06-21T11:45:34.122198+00:00"
+    "token_set_removed": 676,
+    "resubscribe_debounced": 111,
+    "resubscribe_executed": 125,
+    "written_at": "2026-06-21T11:50:27.940206+00:00"
   },
   "fallback_fires_24h": 0,
   "engine_start": "2026-06-21T04:00:02.407779+00:00",
-  "cycles": 1005
+  "cycles": 1016
 }
