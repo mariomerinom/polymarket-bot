@@ -115,23 +115,23 @@ Hypothetical maker fills — what would have filled if we posted passively.
 | Metric | p50 | p95 | Samples |
 |--------|----:|----:|--------:|
 | Production dispatch latency (ms) | 7850 | 14498 | 705 |
-| Bybit event lag (ms) | 863 | 35567 | 558 |
+| Bybit event lag (ms) | 863 | 35567 | 562 |
 | TA build (ms) | 60 | 109 | 705 |
 | Pipeline fanout (ms) | 7790 | 14397 | 705 |
 | Strategy Lab runtime (ms) | 113 | 922 | 705 |
 | Total dispatch wall time (ms) | 8077 | 14850 | 705 |
-| True orderbook age (ms) | 4190 | 87786 | 737 |
+| True orderbook age (ms) | 4259 | 87781 | 777 |
 | BTC 5m executable orderbook age (ms) | 173 | 1333 | 1000 |
 
 - Slowest pipeline runtime: bybit p95=15053ms (241 samples)
-- BTC 5m executable reads: fresh=237124 stale=345377 missing=904 partial=7272 total=590677
+- BTC 5m executable reads: fresh=237138 stale=345383 missing=904 partial=7272 total=590697
 - Orderbook cache: 40 tokens, 522 token-set changes (24h)
 - Cycles: 2612
 - Fallback fires (24h): 0
 - Engine start: 2026-06-21T04:00:02.407779+00:00
 
-- Polymarket events: book=1216567, price_change=43761558, ignored={'last_trade_price': 556529, 'new_market': 8780, 'tick_size_change': 432}
-- Orderbook freshness detail: fresh/stale tokens: 16/24, updated last 60s/5m: 40/40, stale reasons: {'stale_updated_at': 24}
+- Polymarket events: book=1217409, price_change=43823152, ignored={'last_trade_price': 556928, 'new_market': 8780, 'tick_size_change': 432}
+- Orderbook freshness detail: fresh/stale tokens: 20/20, updated last 60s/5m: 34/40, stale reasons: {'stale_updated_at': 20}
 - REST snapshot seed: 12145/12154 successful (missing=5, invalid_bbo=71)
 - Polymarket resubscribe: resubscribe debounced/executed: 295/300, added/removed tokens: 1530/1792
 - Orderbook freshness decision: dominant cause: no recent websocket deltas
