@@ -1,50 +1,50 @@
 {
   "schema_version": 2,
-  "metrics_written_at": "2026-06-23T12:21:26.139908+00:00",
+  "metrics_written_at": "2026-06-23T12:26:27.143405+00:00",
   "bybit_spot": {
     "status": "connected",
-    "last_event": "2026-06-23T12:21:00.889636+00:00",
-    "reconnects_24h": 94
+    "last_event": "2026-06-23T12:26:00.863129+00:00",
+    "reconnects_24h": 95
   },
   "bybit_linear": {
     "status": "connected",
-    "last_event": "2026-06-23T12:20:01.857930+00:00",
+    "last_event": "2026-06-23T12:25:01.420822+00:00",
     "reconnects_24h": 5
   },
   "polymarket": {
     "status": "connected",
-    "last_event": "2026-06-23T12:21:26.116727+00:00",
+    "last_event": "2026-06-23T12:26:27.066084+00:00",
     "reconnects_24h": 50
   },
   "dispatch_latency_ms": {
-    "p50": 11162,
+    "p50": 11172,
     "p95": 26584,
-    "samples": 501
+    "samples": 506
   },
   "event_lag_ms": {
     "p50": 864,
-    "p95": 47026,
-    "samples": 860
+    "p95": 47132,
+    "samples": 885
   },
   "ta_build_ms": {
     "p50": 66,
-    "p95": 103,
-    "samples": 501
+    "p95": 104,
+    "samples": 506
   },
   "pipeline_fanout_ms": {
-    "p50": 11066,
+    "p50": 11084,
     "p95": 26510,
-    "samples": 501
+    "samples": 506
   },
   "strategy_lab_ms": {
-    "p50": 440,
+    "p50": 442,
     "p95": 1298,
-    "samples": 501
+    "samples": 506
   },
   "total_dispatch_wall_ms": {
-    "p50": 11864,
+    "p50": 11887,
     "p95": 27814,
-    "samples": 501
+    "samples": 506
   },
   "pipeline_runtime_ms": {
     "btc_15m": {
@@ -55,93 +55,93 @@
     "btc_5m": {
       "p50": 13453,
       "p95": 37124,
-      "samples": 94
+      "samples": 95
     },
     "bybit": {
       "p50": 13018,
-      "p95": 28314,
-      "samples": 100
+      "p95": 26611,
+      "samples": 101
     },
     "doge_bybit": {
       "p50": 9095,
-      "p95": 20926,
-      "samples": 100
+      "p95": 20029,
+      "samples": 101
     },
     "doge_hl": {
-      "p50": 9884,
-      "p95": 21987,
-      "samples": 100
+      "p50": 9869,
+      "p95": 20926,
+      "samples": 101
     },
     "eth_5m": {
-      "p50": 4289,
-      "p95": 10340,
-      "samples": 100
+      "p50": 4261,
+      "p95": 10319,
+      "samples": 101
     },
     "eth_bybit": {
       "p50": 11,
-      "p95": 178,
-      "samples": 100
+      "p95": 172,
+      "samples": 101
     },
     "eth_hl": {
       "p50": 11,
-      "p95": 178,
-      "samples": 100
+      "p95": 172,
+      "samples": 101
     },
     "hl": {
       "p50": 7558,
       "p95": 21908,
-      "samples": 94
+      "samples": 95
     },
     "kalshi": {
       "p50": 166,
       "p95": 722,
-      "samples": 94
+      "samples": 95
     },
     "sol_bybit": {
       "p50": 11059,
-      "p95": 24683,
-      "samples": 100
+      "p95": 22529,
+      "samples": 101
     },
     "sol_hl": {
       "p50": 11967,
-      "p95": 26065,
-      "samples": 100
+      "p95": 25466,
+      "samples": 101
     }
   },
   "slowest_pipeline_runtime_ms": {
     "pipeline": "btc_5m",
     "p50": 13453,
     "p95": 37124,
-    "samples": 94
+    "samples": 95
   },
   "orderbook_age_ms": {
-    "p50": 5705,
-    "p95": 107110,
-    "samples": 994
+    "p50": 11231,
+    "p95": 135366,
+    "samples": 649
   },
   "btc5m_executable_orderbook_age_ms": {
-    "p50": 173,
-    "p95": 1472,
+    "p50": 166,
+    "p95": 1390,
     "samples": 1000
   },
   "btc5m_executable_book_reads": {
-    "total": 626412,
-    "fresh": 253913,
-    "stale": 363914,
+    "total": 626490,
+    "fresh": 253954,
+    "stale": 363951,
     "missing": 952,
     "partial": 7633,
     "by_side": {
       "no": {
-        "total": 312997,
-        "fresh": 126968,
-        "stale": 181866,
+        "total": 313036,
+        "fresh": 126989,
+        "stale": 181884,
         "partial": 3771,
         "missing": 392
       },
       "yes": {
-        "total": 313395,
-        "fresh": 126929,
-        "stale": 182048,
+        "total": 313434,
+        "fresh": 126949,
+        "stale": 182067,
         "partial": 3862,
         "missing": 556
       },
@@ -151,45 +151,45 @@
         "missing": 4
       }
     },
-    "latest_status": "fresh",
+    "latest_status": "stale",
     "latest_side": "no",
-    "latest_reason": null,
+    "latest_reason": "stale_last_event_ms",
     "latest_market_id": "2638965"
   },
   "orderbook_cache": {
-    "tokens": 32,
-    "refreshes_24h": 233,
-    "token_set_changes_24h": 219,
-    "book_events_24h": 591702,
-    "price_change_events_24h": 29209298,
+    "tokens": 28,
+    "refreshes_24h": 235,
+    "token_set_changes_24h": 221,
+    "book_events_24h": 596472,
+    "price_change_events_24h": 29461170,
     "ignored_event_types": {
-      "last_trade_price": 277627,
-      "new_market": 4167,
-      "tick_size_change": 224,
+      "last_trade_price": 279896,
+      "new_market": 4182,
+      "tick_size_change": 228,
       "market_resolved": 2
     },
-    "price_change_tokens_updated": 57348780,
+    "price_change_tokens_updated": 57843464,
     "price_change_missing_snapshot": 0,
     "price_change_buffered_until_seed": 60,
     "price_change_invalid_bbo": 0,
-    "fresh_tokens_now": 12,
-    "stale_tokens_now": 20,
-    "tokens_updated_last_60s": 32,
-    "tokens_updated_last_5m": 32,
+    "fresh_tokens_now": 14,
+    "stale_tokens_now": 14,
+    "tokens_updated_last_60s": 28,
+    "tokens_updated_last_5m": 28,
     "stale_reasons": {
-      "stale_updated_at": 20
+      "stale_updated_at": 14
     },
-    "rest_snapshot_seed_attempts": 4612,
-    "rest_snapshot_seed_success": 4605,
+    "rest_snapshot_seed_attempts": 4640,
+    "rest_snapshot_seed_success": 4633,
     "rest_snapshot_seed_missing": 0,
     "rest_snapshot_seed_invalid_bbo": 55,
     "token_set_added": 656,
-    "token_set_removed": 836,
-    "resubscribe_debounced": 127,
-    "resubscribe_executed": 103,
-    "written_at": "2026-06-23T12:21:24.784708+00:00"
+    "token_set_removed": 844,
+    "resubscribe_debounced": 128,
+    "resubscribe_executed": 104,
+    "written_at": "2026-06-23T12:26:27.115625+00:00"
   },
   "fallback_fires_24h": 0,
   "engine_start": "2026-06-23T04:00:02.484015+00:00",
-  "cycles": 1089
+  "cycles": 1100
 }
