@@ -492,7 +492,7 @@ class TestHealth:
         monkeypatch.setattr(pipeline_control, "is_pipeline_live",
                             lambda name: True)
         for i in range(4):
-            _insert_prediction(db, conv=4, minutes_ago=10 + i * 5)
+            _insert_prediction(db, conv=4, minutes_ago=1 + i)
         state = get_system_state(db, "btc_5m")
         assert state.is_healthy is False
         assert any("SILENT" in w for w in state.health_warnings)
